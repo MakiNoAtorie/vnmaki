@@ -8,6 +8,7 @@ The working rules for contributors and agents. The spec is `docs/SPEC.md`. Keep 
 - Plain preset names get dependencies from vcpkg (`VCPKG_ROOT`).
 - Each preset has a `system-*` twin that finds dependencies installed on the system instead, with `find_package(<pkg> CONFIG REQUIRED)` (CMake's FindLua for Lua). Every dependency must be findable both ways.
 - `fuzz` and `clang-tidy` are Linux and LLVM Clang only. Pick Clang with `CC=clang CXX=clang++`.
+- On Windows, `tools\dev\vsenv.cmd cmake --workflow --preset debug` builds with MSVC and the vcpkg that Visual Studio bundles. Sanitizers, clang-tidy and fuzzers then run only in CI. In cloud containers, `tools/dev/bootstrap-deps.sh` builds the dependencies for the `system-*` presets.
 - Before pushing, run `debug`, `asan-ubsan` and `clang-tidy` (plus `tsan` for threaded code and `fuzz` for loaders), then `git ls-files -z '*.cpp' '*.hpp' | xargs -0 clang-format --dry-run --Werror`.
 - CI (`.github/workflows/ci.yml`) runs:
   - Windows/MSVC: debug, release.
