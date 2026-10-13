@@ -22,8 +22,8 @@ enum class ScaleMode : std::uint8_t {
 /// a window has more pixels than points; on Windows and X11 they are equal and the OS reports
 /// the scale as display_scale instead (docs/README-highdpi.md in SDL).
 struct WindowMetrics {
-  Size points;
-  Size pixels;
+  Size points{};
+  Size pixels{};
   /// How much bigger the OS wants content drawn (e.g. 2.0 at 200%), for UI that wants to stay
   /// readable. The virtual canvas does not need it: it scales with the pixel size.
   float display_scale = 1;
@@ -40,7 +40,7 @@ struct WindowMetrics {
 /// Where the virtual canvas lands in the window.
 struct Viewport {
   /// The canvas rectangle in window pixels. In kFill it can extend past the window edges.
-  RectF rect;
+  RectF rect{};
   /// Window pixels per virtual pixel. 0 when the window or the canvas is empty.
   float scale = 0;
 };
