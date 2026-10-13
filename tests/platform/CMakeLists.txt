@@ -17,3 +17,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 doctest_discover_tests(vnmaki_platform_tests TEST_PREFIX "unit." PROPERTIES ENVIRONMENT
                        "${vnmaki_platform_test_env}")
+
+# Engine code outside the platform backend never includes SDL headers.
+add_test(NAME lint.no_sdl_outside_platform
+         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR} -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/no_sdl_outside_platform.cmake")

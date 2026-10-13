@@ -2,6 +2,8 @@
 function(vnmaki_add_cli_test name)
   cmake_parse_arguments(PARSE_ARGV 1 arg "NO_STDOUT" "EXIT;STDOUT_LINE;STDERR_REGEX"
                         "ARGS")
+  # Keep a multi-argument ARGS list in the one -DARGS=... argument.
+  string(REPLACE ";" "\\;" arg_ARGS "${arg_ARGS}")
   set(script_args -DEXE=$<TARGET_FILE:vnmaki> "-DARGS=${arg_ARGS}"
                   -DEXPECTED_EXIT=${arg_EXIT})
   if(arg_NO_STDOUT)
@@ -34,3 +36,41 @@ vnmaki_add_cli_test(
   EXIT 2
   NO_STDOUT
   STDERR_REGEX "^usage: vnmaki")
+
+# vnmaki window (ticket 04): opens an empty window and runs the main loop.
+vnmaki_add_cli_test(
+  window_opens_and_runs_some_frames
+  ARGS window --frames 3
+  EXIT 0
+  NO_STDOUT)
+
+vnmaki_add_cli_test(
+  window_reports_a_video_driver_that_cannot_start
+  ARGS window --frames 1
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "^vnmaki window: cannot start SDL video")
+set_tests_properties(cli.window_reports_a_video_driver_that_cannot_start
+                     PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=no-such-driver")
+
+vnmaki_add_cli_test(
+  window_frames_must_be_a_number
+  ARGS window --frames many
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki window: --frames needs a whole number, not 'many'")
+
+vnmaki_add_cli_test(
+  window_rejects_unknown_options
+  ARGS window --frobnicate
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki window: unknown option '--frobnicate'.*usage: .*vnmaki window")
+
+# A bug in the frame limit must fail the test, not hang CI with an open window.
+set_tests_properties(cli.window_opens_and_runs_some_frames PROPERTIES TIMEOUT 60)
+# Linux CI has no display: open the window with SDL's offscreen driver there.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set_tests_properties(cli.window_opens_and_runs_some_frames
+                       PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen")
+endif()

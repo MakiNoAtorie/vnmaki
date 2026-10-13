@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 
+#include "cli/window_command.hpp"
 #include "engine/core/version.hpp"
 
 namespace {
@@ -25,9 +26,13 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
+  if (!args.empty() && args.front() == "window") {
+    return vnmaki::cli::window_command(std::span{args}.subspan(1), std::cerr);
+  }
+
   if (!args.empty()) {
     std::cerr << "vnmaki: unknown option '" << args.front() << "'\n";
   }
-  std::cerr << usage;
+  std::cerr << usage << vnmaki::cli::kWindowUsage;
   return exit_usage_error;
 }
