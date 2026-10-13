@@ -92,7 +92,7 @@ end)
                                    "print nil", "print greeting.txt\tfalse", "print sub\ttrue"});
 }
 
-TEST_CASE("sandbox: math.random is a deterministic stub with Lua's argument rules") {
+TEST_CASE("sandbox: math.random is deterministic and follows Lua's argument rules") {
   const std::string body = R"(
 local ok = true
 for _ = 1, 200 do
