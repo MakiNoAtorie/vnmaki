@@ -25,3 +25,6 @@ vnmaki_add_fixture_generator(
   TEST_TARGETS vnmaki_unit_tests)
 
 add_subdirectory(cli)
+
+# Platform: window, input, main loop, virtual resolution (ticket 04).
+add_subdirectory(platform)
