@@ -89,8 +89,7 @@ end)
 
   CHECK(result.outcome == HeadlessOutcome::kFinished);
   CHECK(result.transcript == Lines{"label start", "print hello", "print nil\ttrue\tfalse",
-                                   "print nil", "print greeting.txt\tfalse",
-                                   "print sub\ttrue"});
+                                   "print nil", "print greeting.txt\tfalse", "print sub\ttrue"});
 }
 
 TEST_CASE("sandbox: math.random is a deterministic stub with Lua's argument rules") {
@@ -144,8 +143,7 @@ TEST_CASE("sandbox: outside dev mode new globals are not reported") {
   HeadlessOptions options;
   options.runtime.dev_mode = false;
 
-  const HeadlessResult result =
-      run_script("label('start', function() leaked = true end)", options);
+  const HeadlessResult result = run_script("label('start', function() leaked = true end)", options);
 
   CHECK(result.outcome == HeadlessOutcome::kFinished);
   CHECK(result.transcript == Lines{"label start"});
@@ -167,8 +165,7 @@ TEST_CASE("sandbox: an instruction limit turns an endless loop into a script err
   HeadlessOptions options;
   constexpr std::uint32_t kLimit = 100'000;
   options.runtime.instruction_limit = kLimit;
-  const std::string expected =
-      "script ran too long without yielding (instruction limit reached)";
+  const std::string expected = "script ran too long without yielding (instruction limit reached)";
 
   SUBCASE("in a label") {
     const HeadlessResult result =
@@ -189,7 +186,8 @@ TEST_CASE("sandbox: an instruction limit turns an endless loop into a script err
     CHECK(result.error == "scripts/main.lua:2: " + expected);
   }
   SUBCASE("in labels that jump to each other without yielding") {
-    const HeadlessResult result = run_script("label('start', function() jump('start') end)", options);
+    const HeadlessResult result =
+        run_script("label('start', function() jump('start') end)", options);
     CHECK(result.outcome == HeadlessOutcome::kFailed);
     CHECK(result.error == "scripts/main.lua:1: " + expected);
   }

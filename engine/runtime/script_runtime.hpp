@@ -79,8 +79,7 @@ class ScriptObserver {
   /// A called label returned, so `label` (its caller) runs again.
   virtual void on_label_resumed(std::string_view /*label*/) {}
   /// The running label reached a yield point and waits at `position`.
-  virtual void on_blocked(const BlockingRequest& /*request*/,
-                          const ScriptPosition& /*position*/) {}
+  virtual void on_blocked(const BlockingRequest& /*request*/, const ScriptPosition& /*position*/) {}
   /// A script called `print`.
   virtual void on_print(std::string_view /*text*/) {}
   /// A dev-mode warning, e.g. a new global outside `store`.

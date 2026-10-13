@@ -21,9 +21,7 @@ class MemoryMount final : public VfsMount {
   explicit MemoryMount(std::map<std::string, std::string, std::less<>> files)
       : files_(std::move(files)) {}
 
-  [[nodiscard]] bool is_file(std::string_view path) const override {
-    return files_.contains(path);
-  }
+  [[nodiscard]] bool is_file(std::string_view path) const override { return files_.contains(path); }
 
   [[nodiscard]] std::optional<std::vector<std::byte>> read(std::string_view path) const override {
     const auto found = files_.find(path);

@@ -540,8 +540,8 @@ void ScriptRuntime::Impl::bind_engine() {
     } else if (const auto existing = labels_.find(name); existing != labels_.end()) {
       problem = "label '" + name + "' is already defined at " + existing->second.location;
     } else {
-      labels_.emplace(name, Label{.function = function.as<sol::main_function>(),
-                                  .location = location});
+      labels_.emplace(name,
+                      Label{.function = function.as<sol::main_function>(), .location = location});
       return sol::lua_nil;
     }
     return sol::make_object(state, problem);
@@ -553,10 +553,9 @@ void ScriptRuntime::Impl::bind_engine() {
   engine_["narrate"] = sol::yielding([this](sol::this_state state, const std::string& text) {
     yield_at(state, NarrateRequest{.text = text});
   });
-  engine_["transfer"] = sol::yielding(
-      [this](sol::this_state state, const std::string& kind, const std::string& label) {
-        transfer(state, kind, label);
-      });
+  engine_["transfer"] =
+      sol::yielding([this](sol::this_state state, const std::string& kind,
+                           const std::string& label) { transfer(state, kind, label); });
   engine_["print"] = [this](const std::string& text) { observer_->on_print(text); };
   engine_["warn"] = [this](const std::string& message) { observer_->on_warning(message); };
   engine_["vfs_read"] = [this](sol::this_state state, const std::string& path) -> sol::object {
@@ -574,8 +573,8 @@ void ScriptRuntime::Impl::bind_engine() {
     sol::table entries = lua.create_table();
     int index = 1;
     for (const VfsEntry& entry : vfs_->list(directory)) {
-      entries[index++] = lua.create_table_with("name", entry.name, "is_directory",
-                                               entry.is_directory);
+      entries[index++] =
+          lua.create_table_with("name", entry.name, "is_directory", entry.is_directory);
     }
     return entries;
   };

@@ -84,10 +84,8 @@ ProjectConfig parse_project_config(std::string_view toml_text) {
     throw ProjectConfigError(at(error.source().begin) + ": " + std::string{error.description()});
   }
 
-  ProjectConfig config{.title = {},
-                       .version = "0.0.0",
-                       .resolution = kDefaultResolution,
-                       .languages = {"en"}};
+  ProjectConfig config{
+      .title = {}, .version = "0.0.0", .resolution = kDefaultResolution, .languages = {"en"}};
 
   const toml::node* title = table.get("title");
   if (title == nullptr) {

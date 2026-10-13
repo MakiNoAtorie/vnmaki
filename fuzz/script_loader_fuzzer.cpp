@@ -5,9 +5,11 @@
 //
 // The first byte picks how the rest becomes a script:
 // - below 128: the bytes are the script text as-is (exercises the Lua loader);
-// - otherwise: each byte picks a line from kSnippets, so most inputs are
-//   valid Lua that defines labels and moves between them (exercises the
-//   label registry, jump/call/ret, yields and the sandbox).
+// - otherwise (statement mode): each byte picks a statement from
+//   kStatements for the body of label "start", and byte 255 moves on to the
+//   bodies of labels "a" and "b". Nearly every such input is valid Lua that
+//   says lines and moves between labels (exercises the label registry,
+//   jump/call/ret, yields, the limits and the sandbox).
 //
 // Besides "does not crash", every result must be consistent:
 // - it failed exactly when it has an error message;
@@ -34,49 +36,56 @@ namespace {
 constexpr std::size_t kMemoryLimit = std::size_t{32} << 20U;
 constexpr std::uint32_t kInstructionLimit = 20'000;
 constexpr std::size_t kAdvances = 16;
-constexpr std::uint8_t kSnippetModeThreshold = 128;
+constexpr std::uint8_t kStatementModeThreshold = 128;
+// In statement mode this byte ends the current label's body.
+constexpr std::uint8_t kNextLabel = 255;
 
-constexpr std::array<std::string_view, 40> kSnippets{
-    "label(\"start\", function()\n",
-    "label(\"a\", function()\n",
-    "label(\"b\", function()\n",
-    "end)\n",
-    "end\n",
-    "narrate(\"n\")\n",
-    "say(\"A\", \"s\")\n",
-    "say(nil, \"x\")\n",
-    "say({ name = \"C\" }, \"c\")\n",
-    "jump(\"a\")\n",
-    "jump(\"b\")\n",
-    "jump(\"start\")\n",
-    "jump(\"missing\")\n",
-    "call(\"a\")\n",
-    "call(\"b\")\n",
-    "ret()\n",
-    "if math.random(2) == 1 then\n",
-    "else\n",
-    "for i = 1, 3 do\n",
-    "while true do\n",
-    "do\n",
-    "store.x = (store.x or 0) + 1\n",
-    "global_value = 1\n",
-    "print(store.x, math.random())\n",
-    "coroutine.yield()\n",
-    "error(\"boom\")\n",
-    "error({}, 0)\n",
-    "say({}, 1)\n",
-    "jump(1)\n",
-    "label(\"start\", 5)\n",
-    "print(vfs.read(\"scripts/fuzz.lua\") ~= nil, vfs.exists(\"x\"), #vfs.list(\"\"))\n",
-    "coroutine.wrap(function() narrate(\"c\") end)()\n",
-    "pcall(narrate, \"p\")\n",
-    "pcall(jump, \"a\")\n",
-    "return\n",
-    "break\n",
-    "local s = string.rep(\"x\", 1 << 30)\n",
-    "print(load(\"return 1\")())\n",
-    "setmetatable(_G, nil)\n",
-    "local t = setmetatable({}, { __index = function() narrate(\"meta\") end }) local _ = t.x\n",
+// The labels statement mode defines, in order.
+constexpr std::array<std::string_view, 3> kLabels{"start", "a", "b"};
+
+// Complete Lua statements, so statement-mode scripts are nearly always valid
+// Lua and the fuzzer spends its time in the runtime, not the parser.
+constexpr std::array<std::string_view, 40> kStatements{
+    "narrate(\"n\")",
+    "narrate(\"m\")",
+    "say(\"A\", \"s\")",
+    "say(nil, \"x\")",
+    "say({ name = \"C\" }, \"c\")",
+    "jump(\"a\")",
+    "jump(\"b\")",
+    "jump(\"start\")",
+    "jump(\"missing\")",
+    "call(\"a\")",
+    "call(\"b\")",
+    "call(\"start\")",
+    "ret()",
+    "if math.random(2) == 1 then narrate(\"r\") end",
+    "if store.x and store.x > 2 then ret() end",
+    "for _ = 1, 3 do narrate(\"loop\") end",
+    "while true do end",
+    "store.x = (store.x or 0) + 1",
+    "global_value = (global_value or 0) + 1",
+    "print(store.x, math.random(), math.random(0))",
+    "coroutine.yield()",
+    "error(\"boom\")",
+    "error({}, 0)",
+    "say({}, 1)",
+    "jump(1)",
+    "label(\"late\", function() end)",
+    "print(vfs.read(\"scripts/fuzz.lua\") ~= nil, vfs.exists(\"x\"), #vfs.list(\"\"))",
+    "coroutine.wrap(function() narrate(\"c\") end)()",
+    "pcall(narrate, \"p\")",
+    "pcall(jump, \"a\")",
+    "print(pcall(error, \"caught\"))",
+    "do return end",
+    "local s = string.rep(\"x\", 1 << 30)",
+    "store.big = string.rep(\"x\", 1 << 20)",
+    "print(load(\"return 1\")(), load(\"\\27Lua\"))",
+    "setmetatable(_G, nil)",
+    "local t = setmetatable({}, { __index = function() narrate(\"meta\") end }) local _ = t.x",
+    "local co = coroutine.create(function() while true do end end) print(coroutine.resume(co))",
+    "print(os.time() ~= nil, io, debug, require)",
+    "repeat store.y = (store.y or 0) + 1 narrate(\"rep\") until store.y % 2 == 0",
 };
 
 void require(bool condition) {
@@ -85,18 +94,42 @@ void require(bool condition) {
   }
 }
 
-std::string script_from(std::span<const std::uint8_t> bytes) {
+// Statement mode: the bytes are statement indices, split into the bodies of
+// the labels in kLabels by kNextLabel bytes.
+std::string statement_script(std::span<const std::uint8_t> bytes) {
   std::string script;
-  if (bytes.empty()) {
-    return script;
-  }
-  const bool snippets = bytes.front() >= kSnippetModeThreshold;
-  for (const std::uint8_t byte : bytes.subspan(1)) {
-    if (snippets) {
-      script += kSnippets.at(byte % kSnippets.size());
-    } else {
-      script.push_back(static_cast<char>(byte));
+  std::size_t label = 0;
+  script += "label(\"";
+  script += kLabels.at(label);
+  script += "\", function()\n";
+  for (const std::uint8_t byte : bytes) {
+    if (byte == kNextLabel) {
+      if (label + 1 == kLabels.size()) {
+        break;
+      }
+      ++label;
+      script += "end)\nlabel(\"";
+      script += kLabels.at(label);
+      script += "\", function()\n";
+      continue;
     }
+    script += kStatements.at(byte % kStatements.size());
+    script += '\n';
+  }
+  script += "end)\n";
+  return script;
+}
+
+std::string script_from(std::span<const std::uint8_t> bytes) {
+  if (bytes.empty()) {
+    return {};
+  }
+  if (bytes.front() >= kStatementModeThreshold) {
+    return statement_script(bytes.subspan(1));
+  }
+  std::string script;
+  for (const std::uint8_t byte : bytes.subspan(1)) {
+    script.push_back(static_cast<char>(byte));
   }
   return script;
 }

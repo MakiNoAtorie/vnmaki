@@ -110,8 +110,8 @@ end)
                                            2);
 
   CHECK(result.outcome == HeadlessOutcome::kFinished);
-  CHECK(result.transcript == Lines{"label start", "label aside", "narrate in aside",
-                                   "resume start", "narrate back in start"});
+  CHECK(result.transcript == Lines{"label start", "label aside", "narrate in aside", "resume start",
+                                   "narrate back in start"});
 }
 
 TEST_CASE("headless: a called label that runs off its end returns to the caller") {
@@ -145,11 +145,8 @@ label("next", function() narrate("next one") end)
 
   using vnmaki::ScriptPosition;
   CHECK(result.outcome == HeadlessOutcome::kFinished);
-  CHECK(result.stops == std::vector<ScriptPosition>{{"start", 1},
-                                                    {"start", 2},
-                                                    {"aside", 1},
-                                                    {"start", 3},
-                                                    {"next", 1}});
+  CHECK(result.stops == std::vector<ScriptPosition>{
+                            {"start", 1}, {"start", 2}, {"aside", 1}, {"start", 3}, {"next", 1}});
 }
 
 TEST_CASE("headless: endless nested calls fail instead of growing the call stack forever") {
@@ -273,8 +270,7 @@ TEST_CASE("headless: blocking calls outside a running label are errors") {
 end)
 )");
     CHECK(result.outcome == HeadlessOutcome::kFailed);
-    CHECK(result.error ==
-          "scripts/main.lua:3: narrate() can only be called from a running label");
+    CHECK(result.error == "scripts/main.lua:3: narrate() can only be called from a running label");
   }
   SUBCASE("jump in top-level script code") {
     const HeadlessResult result = run_script("label('start', function() end)\njump('start')\n");
