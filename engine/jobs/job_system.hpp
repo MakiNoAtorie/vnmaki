@@ -1,16 +1,18 @@
 #pragma once
 
-#include <chrono>
 #include <concepts>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <functional>
-#include <future>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace vnmaki {
 
@@ -38,30 +40,103 @@ class Job {
   virtual void cancel() = 0;
 };
 
-template <typename Result, typename Fn>
-class TypedJob final : public Job {
+/// Where a job leaves its outcome for its JobHandle. Shared by the job and the handle.
+///
+/// Unlike std::promise/std::future, take() moves the exception out under the mutex before
+/// rethrowing it. The waiter's thread then holds the last reference to the exception object,
+/// so the worker releasing the job later never frees an exception the waiter is still reading.
+/// (exception_ptr counts references inside the uninstrumented C++ runtime, so ThreadSanitizer
+/// cannot see the ordering that would otherwise make that safe.)
+template <typename Result>
+class JobState {
  public:
-  explicit TypedJob(Fn fn, std::promise<Result> promise)
-      : fn_(std::move(fn)), promise_(std::move(promise)) {}
+  using Value = std::conditional_t<std::is_void_v<Result>, std::monostate, Result>;
 
-  void run() override {
-    try {
-      if constexpr (std::is_void_v<Result>) {
-        std::invoke(fn_);
-        promise_.set_value();
-      } else {
-        promise_.set_value(std::invoke(fn_));
-      }
-    } catch (...) {
-      promise_.set_exception(std::current_exception());
+  void succeed(Value value) {
+    {
+      const std::scoped_lock lock{mutex_};
+      value_.emplace(std::move(value));
+      done_ = true;
+    }
+    done_changed_.notify_all();
+  }
+
+  void fail(std::exception_ptr error) {
+    {
+      const std::scoped_lock lock{mutex_};
+      error_ = std::move(error);
+      done_ = true;
+    }
+    done_changed_.notify_all();
+  }
+
+  [[nodiscard]] bool ready() const {
+    const std::scoped_lock lock{mutex_};
+    return done_;
+  }
+
+  void wait() const {
+    std::unique_lock lock{mutex_};
+    done_changed_.wait(lock, [this] { return done_; });
+  }
+
+  /// Waits, then moves the result out or rethrows the job's exception.
+  Result take() {
+    std::unique_lock lock{mutex_};
+    done_changed_.wait(lock, [this] { return done_; });
+    if (error_) {
+      std::exception_ptr error = std::exchange(error_, nullptr);
+      lock.unlock();
+      std::rethrow_exception(std::move(error));
+    }
+    if constexpr (!std::is_void_v<Result>) {
+      Result result = std::move(*value_);
+      value_.reset();
+      return result;
     }
   }
 
-  void cancel() override { promise_.set_exception(std::make_exception_ptr(JobCancelled{})); }
+ private:
+  mutable std::mutex mutex_;
+  mutable std::condition_variable done_changed_;
+  bool done_ = false;
+  std::optional<Value> value_;
+  std::exception_ptr error_;
+};
+
+template <typename Result, typename Fn>
+class TypedJob final : public Job {
+ public:
+  TypedJob(Fn fn, std::shared_ptr<JobState<Result>> state)
+      : fn_(std::move(fn)), state_(std::move(state)) {}
+
+  void run() override {
+    // Leave the catch block before publishing, so this thread keeps no reference to the
+    // exception once the waiter can see it.
+    std::optional<typename JobState<Result>::Value> value;
+    std::exception_ptr error;
+    try {
+      if constexpr (std::is_void_v<Result>) {
+        std::invoke(fn_);
+        value.emplace();
+      } else {
+        value.emplace(std::invoke(fn_));
+      }
+    } catch (...) {
+      error = std::current_exception();
+    }
+    if (error) {
+      state_->fail(std::move(error));
+    } else {
+      state_->succeed(std::move(*value));
+    }
+  }
+
+  void cancel() override { state_->fail(std::make_exception_ptr(JobCancelled{})); }
 
  private:
   Fn fn_;
-  std::promise<Result> promise_;
+  std::shared_ptr<JobState<Result>> state_;
 };
 
 }  // namespace detail
@@ -77,30 +152,33 @@ enum class ShutdownMode : std::uint8_t {
 };
 
 /// The result of a submitted job, owned by whoever submitted it. Like std::future, a handle
-/// is used from one thread at a time. A default-constructed handle refers to no job; do not
-/// call its members.
+/// is used from one thread at a time, and ready(), wait() and get() need a valid() handle.
 template <typename Result>
 class JobHandle {
  public:
   JobHandle() = default;
 
+  /// False for a default-constructed handle and after get().
+  [[nodiscard]] bool valid() const noexcept { return state_ != nullptr; }
+
   /// True once the job has finished (with a result or an exception). Never blocks.
-  [[nodiscard]] bool ready() const {
-    return future_.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
-  }
+  [[nodiscard]] bool ready() const { return state_->ready(); }
 
   /// Blocks until the job has finished.
-  void wait() const { future_.wait(); }
+  void wait() const { state_->wait(); }
 
   /// Blocks until the job has finished, then returns its result or rethrows the exception
-  /// the job threw. Consumes the result, so call it once.
-  Result get() { return future_.get(); }
+  /// the job threw. Consumes the result: the handle is no longer valid() afterwards.
+  Result get() {
+    const std::shared_ptr<detail::JobState<Result>> state = std::move(state_);
+    return state->take();
+  }
 
  private:
   friend class JobSystem;
-  explicit JobHandle(std::future<Result> future) : future_(std::move(future)) {}
+  explicit JobHandle(std::shared_ptr<detail::JobState<Result>> state) : state_(std::move(state)) {}
 
-  std::future<Result> future_;
+  std::shared_ptr<detail::JobState<Result>> state_;
 };
 
 /// A pool of worker threads that runs jobs (e.g. asset decoding) off the main thread.
@@ -146,10 +224,10 @@ class JobSystem {
     requires std::invocable<std::decay_t<Fn>&>
   [[nodiscard]] auto submit(Fn&& fn) -> JobHandle<std::invoke_result_t<std::decay_t<Fn>&>> {
     using Result = std::invoke_result_t<std::decay_t<Fn>&>;
-    std::promise<Result> promise;
-    JobHandle<Result> handle{promise.get_future()};
+    auto state = std::make_shared<detail::JobState<Result>>();
+    JobHandle<Result> handle{state};
     enqueue(std::make_unique<detail::TypedJob<Result, std::decay_t<Fn>>>(std::forward<Fn>(fn),
-                                                                         std::move(promise)));
+                                                                         std::move(state)));
     return handle;
   }
 

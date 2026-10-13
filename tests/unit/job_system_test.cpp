@@ -43,7 +43,10 @@ TEST_CASE("a submitted job's result is handed back through its handle") {
 
   vnmaki::JobHandle<int> handle = jobs.submit([] { return kDecodedWidth; });
 
+  CHECK(handle.valid());
   CHECK(handle.get() == kDecodedWidth);
+  CHECK_FALSE(handle.valid());  // get() consumed the result.
+  CHECK_FALSE(vnmaki::JobHandle<int>{}.valid());
 }
 
 TEST_CASE("polling a handle does not block and reports when the job has finished") {
@@ -75,6 +78,19 @@ TEST_CASE("an exception thrown inside a job is rethrown to whoever waits on the 
   handle.wait();
   CHECK(handle.ready());
   CHECK_THROWS_WITH_AS(handle.get(), "corrupt image", std::runtime_error);
+}
+
+TEST_CASE("a waiter can inspect a job's exception however late the worker cleans up") {
+  // Regression: the waiter's reads of the exception must not race with the worker releasing
+  // the job. Many short jobs make the two interleave in every order; TSan checks each one.
+  vnmaki::JobSystem jobs;
+  constexpr int kRounds = 500;
+
+  for (int round = 0; round < kRounds; ++round) {
+    vnmaki::JobHandle<int> handle =
+        jobs.submit([]() -> int { throw std::runtime_error{"corrupt image"}; });
+    CHECK_THROWS_WITH_AS(handle.get(), "corrupt image", std::runtime_error);
+  }
 }
 
 TEST_CASE("a job without a result reports completion and exceptions") {
