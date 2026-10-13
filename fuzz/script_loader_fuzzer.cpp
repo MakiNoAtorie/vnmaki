@@ -46,46 +46,46 @@ constexpr std::array<std::string_view, 3> kLabels{"start", "a", "b"};
 // Complete Lua statements, so statement-mode scripts are nearly always valid
 // Lua and the fuzzer spends its time in the runtime, not the parser.
 constexpr std::array<std::string_view, 40> kStatements{
-    "narrate(\"n\")",
-    "narrate(\"m\")",
-    "say(\"A\", \"s\")",
-    "say(nil, \"x\")",
-    "say({ name = \"C\" }, \"c\")",
-    "jump(\"a\")",
-    "jump(\"b\")",
-    "jump(\"start\")",
-    "jump(\"missing\")",
-    "call(\"a\")",
-    "call(\"b\")",
-    "call(\"start\")",
+    "narrate('n')",
+    "narrate('m')",
+    "say('A', 's')",
+    "say(nil, 'x')",
+    "say({ name = 'C' }, 'c')",
+    "jump('a')",
+    "jump('b')",
+    "jump('start')",
+    "jump('missing')",
+    "call('a')",
+    "call('b')",
+    "call('start')",
     "ret()",
-    "if math.random(2) == 1 then narrate(\"r\") end",
+    "if math.random(2) == 1 then narrate('r') end",
     "if store.x and store.x > 2 then ret() end",
-    "for _ = 1, 3 do narrate(\"loop\") end",
+    "for _ = 1, 3 do narrate('loop') end",
     "while true do end",
     "store.x = (store.x or 0) + 1",
     "global_value = (global_value or 0) + 1",
     "print(store.x, math.random(), math.random(0))",
     "coroutine.yield()",
-    "error(\"boom\")",
+    "error('boom')",
     "error({}, 0)",
     "say({}, 1)",
     "jump(1)",
-    "label(\"late\", function() end)",
-    "print(vfs.read(\"scripts/fuzz.lua\") ~= nil, vfs.exists(\"x\"), #vfs.list(\"\"))",
-    "coroutine.wrap(function() narrate(\"c\") end)()",
-    "pcall(narrate, \"p\")",
-    "pcall(jump, \"a\")",
-    "print(pcall(error, \"caught\"))",
+    "label('late', function() end)",
+    "print(vfs.read('scripts/fuzz.lua') ~= nil, vfs.exists('x'), #vfs.list(''))",
+    "coroutine.wrap(function() narrate('c') end)()",
+    "pcall(narrate, 'p')",
+    "pcall(jump, 'a')",
+    "print(pcall(error, 'caught'))",
     "do return end",
-    "local s = string.rep(\"x\", 1 << 30)",
-    "store.big = string.rep(\"x\", 1 << 20)",
-    "print(load(\"return 1\")(), load(\"\\27Lua\"))",
+    "local s = string.rep('x', 1 << 30)",
+    "store.big = string.rep('x', 1 << 20)",
+    "print(load('return 1')(), load(string.char(27) .. 'Lua'))",
     "setmetatable(_G, nil)",
-    "local t = setmetatable({}, { __index = function() narrate(\"meta\") end }) local _ = t.x",
+    "local t = setmetatable({}, { __index = function() narrate('meta') end }) local _ = t.x",
     "local co = coroutine.create(function() while true do end end) print(coroutine.resume(co))",
     "print(os.time() ~= nil, io, debug, require)",
-    "repeat store.y = (store.y or 0) + 1 narrate(\"rep\") until store.y % 2 == 0",
+    "repeat store.y = (store.y or 0) + 1 narrate('rep') until store.y % 2 == 0",
 };
 
 void require(bool condition) {
@@ -99,18 +99,18 @@ void require(bool condition) {
 std::string statement_script(std::span<const std::uint8_t> bytes) {
   std::string script;
   std::size_t label = 0;
-  script += "label(\"";
+  script += "label('";
   script += kLabels.at(label);
-  script += "\", function()\n";
+  script += "', function()\n";
   for (const std::uint8_t byte : bytes) {
     if (byte == kNextLabel) {
       if (label + 1 == kLabels.size()) {
         break;
       }
       ++label;
-      script += "end)\nlabel(\"";
+      script += "end)\nlabel('";
       script += kLabels.at(label);
-      script += "\", function()\n";
+      script += "', function()\n";
       continue;
     }
     script += kStatements.at(byte % kStatements.size());
