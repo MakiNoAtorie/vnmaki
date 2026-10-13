@@ -70,6 +70,29 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
+  # Targets without threads (e.g. a future web build) run every job inline.
+  linux-no-threads:
+    name: Linux / Clang (debug, threads disabled)
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang-18
+      CXX: clang++-18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build clang-18
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-key: linux-clang-no-threads
+      - name: Configure
+        run: cmake --preset debug -DVNMAKI_ENABLE_THREADS=OFF
+      - name: Build
+        run: cmake --build --preset debug
+      - name: Test
+        run: ctest --preset debug
+
   macos-clang:
     name: macOS / Clang (${{ matrix.preset }})
     runs-on: macos-14
