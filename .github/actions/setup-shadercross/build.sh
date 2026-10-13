@@ -33,15 +33,17 @@ cmake -S "$WORK/shadercross" -B "$WORK/shadercross-build" -G Ninja -DCMAKE_BUILD
   -DSDLSHADERCROSS_CLI=ON -DSDLSHADERCROSS_CLI_STATIC=ON -DSDLSHADERCROSS_INSTALL=OFF
 cmake --build "$WORK/shadercross-build" --target shadercross --parallel "$JOBS"
 
-# Keep only the compiler and the DXC libraries it loads, next to each other.
+# Keep only the compiler and the shared libraries it loads, next to each other.
 mkdir -p "$PREFIX/bin"
 cp "$WORK/shadercross-build/shadercross" "$PREFIX/bin/"
-find "$WORK/shadercross-build" \( -name 'libdxcompiler*.dylib' -o -name 'libdxil*.dylib' \) \
+find "$WORK/shadercross-build" \( -name 'libdxcompiler*.dylib' -o -name 'libdxil*.dylib' \
+  -o -name 'libspirv-cross-c-shared*.dylib' \) \
   -exec cp -P {} "$PREFIX/bin/" \;
 install_name_tool -add_rpath @executable_path "$PREFIX/bin/shadercross" 2>/dev/null || true
+# The build tree is on the rpath too. Remove it first, so the check proves the copy runs alone.
+rm -rf "$WORK"
 "$PREFIX/bin/shadercross" --help > /dev/null 2>&1 || {
   otool -L "$PREFIX/bin/shadercross"
   echo "shadercross does not run" >&2
   exit 1
 }
-rm -rf "$WORK"

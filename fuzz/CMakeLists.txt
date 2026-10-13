@@ -25,3 +25,7 @@ if(TARGET vnmaki_fixtures_render)
   add_test(NAME fuzz.image.seeded COMMAND fuzz_image -runs=10000 -seed=1 "${vnmaki_image_corpus}"
                                           "${PROJECT_BINARY_DIR}/fixtures/render/images")
 endif()
+
+# Script runtime (ticket 06).
+vnmaki_add_fuzzer(script_loader script_loader_fuzzer.cpp)
+vnmaki_add_fuzzer(project_config project_config_fuzzer.cpp)

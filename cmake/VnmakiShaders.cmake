@@ -50,8 +50,8 @@ function(vnmaki_add_shaders target)
   set(vnmaki_shadercross_launcher "")
   if(WIN32 AND VNMAKI_DXC)
     cmake_path(GET VNMAKI_DXC PARENT_PATH dxc_dir)
-    set(vnmaki_shadercross_launcher "${CMAKE_COMMAND}" -E env
-                                    "--modify=PATH=path_list_prepend:${dxc_dir}" --)
+    set(vnmaki_shadercross_launcher "${CMAKE_COMMAND}" -E env --modify
+                                    "PATH=path_list_prepend:${dxc_dir}" --)
   endif()
   set(embed_script "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/VnmakiEmbedShader.cmake")
   if(NOT arg_NAMESPACE OR NOT arg_SHADERS)

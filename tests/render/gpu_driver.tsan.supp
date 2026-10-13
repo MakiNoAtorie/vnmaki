@@ -8,3 +8,6 @@ mutex:libvulkan_lvp.so
 # swapchain (VULKAN_INTERNAL_DestroyTexture / FramebufferHashDestroy); the renderer calls SDL from
 # one thread, so this potential deadlock is SDL-internal.
 deadlock:SDL_gpu_vulkan.c
+# vcpkg builds SDL without the symbols for those frames; the same report then shows only the
+# renderer's release of its window.
+deadlock:WindowClaim
