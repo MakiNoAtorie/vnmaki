@@ -11,6 +11,9 @@ target_compile_definitions(
                             VNMAKI_EXPECTED_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
                             VNMAKI_EXPECTED_VERSION_MINOR=${PROJECT_VERSION_MINOR}
                             VNMAKI_EXPECTED_VERSION_PATCH=${PROJECT_VERSION_PATCH})
+# Make doctest include the real <ostream> instead of forward-declaring it.
+# Without this, MSVC fails to stringify std::string_view in assertions.
+target_compile_definitions(vnmaki_unit_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
 doctest_discover_tests(vnmaki_unit_tests TEST_PREFIX "unit.")
 
 add_subdirectory(cli)
