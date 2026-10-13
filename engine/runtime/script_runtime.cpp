@@ -1009,7 +1009,8 @@ void ScriptRuntime::Impl::start(std::string_view name) {
 // Snapshots the state and puts label `name` on top of the stack. Returns
 // false, with the runtime failed, if the store cannot be snapshotted.
 bool ScriptRuntime::Impl::enter(const std::string& name) {
-  LabelSnapshot snapshot{.label = name};
+  LabelSnapshot snapshot;
+  snapshot.label = name;
   try {
     snapshot.store = capture_store();
   } catch (const ScriptError& error) {

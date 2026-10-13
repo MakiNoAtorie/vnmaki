@@ -104,10 +104,10 @@ struct Game {
   vnmaki::ScriptRuntime runtime;
 };
 
-StoreValue text(std::string value) { return StoreValue{std::move(value)}; }
-StoreValue integer(std::int64_t value) { return StoreValue{value}; }
+StoreValue string_value(std::string value) { return {std::move(value)}; }
+StoreValue integer_value(std::int64_t value) { return {value}; }
 
-Bytes bytes(std::string_view characters) {
+Bytes to_bytes(std::string_view characters) {
   Bytes result;
   result.reserve(characters.size());
   for (const char c : characters) {
@@ -340,12 +340,13 @@ end)
   const auto store_with_a = [](std::int64_t a) {
     return StoreSnapshot{
         .tables = {
-            StoreTable{.entries = {{text("__rng"), integer(kSnapshotSeed)},
-                                   {text("a"), integer(a)},
-                                   {text("name"), text("x")},
-                                   {text("same"), StoreTableRef{.index = 1}},
-                                   {text("t"), StoreTableRef{.index = 1}}}},
-            StoreTable{.entries = {{integer(1), StoreValue{true}}, {text("half"), kHalf}}},
+            StoreTable{.entries = {{string_value("__rng"), integer_value(kSnapshotSeed)},
+                                   {string_value("a"), integer_value(a)},
+                                   {string_value("name"), string_value("x")},
+                                   {string_value("same"), StoreTableRef{.index = 1}},
+                                   {string_value("t"), StoreTableRef{.index = 1}}}},
+            StoreTable{
+                .entries = {{integer_value(1), StoreValue{true}}, {string_value("half"), kHalf}}},
         }};
   };
 
@@ -377,7 +378,7 @@ label("next", function() end)
 
 TEST_CASE("state: entering a label snapshots the scene state") {
   FakeScene scene;
-  scene.state = bytes("classroom");
+  scene.state = to_bytes("classroom");
   ScriptRuntimeOptions options;
   options.scene_state = &scene;
   Game game{R"(
@@ -392,14 +393,14 @@ end)
             options};
 
   game.runtime.start("start");
-  scene.state = bytes("rooftop");
+  scene.state = to_bytes("rooftop");
   REQUIRE(game.runtime.label_snapshot() != nullptr);
-  CHECK(game.runtime.label_snapshot()->scene == bytes("classroom"));
+  CHECK(game.runtime.label_snapshot()->scene == to_bytes("classroom"));
 
   game.runtime.advance();
   REQUIRE(game.runtime.label_snapshot() != nullptr);
   CHECK(game.runtime.label_snapshot()->label == "next");
-  CHECK(game.runtime.label_snapshot()->scene == bytes("rooftop"));
+  CHECK(game.runtime.label_snapshot()->scene == to_bytes("rooftop"));
 }
 
 TEST_CASE("state: a label's source hash follows its own text only") {
@@ -527,17 +528,17 @@ end)
 
 TEST_CASE("replay: the scene state of the snapshot is restored") {
   FakeScene scene;
-  scene.state = bytes("classroom");
+  scene.state = to_bytes("classroom");
   ScriptRuntimeOptions options;
   options.scene_state = &scene;
   Game game{"label('start', function() narrate('one') narrate('two') end)", options};
   game.runtime.start("start");
   game.runtime.advance();
-  scene.state = bytes("rooftop");
+  scene.state = to_bytes("rooftop");
 
   game.runtime.replay(*game.runtime.label_snapshot(), game.runtime.input_log(), 1);
 
-  CHECK(scene.state == bytes("classroom"));
+  CHECK(scene.state == to_bytes("classroom"));
   CHECK(game.runtime.position() == ScriptPosition{.label = "start", .step = 1});
 }
 
@@ -635,7 +636,8 @@ TEST_CASE("replay: a label that cannot reach the step fails the runtime") {
   }
   SUBCASE("the store snapshot refers to a table it does not have") {
     LabelSnapshot broken = snapshot;
-    broken.store.tables.front().entries.emplace_back(text("missing"), StoreTableRef{.index = 1});
+    broken.store.tables.front().entries.emplace_back(string_value("missing"),
+                                                     StoreTableRef{.index = 1});
     game.runtime.replay(broken, log, 1);
     CHECK(game.runtime.state() == RunState::kFailed);
     CHECK(game.runtime.error() == "replay: the store snapshot of label 'start' is malformed");
