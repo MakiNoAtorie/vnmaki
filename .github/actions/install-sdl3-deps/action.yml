@@ -1,0 +1,16 @@
+name: Install SDL3 build dependencies
+description: >
+  Installs the system headers vcpkg's sdl3 port needs on Linux for its x11 and
+  wayland features (vcpkg.json). SDL loads the libraries themselves at run
+  time. Does nothing on other runners.
+
+runs:
+  using: composite
+  steps:
+    - name: Install X11 and Wayland development packages
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          pkg-config libx11-dev libxext-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev

@@ -7,6 +7,14 @@
   "license": "MIT",
   "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
   "dependencies": [
-    "doctest"
+    "doctest",
+    {
+      "name": "sdl3",
+      "default-features": false,
+      "features": [
+        { "name": "wayland", "platform": "linux" },
+        { "name": "x11", "platform": "linux" }
+      ]
+    }
   ]
 }
