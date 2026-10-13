@@ -13,8 +13,13 @@ target_sources(
 # CMake's FindLua module. Lua is compiled as C; sol2 includes it through
 # <lua.hpp>, which wraps the C headers in extern "C".
 find_package(Lua 5.4 REQUIRED)
-if(NOT LUA_VERSION_MAJOR EQUAL 5 OR NOT LUA_VERSION_MINOR EQUAL 4)
-  message(FATAL_ERROR "VNMaki needs Lua 5.4; found ${LUA_VERSION_STRING}")
+# vcpkg's FindLua wrapper sets no version variables, so read lua.h.
+file(STRINGS "${LUA_INCLUDE_DIR}/lua.h" vnmaki_lua_version_num
+     REGEX "^#define[ \t]+LUA_VERSION_NUM[ \t]+[0-9]+")
+string(REGEX MATCH "[0-9]+$" vnmaki_lua_version_num "${vnmaki_lua_version_num}")
+if(NOT vnmaki_lua_version_num EQUAL 504)
+  message(FATAL_ERROR "VNMaki needs Lua 5.4; ${LUA_INCLUDE_DIR}/lua.h has "
+                      "LUA_VERSION_NUM '${vnmaki_lua_version_num}'")
 endif()
 find_package(sol2 CONFIG REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
