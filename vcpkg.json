@@ -7,6 +7,15 @@
   "license": "MIT",
   "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
   "dependencies": [
-    "doctest"
+    "doctest",
+    "lua",
+    "sol2",
+    "tomlplusplus"
+  ],
+  "overrides": [
+    {
+      "name": "lua",
+      "version": "5.4.8"
+    }
   ]
 }

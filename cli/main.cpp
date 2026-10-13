@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 
+#include "cli/run_command.hpp"
 #include "engine/core/version.hpp"
 
 namespace {
@@ -11,6 +12,8 @@ namespace {
 constexpr int exit_usage_error = 2;
 
 constexpr std::string_view usage = "usage: vnmaki --version\n";
+
+void print_usage() { std::cerr << usage << vnmaki::cli::kRunUsage; }
 
 }  // namespace
 
@@ -25,9 +28,13 @@ int main(int argc, char* argv[]) {
     return 0;
   }
 
+  if (!args.empty() && args.front() == "run") {
+    return vnmaki::cli::run_command(std::span{args}.subspan(1), std::cout, std::cerr);
+  }
+
   if (!args.empty()) {
     std::cerr << "vnmaki: unknown option '" << args.front() << "'\n";
   }
-  std::cerr << usage;
+  print_usage();
   return exit_usage_error;
 }
