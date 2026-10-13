@@ -28,3 +28,10 @@ add_subdirectory(cli)
 
 # Platform: window, input, main loop, virtual resolution (ticket 04).
 add_subdirectory(platform)
+
+# Render: image loading, the renderer interface, the SDL GPU backend (ticket 05).
+target_sources(vnmaki_unit_tests PRIVATE unit/image_test.cpp)
+add_subdirectory(render)
+vnmaki_add_fixture_generator(
+  render SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)

@@ -8,6 +8,8 @@
 # add a pattern to `allowed`.
 
 set(allowed "^engine/platform/sdl_[^/]*$")
+# The SDL GPU renderer backend (ticket 05).
+list(APPEND allowed "^engine/render/sdl_[^/]*$")
 
 file(
   GLOB_RECURSE sources

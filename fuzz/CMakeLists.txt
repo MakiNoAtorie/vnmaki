@@ -13,3 +13,15 @@ endfunction()
 
 vnmaki_add_fuzzer(noop noop_fuzzer.cpp)
 vnmaki_add_fuzzer(vfs_path vfs_path_fuzzer.cpp)
+
+# Image decoder (ticket 05). Random bytes rarely get past a PNG or JPEG header, so a second
+# smoke run starts from the decoder test fixtures (seeds, never written to) and keeps what it
+# finds in a corpus directory in the build tree.
+vnmaki_add_fuzzer(image image_fuzzer.cpp)
+if(TARGET vnmaki_fixtures_render)
+  add_dependencies(fuzz_image vnmaki_fixtures_render)
+  set(vnmaki_image_corpus "${CMAKE_CURRENT_BINARY_DIR}/corpus/image")
+  file(MAKE_DIRECTORY "${vnmaki_image_corpus}")
+  add_test(NAME fuzz.image.seeded COMMAND fuzz_image -runs=10000 -seed=1 "${vnmaki_image_corpus}"
+                                          "${PROJECT_BINARY_DIR}/fixtures/render/images")
+endif()

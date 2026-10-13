@@ -1,0 +1,10 @@
+# ThreadSanitizer suppressions for GPU driver internals. Software drivers (Mesa's lavapipe on
+# Linux CI) run their own uninstrumented worker threads, and TSan reports races between them
+# (e.g. a mutex destroyed while another driver thread unlocks it) that are not the engine's.
+# Only reports whose stacks run through the driver library are suppressed.
+race:libvulkan_lvp.so
+mutex:libvulkan_lvp.so
+# SDL's Vulkan backend takes two of its own mutexes in both orders while releasing a window's
+# swapchain (VULKAN_INTERNAL_DestroyTexture / FramebufferHashDestroy); the renderer calls SDL from
+# one thread, so this potential deadlock is SDL-internal.
+deadlock:SDL_gpu_vulkan.c
