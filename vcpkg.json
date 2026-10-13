@@ -13,11 +13,18 @@
       "default-features": false,
       "features": [
         { "name": "wayland", "platform": "linux" },
-        { "name": "x11", "platform": "linux" }
+        { "name": "x11", "platform": "linux" },
+        { "name": "vulkan", "platform": "linux | windows" }
       ]
+    },
+    {
+      "name": "sdl3-shadercross",
+      "host": true,
+      "platform": "!osx"
     },
     "lua",
     "sol2",
+    "stb",
     "tomlplusplus"
   ],
   "overrides": [

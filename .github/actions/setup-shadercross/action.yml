@@ -1,0 +1,29 @@
+name: Set up SDL_shadercross on macOS
+description: >
+  The engine compiles its HLSL shaders at build time with SDL_shadercross
+  (cmake/VnmakiShaders.cmake). On Linux and Windows it comes from vcpkg's
+  sdl3-shadercross host port, but that port's DirectX Shader Compiler
+  (directx-dxc) has no macOS build. On macOS this builds shadercross with its
+  vendored DXC and SPIRV-Cross from source (slow the first time, then cached)
+  and puts it on the PATH. Does nothing on other runners.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the shadercross build
+      if: runner.os == 'macOS'
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/shadercross
+        key: shadercross-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/actions/setup-shadercross/build.sh') }}
+
+    - name: Build shadercross with its vendored DXC
+      if: runner.os == 'macOS' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: bash .github/actions/setup-shadercross/build.sh "${{ runner.temp }}/shadercross"
+
+    - name: Put shadercross on the PATH
+      if: runner.os == 'macOS'
+      shell: bash
+      run: echo "${{ runner.temp }}/shadercross/bin" >> "$GITHUB_PATH"

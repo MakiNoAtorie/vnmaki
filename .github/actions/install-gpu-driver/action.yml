@@ -1,0 +1,19 @@
+name: Install a software GPU driver
+description: >
+  The renderer tests (tests/render) draw on a real GPU device. Linux runners
+  have no GPU, so this installs Mesa's lavapipe, a software Vulkan driver, and
+  sets VNMAKI_REQUIRE_GPU=1 so those tests fail rather than skip if it does not
+  work. Windows runners use Direct3D 12 through WARP (the Microsoft Basic Render
+  Driver) and macOS runners Metal; there the tests skip themselves when no
+  device can be created. Does nothing on other runners.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Mesa lavapipe (software Vulkan)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
+        echo "VNMAKI_REQUIRE_GPU=1" >> "$GITHUB_ENV"

@@ -20,6 +20,8 @@ add_library(vnmaki::options ALIAS vnmaki_options)
 if(MSVC)
   target_compile_options(vnmaki_options INTERFACE /W4 /WX /permissive- /utf-8
                                                   /Zc:__cplusplus)
+  # C4996 rejects standard functions such as std::getenv.
+  target_compile_definitions(vnmaki_options INTERFACE _CRT_SECURE_NO_WARNINGS)
   # Debug builds already use the checked STL (_ITERATOR_DEBUG_LEVEL=2).
 else()
   target_compile_options(

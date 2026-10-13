@@ -75,6 +75,52 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
                        PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen")
 endif()
 
+# vnmaki window --image (ticket 05): draws a PNG through the VFS, the job system and the GPU.
+set(vnmaki_cli_images "${VNMAKI_FIXTURES_DIR}/render/images")
+vnmaki_add_cli_test(
+  window_shows_an_image
+  ARGS window --frames 3 --image "${vnmaki_cli_images}/checker_4x4.png"
+  EXIT 0
+  NO_STDOUT)
+vnmaki_add_cli_test(
+  window_reports_a_missing_image
+  ARGS window --frames 1 --image "${vnmaki_cli_images}/no_such_image.png"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "^vnmaki window: no image file at '.*no_such_image.png'")
+vnmaki_add_cli_test(
+  window_reports_an_image_it_cannot_decode
+  ARGS window --frames 1 --image "${vnmaki_cli_images}/truncated.png"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "^vnmaki window: cannot decode image 'truncated.png'")
+set(vnmaki_gpu_cli_tests cli.window_shows_an_image cli.window_reports_an_image_it_cannot_decode)
+set_tests_properties(cli.window_reports_a_missing_image ${vnmaki_gpu_cli_tests} PROPERTIES TIMEOUT
+                                                                                           60)
+set(vnmaki_gpu_cli_env "")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  list(APPEND vnmaki_gpu_cli_env "SDL_VIDEO_DRIVER=offscreen")
+endif()
+# GPU drivers unloaded at exit make LeakSanitizer report false leaks (see
+# tests/render/CMakeLists.txt).
+if("address" IN_LIST VNMAKI_SANITIZERS)
+  list(APPEND vnmaki_gpu_cli_env "ASAN_OPTIONS=detect_leaks=0")
+endif()
+# Races inside the GPU driver's own threads are not the engine's.
+if("thread" IN_LIST VNMAKI_SANITIZERS)
+  list(APPEND vnmaki_gpu_cli_env
+       "TSAN_OPTIONS=suppressions=${PROJECT_SOURCE_DIR}/tests/render/gpu_driver.tsan.supp")
+endif()
+if(vnmaki_gpu_cli_env)
+  set_tests_properties(cli.window_reports_a_missing_image ${vnmaki_gpu_cli_tests}
+                       PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
+endif()
+# Without any usable GPU device (not even a software one) these are skipped, as in
+# tests/render/CMakeLists.txt, unless VNMAKI_REQUIRE_GPU=1 was set when configuring.
+if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+  set_tests_properties(${vnmaki_gpu_cli_tests} PROPERTIES SKIP_REGULAR_EXPRESSION
+                                                          "cannot create a GPU device")
+endif()
 # vnmaki run (ticket 06), on the projects tools/generators/runtime_fixtures.py
 # writes (registered in tests/CMakeLists.txt).
 set(vnmaki_run_fixtures "${VNMAKI_FIXTURES_DIR}/runtime")
