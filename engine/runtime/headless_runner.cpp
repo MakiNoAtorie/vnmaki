@@ -1,5 +1,6 @@
 #include "engine/runtime/headless_runner.hpp"
 
+#include <cstddef>
 #include <span>
 #include <string>
 #include <string_view>
@@ -27,6 +28,10 @@ class TranscriptRecorder final : public ScriptObserver {
       result_->transcript.push_back("say " + say->speaker + ": " + say->text);
     } else if (const auto* narrate = std::get_if<NarrateRequest>(&request)) {
       add("narrate ", narrate->text);
+    } else if (const auto* menu = std::get_if<MenuRequest>(&request)) {
+      for (std::size_t i = 0; i < menu->options.size(); ++i) {
+        result_->transcript.push_back("menu " + std::to_string(i + 1) + ": " + menu->options[i]);
+      }
     }
   }
 
@@ -61,8 +66,20 @@ HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
   runtime.start(options.start_label);
   auto next_input = inputs.begin();
   while (runtime.state() == RunState::kWaiting && next_input != inputs.end()) {
-    // Every input kind so far answers any request by advancing.
-    std::visit([&runtime](const AdvanceInput&) { runtime.advance(); }, *next_input);
+    const auto* menu = std::get_if<MenuRequest>(runtime.request());
+    const auto* choice = std::get_if<ChooseInput>(&*next_input);
+    if (menu == nullptr && choice == nullptr) {
+      runtime.advance();
+    } else if (menu != nullptr && choice != nullptr && choice->index < menu->options.size()) {
+      runtime.choose(choice->index);
+    } else {
+      result.outcome = HeadlessOutcome::kFailed;
+      result.error =
+          menu == nullptr
+              ? "the next input is a menu choice, but the story does not wait at a menu"
+              : "the story waits at a menu, and the next input is not one of its options";
+      return result;
+    }
     ++next_input;
   }
 

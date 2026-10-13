@@ -14,6 +14,7 @@
 // Besides "does not crash", every result must be consistent:
 // - it failed exactly when it has an error message;
 // - every transcript line has a known form;
+// - a menu shows as its option lines, numbered from 1;
 // - each yield point (stop) belongs to the label the transcript says is
 //   running, its step is 1 right after the label is entered, and it grows
 //   by 1 between consecutive stops of the same running label.
@@ -45,7 +46,7 @@ constexpr std::array<std::string_view, 3> kLabels{"start", "a", "b"};
 
 // Complete Lua statements, so statement-mode scripts are nearly always valid
 // Lua and the fuzzer spends its time in the runtime, not the parser.
-constexpr std::array<std::string_view, 40> kStatements{
+constexpr std::array<std::string_view, 44> kStatements{
     "narrate('n')",
     "narrate('m')",
     "say('A', 's')",
@@ -86,6 +87,10 @@ constexpr std::array<std::string_view, 40> kStatements{
     "local co = coroutine.create(function() while true do end end) print(coroutine.resume(co))",
     "print(os.time() ~= nil, io, debug, require)",
     "repeat store.y = (store.y or 0) + 1 narrate('rep') until store.y % 2 == 0",
+    "menu({ 'left', 'right' })",
+    "store.t = { store, [1.5] = rand(3) } store.t.t = store.t",
+    "store.f = print",
+    "store.__rng = nil store = nil",
 };
 
 void require(bool condition) {
@@ -134,8 +139,9 @@ std::string script_from(std::span<const std::uint8_t> bytes) {
   return script;
 }
 
+// A menu is one stop; its first option line stands for it.
 bool is_stop_line(std::string_view line) {
-  return line.starts_with("say ") || line.starts_with("narrate ");
+  return line.starts_with("say ") || line.starts_with("narrate ") || line.starts_with("menu 1: ");
 }
 
 void check(const vnmaki::HeadlessResult& result) {
@@ -159,7 +165,8 @@ void check(const vnmaki::HeadlessResult& result) {
       require(expected_step == 0 || stop.step == expected_step);
       expected_step = stop.step + 1;
     } else {
-      require(line.starts_with("print ") || line.starts_with("warning "));
+      require(line.starts_with("print ") || line.starts_with("warning ") ||
+              line.starts_with("menu "));
     }
   }
   require(next_stop == result.stops.size());

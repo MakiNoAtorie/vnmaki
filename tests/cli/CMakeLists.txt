@@ -106,6 +106,19 @@ add_test(NAME cli.run_headless_defaults_to_the_current_directory
                  "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_stdout_file.cmake"
          WORKING_DIRECTORY "${vnmaki_run_fixtures}/demo")
 
+# The engine RNG gives the same numbers on every platform and run.
+vnmaki_add_cli_stdout_file_test(
+  run_headless_rolls_the_same_dice_every_time
+  ARGS run "${vnmaki_run_fixtures}/dice" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_run_fixtures}/dice.transcript")
+
+vnmaki_add_cli_test(
+  run_headless_stops_at_a_menu
+  ARGS run "${vnmaki_run_fixtures}/menu" --headless
+  EXIT 1
+  STDERR_REGEX "vnmaki: the story waits at a menu")
+
 vnmaki_add_cli_test(
   run_headless_reports_script_errors
   ARGS run "${vnmaki_run_fixtures}/broken" --headless

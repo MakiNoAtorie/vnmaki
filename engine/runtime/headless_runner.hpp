@@ -4,6 +4,7 @@
 // scripted player inputs, and records what they asked for as a transcript.
 // Tests drive script behaviour through it, and `vnmaki run --headless` uses it.
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -19,8 +20,13 @@ class Vfs;
 /// The player advances past the current line.
 struct AdvanceInput {};
 
-/// One scripted player input. Later tickets add menu choices.
-using ScriptInput = std::variant<AdvanceInput>;
+/// The player picks option `index` (from 0) of the current menu.
+struct ChooseInput {
+  std::size_t index = 0;
+};
+
+/// One scripted player input.
+using ScriptInput = std::variant<AdvanceInput, ChooseInput>;
 
 enum class HeadlessOutcome : std::uint8_t {
   kFinished,    ///< The story ended.
@@ -34,13 +40,14 @@ enum class HeadlessOutcome : std::uint8_t {
 ///   resume <name>         a called label returned to its caller <name>
 ///   say <who>: <text>     say(who, text)
 ///   narrate <text>        narrate(text), or say(nil, text)
+///   menu <n>: <text>      option n (from 1) of a menu; one line per option
 ///   print <text>          print(...), arguments joined by tabs
 ///   warning <message>     a dev-mode warning
 struct HeadlessResult {
   HeadlessOutcome outcome = HeadlessOutcome::kFailed;
   std::vector<std::string> transcript;
   /// The position of every yield point reached, in order (one per say or
-  /// narrate line in the transcript).
+  /// narrate line and one per menu in the transcript).
   std::vector<ScriptPosition> stops;
   std::string error;  ///< Why it failed; empty otherwise.
 };
@@ -53,7 +60,9 @@ struct HeadlessOptions {
 
 /// Loads every script under `scripts/` in `vfs`, enters the start label and
 /// answers each yield point with the next input until the story ends, the
-/// inputs run out or a script fails.
+/// inputs run out or a script fails. An input that does not fit the yield
+/// point (an advance at a menu, a choice at a line or of an option the menu
+/// does not have) also fails the run.
 [[nodiscard]] HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
                                           const HeadlessOptions& options = {});
 
