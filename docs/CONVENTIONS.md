@@ -44,6 +44,7 @@ The working rules for contributors and agents. The spec is `docs/SPEC.md`. Keep 
   - A fuzz target should check properties of the output (idempotence, an independent oracle) and call `std::abort()` when one is violated.
   - To check a new fuzz target works, plant a bug and confirm the smoke test catches it.
 - Threaded tests put a timeout on every wait. They return early when `!JobSystem::threads_supported()`, because jobs run inline in that build.
+- GPU tests live in `tests/render/` (`vnmaki_render_tests`). Get a renderer with `vnmaki::test::make_headless_renderer()`, which prints `VNMAKI_SKIP:` (ctest reports a skip) when no device exists, unless `VNMAKI_REQUIRE_GPU=1` (set on Linux CI, which has lavapipe). Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png` from `tools/generators/render_fixtures.py`, whose reference rasterizer repeats the scene.
 
 ## Module contracts
 
@@ -60,6 +61,12 @@ The working rules for contributors and agents. The spec is `docs/SPEC.md`. Keep 
   - Pointer positions are in window pixels. Map them with `window_to_virtual(compute_viewport(...), pos)`; clicks in the letterbox bars fall outside the virtual area.
   - Text input is off unless a text field has focus.
   - Only one `SdlPlatform` can exist. Other SDL users call `SDL_InitSubSystem`/`SDL_QuitSubSystem`, never `SDL_Quit`.
+- **Render** (`engine/render/`): engine code draws only through `IRenderer` (`renderer.hpp`). `SdlGpuRenderer` is the SDL GPU backend (`create_for_window(platform)` or `create_headless()`).
+  - A frame is `begin_frame`, then passes (`begin_pass({.target, .clear})` followed by `draw(quads, DrawState)`), then `end_frame()`, which returns `FrameStats` (`draw_calls`). Consecutive quads with an equal `DrawState` are one draw call.
+  - Coordinates are the pass target's pixels, origin top-left. Colours are premultiplied on the GPU; `Image` pixels are premultiplied RGBA8.
+  - Draw the scene into a virtual-resolution render target, then draw that to `kScreen` at `compute_viewport(virtual, window_metrics().pixels, mode).rect`.
+  - Shaders are HLSL under `shaders/`, compiled by shadercross at build time with `vnmaki_add_shaders(...)`. Custom fragment shaders include `vnmaki.hlsli` and may take one constant buffer at `register(b0, space3)`.
+  - Images load with `load_image(vfs, jobs, path)` (`JobHandle<Image>`); upload with `create_texture` on the main thread.
 - **Runtime** (`engine/runtime/`): `ScriptRuntime` loads every `.lua` file under `scripts/` through the VFS. Each label runs as a coroutine.
   - The script-facing API is a Lua prelude in `script_runtime.cpp`, backed by private `engine.*` primitives.
   - Every blocking call goes through `Impl::yield_at`. That function counts the step (steps are per label activation and start at 1) and calls `ScriptObserver::on_blocked`.
