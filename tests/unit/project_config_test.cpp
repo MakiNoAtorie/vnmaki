@@ -18,13 +18,14 @@ using Strings = std::vector<std::string>;
 
 // The message of the ProjectConfigError parsing `text` throws.
 std::string error_for(const std::string& text) {
+  std::string message;
   try {
     static_cast<void>(vnmaki::parse_project_config(text));
   } catch (const ProjectConfigError& error) {
-    return error.what();
+    message = error.what();
   }
-  FAIL("no ProjectConfigError for: " << text);
-  return {};
+  CHECK_MESSAGE(!message.empty(), "no ProjectConfigError for: " << text);
+  return message;
 }
 
 }  // namespace
