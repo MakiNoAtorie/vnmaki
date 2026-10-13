@@ -90,6 +90,9 @@ class JobState {
       std::rethrow_exception(std::move(error));
     }
     if constexpr (!std::is_void_v<Result>) {
+      if (!value_) {
+        throw std::logic_error{"job result already taken"};  // JobHandle::get() prevents this.
+      }
       Result result = std::move(*value_);
       value_.reset();
       return result;
@@ -111,25 +114,21 @@ class TypedJob final : public Job {
       : fn_(std::move(fn)), state_(std::move(state)) {}
 
   void run() override {
-    // Leave the catch block before publishing, so this thread keeps no reference to the
-    // exception once the waiter can see it.
-    std::optional<typename JobState<Result>::Value> value;
     std::exception_ptr error;
     try {
       if constexpr (std::is_void_v<Result>) {
         std::invoke(fn_);
-        value.emplace();
+        state_->succeed(std::monostate{});
       } else {
-        value.emplace(std::invoke(fn_));
+        state_->succeed(std::invoke(fn_));
       }
+      return;
     } catch (...) {
       error = std::current_exception();
     }
-    if (error) {
-      state_->fail(std::move(error));
-    } else {
-      state_->succeed(std::move(*value));
-    }
+    // Publish only after leaving the catch block, so this thread keeps no reference to the
+    // exception once the waiter can see it.
+    state_->fail(std::move(error));
   }
 
   void cancel() override { state_->fail(std::make_exception_ptr(JobCancelled{})); }
