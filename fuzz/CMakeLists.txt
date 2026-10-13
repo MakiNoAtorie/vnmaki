@@ -12,3 +12,4 @@ function(vnmaki_add_fuzzer name)
 endfunction()
 
 vnmaki_add_fuzzer(noop noop_fuzzer.cpp)
+vnmaki_add_fuzzer(vfs_path vfs_path_fuzzer.cpp)

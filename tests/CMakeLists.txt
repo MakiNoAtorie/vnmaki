@@ -17,4 +17,11 @@ target_compile_definitions(vnmaki_unit_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEAD
 target_sources(vnmaki_unit_tests PRIVATE unit/job_system_test.cpp)
 doctest_discover_tests(vnmaki_unit_tests TEST_PREFIX "unit.")
 
+# VFS (ticket 02).
+target_sources(vnmaki_unit_tests PRIVATE unit/vfs_path_test.cpp unit/vfs_test.cpp)
+include(VnmakiFixtures)
+vnmaki_add_fixture_generator(
+  vfs SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/vfs_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
 add_subdirectory(cli)

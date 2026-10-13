@@ -11,3 +11,4 @@ target_link_libraries(vnmaki_engine PRIVATE vnmaki::options)
 
 add_subdirectory(core)
 add_subdirectory(jobs)
+add_subdirectory(vfs)
