@@ -10,3 +10,4 @@ target_compile_features(vnmaki_engine PUBLIC cxx_std_20)
 target_link_libraries(vnmaki_engine PRIVATE vnmaki::options)
 
 add_subdirectory(core)
+add_subdirectory(vfs)

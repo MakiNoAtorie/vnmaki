@@ -16,4 +16,7 @@ target_compile_definitions(
 target_compile_definitions(vnmaki_unit_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
 doctest_discover_tests(vnmaki_unit_tests TEST_PREFIX "unit.")
 
+# VFS (ticket 02).
+target_sources(vnmaki_unit_tests PRIVATE unit/vfs_path_test.cpp)
+
 add_subdirectory(cli)
