@@ -25,14 +25,14 @@ class FakeClock final : public vnmaki::Clock {
  public:
   [[nodiscard]] Duration now() override { return now_; }
   void sleep_for(Duration duration) override {
-    sleeps.push_back(duration);
+    sleeps_.push_back(duration);
     now_ += duration;
   }
   void advance(Duration duration) { now_ += duration; }
-
-  std::vector<Duration> sleeps;
+  [[nodiscard]] const std::vector<Duration>& sleeps() const { return sleeps_; }
 
  private:
+  std::vector<Duration> sleeps_;
   Duration now_{1h};  // Not zero, so nothing relies on the clock starting at zero.
 };
 
@@ -74,6 +74,11 @@ struct Recorder {
 
 constexpr Duration kStep = 10ms;
 
+// Expected interpolation fractions: leftover time divided by kStep.
+constexpr double kHalfStep = 0.5;         // 5 ms of 10 ms
+constexpr double kFourTenthsStep = 0.4;   // 4 ms of 10 ms
+constexpr double kThreeTenthsStep = 0.3;  // 3 ms of 10 ms
+
 }  // namespace
 
 TEST_CASE("main loop: runs one fixed update per step of elapsed time, then draws once") {
@@ -98,7 +103,7 @@ TEST_CASE("main loop: carries leftover time into the next frame and draws with i
   clock.advance(25ms);  // 2 steps, 5 ms left over.
   loop.run_frame(recorder.hooks());
   CHECK(recorder.count("update") == 2);
-  CHECK(recorder.alphas.back() == doctest::Approx(0.5));
+  CHECK(recorder.alphas.back() == doctest::Approx(kHalfStep));
 
   clock.advance(5ms);  // 5 + 5 = one more step, nothing left over.
   loop.run_frame(recorder.hooks());
@@ -116,7 +121,7 @@ TEST_CASE("main loop: draws every frame even when no update is due") {
   loop.run_frame(recorder.hooks());
 
   CHECK(recorder.calls == std::vector<std::string>{"draw"});
-  CHECK(recorder.alphas.back() == doctest::Approx(0.4));
+  CHECK(recorder.alphas.back() == doctest::Approx(kFourTenthsStep));
 }
 
 TEST_CASE("main loop: after a long stall, caps the updates and drops the backlog") {
@@ -128,7 +133,8 @@ TEST_CASE("main loop: after a long stall, caps the updates and drops the backlog
   clock.advance(1s + 3ms);  // A debugger pause: 100 steps due.
   loop.run_frame(recorder.hooks());
   CHECK(recorder.count("update") == 4);
-  CHECK(recorder.alphas.back() == doctest::Approx(0.3));  // The sub-step remainder survives.
+  CHECK(recorder.alphas.back() ==
+        doctest::Approx(kThreeTenthsStep));  // The sub-step remainder survives.
 
   clock.advance(10ms);  // Back to normal: the dropped steps do not come back.
   loop.run_frame(recorder.hooks());
@@ -200,11 +206,11 @@ TEST_CASE("main loop: a frame cap sleeps away the rest of a short frame") {
 
   // The frame's own work takes 6 ms of clock time.
   loop.run_frame({.draw = [&](double /*alpha*/) { clock.advance(6ms); }});
-  CHECK(clock.sleeps == std::vector<Duration>{10ms});
+  CHECK(clock.sleeps() == std::vector<Duration>{10ms});
 
   // A frame that already took longer than the cap does not sleep.
   loop.run_frame({.draw = [&](double /*alpha*/) { clock.advance(20ms); }});
-  CHECK(clock.sleeps.size() == 1);
+  CHECK(clock.sleeps().size() == 1);
 }
 
 TEST_CASE("main loop: rejects a step or update cap that would never let time advance") {
@@ -223,5 +229,5 @@ TEST_CASE("main loop: without a frame cap it never sleeps") {
 
   loop.run_frame({});
 
-  CHECK(clock.sleeps.empty());
+  CHECK(clock.sleeps().empty());
 }

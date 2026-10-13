@@ -35,11 +35,15 @@ class SteadyClock final : public Clock {
 };
 
 struct MainLoopConfig {
+  static constexpr int kDefaultUpdatesPerSecond = 60;
+  static constexpr int kDefaultMaxUpdatesPerFrame = 8;
+
   /// Simulated time per update. Game logic always advances by exactly this much.
-  Duration update_step = std::chrono::duration_cast<Duration>(std::chrono::seconds{1}) / 60;
+  Duration update_step =
+      std::chrono::duration_cast<Duration>(std::chrono::seconds{1}) / kDefaultUpdatesPerSecond;
   /// After a stall (a debugger pause, a slow load), at most this many updates run in one frame;
   /// the rest of the backlog is dropped so the game slows down instead of freezing.
-  int max_updates_per_frame = 8;
+  int max_updates_per_frame = kDefaultMaxUpdatesPerFrame;
   /// When nonzero, a frame that finishes early sleeps until this much time has passed. For when
   /// nothing else (such as vsync) paces the loop.
   Duration min_frame_time{0};
@@ -76,8 +80,8 @@ class MainLoop {
   [[nodiscard]] bool quit_requested() const;
 
  private:
-  Platform& platform_;
-  Clock& clock_;
+  Platform* platform_;
+  Clock* clock_;
   MainLoopConfig config_;
   Duration previous_time_;
   Duration accumulated_{0};

@@ -35,13 +35,15 @@ TEST_CASE("headless platform: delivers injected events in order, then reports an
 }
 
 TEST_CASE("headless platform: an injected resize changes the window size like a real window") {
-  vnmaki::HeadlessPlatform platform{Size{1280, 720}};
+  constexpr Size kBefore{.width = 1280, .height = 720};
+  constexpr Size kAfter{.width = 1920, .height = 1080};
+  vnmaki::HeadlessPlatform platform{kBefore};
 
-  platform.push_event(vnmaki::WindowResizedEvent{.pixels = {1920, 1080}});
+  platform.push_event(vnmaki::WindowResizedEvent{.pixels = kAfter});
 
-  CHECK(platform.window_metrics().pixels == Size{1920, 1080});
+  CHECK(platform.window_metrics().pixels == kAfter);
   CHECK(platform.poll_event() ==
-        std::optional<InputEvent>{vnmaki::WindowResizedEvent{.pixels = {1920, 1080}}});
+        std::optional<InputEvent>{vnmaki::WindowResizedEvent{.pixels = kAfter}});
 }
 
 TEST_CASE("headless platform: remembers whether text input is on") {

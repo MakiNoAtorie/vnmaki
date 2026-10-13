@@ -9,6 +9,9 @@
 
 namespace vnmaki {
 
+/// The window size used when nothing else is asked for, in points.
+inline constexpr Size kDefaultWindowSize{.width = 1280, .height = 720};
+
 /// The engine's view of the OS: one window and the events it receives. The desktop backend is
 /// SdlPlatform (sdl_platform.hpp); HeadlessPlatform stands in for tests and CI. Other targets
 /// implement this interface.
@@ -39,10 +42,8 @@ class Platform {
 /// the events a window would have produced.
 class HeadlessPlatform final : public Platform {
  public:
-  static constexpr Size kDefaultSize{.width = 1280, .height = 720};
-
   /// `window_size` is the simulated window's size; it has as many pixels as points.
-  explicit HeadlessPlatform(Size window_size = kDefaultSize);
+  explicit HeadlessPlatform(Size window_size = kDefaultWindowSize);
 
   [[nodiscard]] WindowMetrics window_metrics() const override;
   std::optional<InputEvent> poll_event() override;

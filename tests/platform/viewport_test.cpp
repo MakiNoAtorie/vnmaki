@@ -13,11 +13,20 @@ using vnmaki::RectF;
 using vnmaki::ScaleMode;
 using vnmaki::Size;
 
+namespace {
+
+// Non-integer scales from the worked examples below.
+constexpr double kOneAndAHalf = 1.5;
+constexpr double kHalf = 0.5;
+constexpr float kHalfPixel = 0.5F;
+
+}  // namespace
+
 TEST_CASE("viewport: fit letterboxes with bars above and below in a taller window") {
   // 1280x720 into 1920x1200: scale min(1.5, 1.667) = 1.5 -> 1920x1080, 60 px bars.
   const auto viewport = vnmaki::compute_viewport({1280, 720}, {1920, 1200}, ScaleMode::kFit);
 
-  CHECK(viewport.scale == doctest::Approx(1.5));
+  CHECK(viewport.scale == doctest::Approx(kOneAndAHalf));
   CHECK(viewport.rect == RectF{0, 60, 1920, 1080});
 }
 
@@ -25,7 +34,7 @@ TEST_CASE("viewport: fit pillarboxes with bars left and right in a wider window"
   // 1280x720 into 2560x1080: scale min(2, 1.5) = 1.5 -> 1920x1080, 320 px bars.
   const auto viewport = vnmaki::compute_viewport({1280, 720}, {2560, 1080}, ScaleMode::kFit);
 
-  CHECK(viewport.scale == doctest::Approx(1.5));
+  CHECK(viewport.scale == doctest::Approx(kOneAndAHalf));
   CHECK(viewport.rect == RectF{320, 0, 1920, 1080});
 }
 
@@ -49,7 +58,7 @@ TEST_CASE("viewport: integer scale falls back to fit when the window is smaller 
   // 640x360 into 320x200: fit = min(0.5, 0.556) = 0.5 -> 320x180 at y = 10.
   const auto viewport = vnmaki::compute_viewport({640, 360}, {320, 200}, ScaleMode::kInteger);
 
-  CHECK(viewport.scale == doctest::Approx(0.5));
+  CHECK(viewport.scale == doctest::Approx(kHalf));
   CHECK(viewport.rect == RectF{0, 10, 320, 180});
 }
 
@@ -76,7 +85,7 @@ TEST_CASE("viewport: maps virtual points to window pixels and back") {
   CHECK(vnmaki::virtual_to_window(viewport, {0, 0}) == PointF{160, 140});
   CHECK(vnmaki::virtual_to_window(viewport, {640, 360}) == PointF{1440, 860});
   CHECK(vnmaki::window_to_virtual(viewport, {800, 500}) == PointF{320, 180});
-  CHECK(vnmaki::window_to_virtual(viewport, {161, 141}) == PointF{0.5F, 0.5F});
+  CHECK(vnmaki::window_to_virtual(viewport, {161, 141}) == PointF{kHalfPixel, kHalfPixel});
 }
 
 TEST_CASE("viewport: a window point in a letterbox bar maps outside the canvas") {
@@ -91,8 +100,9 @@ TEST_CASE("viewport: in fill mode window corners map inside the cropped canvas")
   // 100x100 into 200x300 (fill): scale 3, canvas at (-50, 0): 50/3 virtual px cropped per side.
   const auto viewport = vnmaki::compute_viewport({100, 100}, {200, 300}, ScaleMode::kFill);
 
+  constexpr double kCroppedVirtualPixels = 50.0 / 3;
   const PointF top_left = vnmaki::window_to_virtual(viewport, {0, 0});
-  CHECK(top_left.x == doctest::Approx(50.0 / 3));
+  CHECK(top_left.x == doctest::Approx(kCroppedVirtualPixels));
   CHECK(top_left.y == 0);
 }
 

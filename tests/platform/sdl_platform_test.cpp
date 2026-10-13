@@ -18,6 +18,8 @@ using vnmaki::Size;
 
 namespace {
 
+constexpr Size kSize{.width = 640, .height = 360};
+
 std::vector<InputEvent> drain(vnmaki::Platform& platform) {
   std::vector<InputEvent> events;
   while (auto event = platform.poll_event()) {
@@ -38,22 +40,24 @@ bool contains(const std::vector<InputEvent>& events, const InputEvent& wanted) {
 }  // namespace
 
 TEST_CASE("sdl platform: opens a window of the requested size") {
-  vnmaki::SdlPlatform platform{{.title = "vnmaki test", .size = {640, 360}}};
+  vnmaki::SdlPlatform platform{{.title = "vnmaki test", .size = kSize}};
 
   REQUIRE(platform.sdl_window() != nullptr);
   const auto metrics = platform.window_metrics();
-  CHECK(metrics.points == Size{640, 360});
+  CHECK(metrics.points == kSize);
   CHECK(metrics.display_scale > 0);
 
   // The pixel size is the point size times the window's pixel density (1 on a standard
   // display, 2 on a Retina one), as SDL itself reports it.
   const float density = SDL_GetWindowPixelDensity(platform.sdl_window());
-  CHECK(static_cast<float>(metrics.pixels.width) == doctest::Approx(640 * density));
-  CHECK(static_cast<float>(metrics.pixels.height) == doctest::Approx(360 * density));
+  CHECK(static_cast<float>(metrics.pixels.width) ==
+        doctest::Approx(static_cast<float>(kSize.width) * density));
+  CHECK(static_cast<float>(metrics.pixels.height) ==
+        doctest::Approx(static_cast<float>(kSize.height) * density));
 }
 
 TEST_CASE("sdl platform: the window is resizable and high-density aware") {
-  vnmaki::SdlPlatform platform{{.title = "vnmaki test", .size = {640, 360}}};
+  vnmaki::SdlPlatform platform{{.title = "vnmaki test", .size = kSize}};
 
   const SDL_WindowFlags flags = SDL_GetWindowFlags(platform.sdl_window());
   CHECK((flags & SDL_WINDOW_RESIZABLE) != 0);
@@ -69,7 +73,7 @@ TEST_CASE("sdl platform: closing and reopening the window works (SDL shuts down 
 }
 
 TEST_CASE("sdl platform: SDL events come out of poll_event as engine events") {
-  vnmaki::SdlPlatform platform{{.title = "vnmaki test", .size = {640, 360}}};
+  vnmaki::SdlPlatform platform{{.title = "vnmaki test", .size = kSize}};
   drain(platform);  // Window creation events.
 
   SDL_Event key{};
@@ -88,7 +92,7 @@ TEST_CASE("sdl platform: SDL events come out of poll_event as engine events") {
 }
 
 TEST_CASE("sdl platform: resizing the window reports the new pixel size") {
-  vnmaki::SdlPlatform platform{{.title = "vnmaki test", .size = {640, 360}}};
+  vnmaki::SdlPlatform platform{{.title = "vnmaki test", .size = kSize}};
   drain(platform);
 
   REQUIRE(SDL_SetWindowSize(platform.sdl_window(), 800, 600));
@@ -100,7 +104,7 @@ TEST_CASE("sdl platform: resizing the window reports the new pixel size") {
 }
 
 TEST_CASE("sdl platform: text input can be switched on and off") {
-  vnmaki::SdlPlatform platform{{.title = "vnmaki test", .size = {640, 360}}};
+  vnmaki::SdlPlatform platform{{.title = "vnmaki test", .size = kSize}};
 
   platform.set_text_input(true);
   CHECK(SDL_TextInputActive(platform.sdl_window()));

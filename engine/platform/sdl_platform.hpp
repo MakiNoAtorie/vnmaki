@@ -29,7 +29,7 @@ class PlatformError : public std::runtime_error {
 struct WindowConfig {
   std::string title = "VNMaki";
   /// Initial size in points (the OS's window coordinates).
-  Size size{.width = 1280, .height = 720};
+  Size size = kDefaultWindowSize;
 };
 
 /// Opens a resizable, high-density-aware window and turns SDL events (keyboard, mouse, gamepad,

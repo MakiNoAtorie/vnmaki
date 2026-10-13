@@ -14,7 +14,7 @@ Duration SteadyClock::now() {
 void SteadyClock::sleep_for(Duration duration) { std::this_thread::sleep_for(duration); }
 
 MainLoop::MainLoop(Platform& platform, Clock& clock, MainLoopConfig config)
-    : platform_(platform), clock_(clock), config_(config), previous_time_(clock.now()) {
+    : platform_(&platform), clock_(&clock), config_(config), previous_time_(clock.now()) {
   if (config_.update_step <= Duration::zero()) {
     throw std::invalid_argument{"MainLoopConfig::update_step must be positive"};
   }
@@ -24,12 +24,12 @@ MainLoop::MainLoop(Platform& platform, Clock& clock, MainLoopConfig config)
 }
 
 bool MainLoop::run_frame(const MainLoopHooks& hooks) {
-  const Duration frame_start = clock_.now();
+  const Duration frame_start = clock_->now();
   // A clock that went backwards adds nothing rather than negative time.
   accumulated_ += std::max(frame_start - previous_time_, Duration::zero());
   previous_time_ = frame_start;
 
-  while (auto event = platform_.poll_event()) {
+  while (auto event = platform_->poll_event()) {
     if (hooks.on_event) {
       hooks.on_event(*event);
     }
@@ -59,9 +59,9 @@ bool MainLoop::run_frame(const MainLoopHooks& hooks) {
   }
 
   if (config_.min_frame_time > Duration::zero()) {
-    const Duration frame_time = clock_.now() - frame_start;
+    const Duration frame_time = clock_->now() - frame_start;
     if (frame_time < config_.min_frame_time) {
-      clock_.sleep_for(config_.min_frame_time - frame_time);
+      clock_->sleep_for(config_.min_frame_time - frame_time);
     }
   }
   return !quit_requested_;

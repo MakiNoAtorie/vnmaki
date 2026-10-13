@@ -3,6 +3,7 @@
 
 #include "engine/platform/sdl_events.hpp"
 
+#include <array>
 #include <optional>
 #include <utility>
 
@@ -61,7 +62,7 @@ TEST_CASE("sdl events: auto-repeat presses are marked as repeats") {
 }
 
 TEST_CASE("sdl events: letters, digits, function and navigation keys map to engine keys") {
-  const std::pair<SDL_Keycode, Key> cases[] = {
+  const auto cases = std::to_array<std::pair<SDL_Keycode, Key>>({
       {SDLK_A, Key::kA},
       {SDLK_M, Key::kM},
       {SDLK_0, Key::kDigit0},
@@ -90,7 +91,7 @@ TEST_CASE("sdl events: letters, digits, function and navigation keys map to engi
       {SDLK_RALT, Key::kRightAlt},
       {SDLK_LGUI, Key::kLeftGui},
       {SDLK_RGUI, Key::kRightGui},
-  };
+  });
   for (const auto& [sdl_key, key] : cases) {
     CAPTURE(sdl_key);
     CHECK(translate(key_event(SDL_EVENT_KEY_DOWN, sdl_key)) ==
@@ -112,11 +113,13 @@ TEST_CASE("sdl events: typed text becomes a TextInputEvent") {
 
 TEST_CASE("sdl events: pointer positions are converted from window points to pixels") {
   SDL_Event motion = of_type(SDL_EVENT_MOUSE_MOTION);
-  motion.motion.x = 100;
-  motion.motion.y = 50;
+  constexpr vnmaki::PointF kInPoints{.x = 100, .y = 50};
+  constexpr vnmaki::PointF kInRetinaPixels{.x = 200, .y = 100};
+  motion.motion.x = kInPoints.x;
+  motion.motion.y = kInPoints.y;
 
-  CHECK(translate(motion, kStandard) == some(vnmaki::PointerMoveEvent{.position = {100, 50}}));
-  CHECK(translate(motion, kRetina) == some(vnmaki::PointerMoveEvent{.position = {200, 100}}));
+  CHECK(translate(motion, kStandard) == some(vnmaki::PointerMoveEvent{.position = kInPoints}));
+  CHECK(translate(motion, kRetina) == some(vnmaki::PointerMoveEvent{.position = kInRetinaPixels}));
 }
 
 TEST_CASE("sdl events: mouse buttons become PointerButtonEvents with click counts") {
@@ -124,13 +127,15 @@ TEST_CASE("sdl events: mouse buttons become PointerButtonEvents with click count
   press.button.button = SDL_BUTTON_RIGHT;
   press.button.down = true;
   press.button.clicks = 2;
-  press.button.x = 10;
-  press.button.y = 20;
+  constexpr vnmaki::PointF kInPoints{.x = 10, .y = 20};
+  constexpr vnmaki::PointF kInRetinaPixels{.x = 20, .y = 40};
+  press.button.x = kInPoints.x;
+  press.button.y = kInPoints.y;
 
   CHECK(translate(press, kRetina) ==
         some(vnmaki::PointerButtonEvent{.button = vnmaki::MouseButton::kRight,
                                         .pressed = true,
-                                        .position = {20, 40},
+                                        .position = kInRetinaPixels,
                                         .clicks = 2}));
 
   SDL_Event release = of_type(SDL_EVENT_MOUSE_BUTTON_UP);
@@ -142,10 +147,11 @@ TEST_CASE("sdl events: mouse buttons become PointerButtonEvents with click count
 
 TEST_CASE("sdl events: the mouse wheel becomes a WheelEvent") {
   SDL_Event wheel = of_type(SDL_EVENT_MOUSE_WHEEL);
-  wheel.wheel.x = 0.5F;
+  constexpr float kHalfNotchRight = 0.5F;
+  wheel.wheel.x = kHalfNotchRight;
   wheel.wheel.y = -2;
 
-  CHECK(translate(wheel) == some(vnmaki::WheelEvent{.dx = 0.5F, .dy = -2}));
+  CHECK(translate(wheel) == some(vnmaki::WheelEvent{.dx = kHalfNotchRight, .dy = -2}));
 }
 
 TEST_CASE("sdl events: gamepad connection, buttons and axes become gamepad events") {
@@ -198,9 +204,9 @@ TEST_CASE("sdl events: gamepad sticks scale to [-1, 1] and triggers to [0, 1]") 
 
 TEST_CASE("sdl events: window resize, focus and close map to window events") {
   SDL_Event resized = of_type(SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED);
-  resized.window.data1 = 2560;
-  resized.window.data2 = 1440;
-  CHECK(translate(resized) == some(vnmaki::WindowResizedEvent{.pixels = {2560, 1440}}));
+  resized.window.data1 = kRetina.pixels.width;
+  resized.window.data2 = kRetina.pixels.height;
+  CHECK(translate(resized) == some(vnmaki::WindowResizedEvent{.pixels = kRetina.pixels}));
 
   CHECK(translate(of_type(SDL_EVENT_WINDOW_FOCUS_GAINED)) ==
         some(vnmaki::WindowFocusEvent{.focused = true}));
