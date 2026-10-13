@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "vnmaki",
+  "version": "0.1.0",
+  "description": "An open-source visual novel engine.",
+  "homepage": "https://github.com/MakiNoAtorie/vnmaki",
+  "license": "MIT",
+  "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
+  "dependencies": [
+    "doctest"
+  ]
+}
