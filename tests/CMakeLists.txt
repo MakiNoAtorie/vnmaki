@@ -26,6 +26,9 @@ vnmaki_add_fixture_generator(
 
 add_subdirectory(cli)
 
+# Platform: window, input, main loop, virtual resolution (ticket 04).
+add_subdirectory(platform)
+
 # Script runtime (ticket 06).
 target_sources(vnmaki_unit_tests PRIVATE unit/headless_runner_test.cpp
                                          unit/script_sandbox_test.cpp

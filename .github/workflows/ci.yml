@@ -33,6 +33,7 @@ jobs:
           arch: x64
       - name: Install Ninja
         run: choco install ninja --no-progress -y
+      - uses: ./.github/actions/install-sdl3-deps
       - uses: ./.github/actions/setup-vcpkg
         with:
           cache-key: windows-msvc-${{ matrix.preset }}
@@ -59,6 +60,7 @@ jobs:
         # Ubuntu 24.04 runners use vm.mmap_rnd_bits=32, which breaks ASan and
         # TSan from Clang 18.
         run: sudo sysctl vm.mmap_rnd_bits=28
+      - uses: ./.github/actions/install-sdl3-deps
       - uses: ./.github/actions/setup-vcpkg
         with:
           cache-key: linux-clang-${{ matrix.preset }}
@@ -83,6 +85,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ninja-build clang-18
+      - uses: ./.github/actions/install-sdl3-deps
       - uses: ./.github/actions/setup-vcpkg
         with:
           cache-key: linux-clang-no-threads
@@ -104,6 +107,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Ninja
         run: brew install ninja
+      - uses: ./.github/actions/install-sdl3-deps
       - uses: ./.github/actions/setup-vcpkg
         with:
           cache-key: macos-clang-${{ matrix.preset }}
@@ -119,6 +123,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ninja-build clang-18 clang-tidy-18 libclang-rt-18-dev
+      - uses: ./.github/actions/install-sdl3-deps
       - uses: ./.github/actions/setup-vcpkg
         with:
           cache-key: linux-clang-tidy
