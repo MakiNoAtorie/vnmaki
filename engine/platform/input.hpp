@@ -169,8 +169,8 @@ struct PointerButtonEvent {
   bool operator==(const PointerButtonEvent&) const = default;
 };
 
-/// Scroll amount in notches. Positive dy scrolls up (away from the user), positive dx right,
-/// whatever the OS "natural scrolling" setting.
+/// Scroll amount in notches (fractional on touchpads). Positive dy means scroll up, positive dx
+/// scroll right, with the user's OS "natural scrolling" preference already applied.
 struct WheelEvent {
   float dx = 0;
   float dy = 0;
