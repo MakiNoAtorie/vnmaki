@@ -15,6 +15,15 @@
         { "name": "wayland", "platform": "linux" },
         { "name": "x11", "platform": "linux" }
       ]
+    },
+    "lua",
+    "sol2",
+    "tomlplusplus"
+  ],
+  "overrides": [
+    {
+      "name": "lua",
+      "version": "5.4.8"
     }
   ]
 }
