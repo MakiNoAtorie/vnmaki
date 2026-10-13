@@ -73,6 +73,11 @@ The working rules for contributors and agents. The spec is `docs/SPEC.md`. Keep 
   - Every blocking call goes through `Impl::yield_at`. That function counts the step (steps are per label activation and start at 1) and calls `ScriptObserver::on_blocked`.
   - `jump`, `call` and `ret` are transfers, not steps.
   - The sandbox has no `io`, `debug`, `package` or `require`, and `vfs.*` is the only file access.
-  - `math.random` is a stub until the state ticket (search for `kRandomStubSeed`).
+  - `store` is the only game state. It holds booleans, numbers, strings and tables with scalar keys; anything else fails the story at the next label entry. `rand` is `math.random`, and its state is `store.__rng`.
+  - `ScriptRuntime::replaying()` is the one replay flag. Subsystems still update their state during replay and check the flag only for visible or audible effects.
+  - `replay(LabelSnapshot, inputs, step)` restores the label-entry snapshot and replays the top label only. It does not rebuild callers. Only menu choices are logged as inputs.
+  - Scene state reaches snapshots through `SceneState` (`capture()`/`restore(bytes)`) in `ScriptRuntimeOptions::scene_state`.
+  - `menu { "a", "b" }` returns a 1-based number; C++ answers it with `choose(index)`, 0-based. It has no UI yet.
+  - `label_source_hash(name)` covers the label function's own lines, not helpers it calls.
   - The headless runner prints a transcript (`label X`, `say Who: text`, ...), and `vnmaki run <dir> --headless` drives it.
   - `project.toml` holds `title` (required), `version`, `resolution` and `languages`.
