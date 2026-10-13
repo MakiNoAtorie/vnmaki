@@ -559,8 +559,8 @@ class ScriptRuntime::Impl {
     sol::thread thread;
     sol::coroutine coroutine;
     std::uint32_t step = 0;
-    LabelSnapshot snapshot;
-    std::vector<InputResult> inputs;
+    LabelSnapshot snapshot{};
+    std::vector<InputResult> inputs{};
   };
 
   enum class TransferKind : std::uint8_t { kJump, kCall, kReturn };
