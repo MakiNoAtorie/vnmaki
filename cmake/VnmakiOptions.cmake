@@ -29,6 +29,7 @@ else()
               -Wpedantic
               -Wconversion
               -Wshadow
+              -Wunreachable-code
               -Werror)
   # Hardened standard library in debug builds. Each macro is ignored by the
   # standard library it does not belong to.

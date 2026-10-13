@@ -24,12 +24,13 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 3. Create the integration branch. If the issue tracker closes work through PRs, or the user asks for one, open a draft PR after the first merge in step 5 (a branch with no commits ahead of main can't open one), marked as closing the spec and tickets.
 
-4. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch. Each implementer subagent:
+4. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch. Pick the model per ticket by difficulty: Opus for hard tickets, Sonnet for routine ones. Name the ticket's test seams in the implementer prompt; that is the seam confirmation the `tdd` skill asks for, because a background subagent cannot ask the user. Each implementer subagent:
    - confirms its worktree is based on the integration branch before starting, and resets onto it if not;
    - calls the Skill tool with `tdd` to build the ticket;
-   - merges the integration branch tip into its own branch before reporting done
+   - runs the local checks, keeping only errors from build and test output;
+   - merges the integration branch tip into its own branch, pushes, and reports done without polling CI. Its report lists new conventions in at most 10 bullets.
 
-5. Once an **implementer subagent** completes, merge its work to the integration branch with a **merger subagent**.
+5. Once an **implementer subagent** completes, check CI on its branch once, by run-level status only. Fetch logs only when a run failed: failed jobs only, the last 60 lines. When CI is green, merge its work to the integration branch. A fast-forward merge needs no subagent; use a **merger subagent** only for conflicts.
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
