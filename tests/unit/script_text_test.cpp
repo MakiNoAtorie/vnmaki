@@ -63,8 +63,7 @@ end)
   game.runtime.advance();
 
   CHECK(game.runtime.state() == RunState::kFailed);
-  CHECK(game.runtime.error() ==
-        "scripts/main.lua:4: bad text tag at byte 2: unknown tag 'colr'");
+  CHECK(game.runtime.error() == "scripts/main.lua:4: bad text tag at byte 2: unknown tag 'colr'");
 
   Game other{R"(
 label("open", function()

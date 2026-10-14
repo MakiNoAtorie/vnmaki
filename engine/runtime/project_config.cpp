@@ -94,11 +94,11 @@ FontFallbacks read_font_fallbacks(const toml::node& fonts,
     fail_at(*fallback,
             "'fonts.fallback' must be a table of font path lists, one for each language");
   }
-  for (const auto& [key, node] : *by_language) {
+  for (auto&& [key, node] : *by_language) {
     const std::string language{key.str()};
     if (std::find(languages.begin(), languages.end(), language) == languages.end()) {
-      fail_at(node, "'fonts.fallback' has language '" + language +
-                        "', which 'languages' does not list");
+      fail_at(node,
+              "'fonts.fallback' has language '" + language + "', which 'languages' does not list");
     }
     const std::string reason = "'fonts.fallback." + language + "' must be a list of font paths";
     const toml::array* paths = node.as_array();

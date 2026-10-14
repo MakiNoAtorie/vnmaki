@@ -119,7 +119,7 @@ struct OpenTag {
 StyledText parse_markup(std::string_view markup) {
   StyledText styled;
   TextStyle style;
-  std::vector<OpenTag> open;
+  std::vector<OpenTag> open_tags;
   std::size_t run_begin = 0;
   // Ends the run of `style` at the end of the text so far.
   const auto end_run = [&] {
@@ -148,23 +148,23 @@ StyledText parse_markup(std::string_view markup) {
       position = brace + 2;
       continue;
     }
-    const std::size_t close = markup.find_first_of("{}", brace + 1);
-    if (close == std::string_view::npos || markup[close] == '{') {
+    const std::size_t closing = markup.find_first_of("{}", brace + 1);
+    if (closing == std::string_view::npos || markup[closing] == '{') {
       throw MarkupError{brace, "a tag must end with '}' (write {{ for a plain brace)"};
     }
-    const std::string_view tag = markup.substr(brace + 1, close - brace - 1);
-    position = close + 1;
+    const std::string_view tag = markup.substr(brace + 1, closing - brace - 1);
+    position = closing + 1;
     end_run();
 
     if (tag.starts_with('/')) {
-      if (open.empty()) {
+      if (open_tags.empty()) {
         throw MarkupError{brace, quoted(tag) + " closes no tag"};
       }
-      if (open.back().name != tag.substr(1)) {
-        throw MarkupError{brace, quoted(tag) + " does not match " + quoted(open.back().name)};
+      if (open_tags.back().name != tag.substr(1)) {
+        throw MarkupError{brace, quoted(tag) + " does not match " + quoted(open_tags.back().name)};
       }
-      style = std::move(open.back().outer);
-      open.pop_back();
+      style = std::move(open_tags.back().outer);
+      open_tags.pop_back();
       continue;
     }
 
@@ -208,11 +208,11 @@ StyledText parse_markup(std::string_view markup) {
     } else {
       throw MarkupError{brace, "unknown tag '" + std::string{name} + "'"};
     }
-    open.push_back(OpenTag{.name = name, .offset = brace, .outer = std::move(outer)});
+    open_tags.push_back(OpenTag{.name = name, .offset = brace, .outer = std::move(outer)});
   }
   end_run();
-  if (!open.empty()) {
-    throw MarkupError{open.back().offset, quoted(open.back().name) + " is not closed"};
+  if (!open_tags.empty()) {
+    throw MarkupError{open_tags.back().offset, quoted(open_tags.back().name) + " is not closed"};
   }
   return styled;
 }

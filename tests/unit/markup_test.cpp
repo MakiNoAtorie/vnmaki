@@ -99,7 +99,8 @@ TEST_CASE("markup: speed sets the reveal speed and pause marks a wait") {
 }
 
 TEST_CASE("markup: ruby gives its base text the furigana") {
-  const StyledText styled = parse_markup("{ruby=かんじ}漢字{/ruby}だ{ruby=a}x{/ruby}{ruby=a}y{/ruby}");
+  const StyledText styled =
+      parse_markup("{ruby=かんじ}漢字{/ruby}だ{ruby=a}x{/ruby}{ruby=a}y{/ruby}");
   CHECK(styled.text == "漢字だxy");
   // Each ruby tag is its own run, also beside one with the same furigana.
   REQUIRE(styled.runs.size() == 4);
@@ -166,9 +167,9 @@ TEST_CASE("markup: a bad tag is an error at the byte where the tag starts") {
 TEST_CASE("markup: the fuzz target's properties hold for texts made of tag pieces") {
   // The same check fuzz/markup_fuzzer.cpp runs, on a fixed set of strings: every sequence of
   // up to four of these pieces.
-  const std::vector<std::string_view> pieces{"a",    "{",          "}",         "{{",      "{b}",
-                                             "{/b}", "{pause=1}",  "{ruby=x}",  "{/ruby}", "=",
-                                             "/",    "{color=#f00}", "{/color}", "\xE3\x81\x82"};
+  const std::vector<std::string_view> pieces{
+      "a",        "{",       "}", "{{", "{b}",          "{/b}",     "{pause=1}",
+      "{ruby=x}", "{/ruby}", "=", "/",  "{color=#f00}", "{/color}", "\xE3\x81\x82"};
   constexpr std::size_t kLength = 4;
   std::size_t total = 1;
   for (std::size_t i = 0; i < kLength; ++i) {

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <map>
 #include <memory>
@@ -322,7 +323,7 @@ class Shaper {
   }
 
   /// The font of the style's family that is nearest to its weight and slant.
-  const Font* styled_font(const TextStyle& style) const {
+  [[nodiscard]] const Font* styled_font(const TextStyle& style) const {
     const FontFamily* family = &fonts_->base;
     if (const auto named = fonts_->families.find(style.font); named != fonts_->families.end()) {
       family = &named->second;
@@ -459,12 +460,12 @@ class Paragraphs {
   }
 
  private:
-  const TextStyle& style(std::size_t run) const {
-    static const TextStyle kPlain;
+  [[nodiscard]] const TextStyle& style(std::size_t run) const {
+    static const TextStyle kPlain{};
     return run == kNoRun ? kPlain : styled_->runs[run].style;
   }
 
-  bool is_space(const Shaped& glyph) const { return text_[glyph.cluster] == ' '; }
+  [[nodiscard]] bool is_space(const Shaped& glyph) const { return text_[glyph.cluster] == ' '; }
 
   /// Shapes text[start, end), a paragraph without its line end, and appends its lines.
   void paragraph(std::size_t start, std::size_t end) {
@@ -565,8 +566,9 @@ class Paragraphs {
 
   /// The places of a line's glyphs from left to right, as indices into the line: the Unicode
   /// bidirectional algorithm's rules L1 (spaces at the line end) and L2 (reversal).
-  std::vector<std::size_t> visual_order(std::span<const Shaped> line, std::size_t content,
-                                        std::uint8_t base_level) const {
+  [[nodiscard]] static std::vector<std::size_t> visual_order(std::span<const Shaped> line,
+                                                             std::size_t content,
+                                                             std::uint8_t base_level) {
     std::vector<int> levels;
     levels.reserve(line.size());
     for (const Shaped& glyph : line) {
@@ -862,7 +864,8 @@ std::size_t revealed_glyphs(const TextLayout& layout, double characters_per_seco
   std::size_t shown = 0;
   for (const TextLine& line : layout.lines) {
     for (const LayoutGlyph& glyph : line.glyphs) {
-      const double glyph_speed = glyph.reveal_speed > 0 ? glyph.reveal_speed : characters_per_second;
+      const double glyph_speed =
+          glyph.reveal_speed > 0 ? glyph.reveal_speed : characters_per_second;
       const double pause = glyph.reveal_pause > 0 ? glyph.reveal_pause : 0;
       if (pause > 0 || glyph_speed != speed) {
         stretch_start += (static_cast<double>(in_stretch) / speed) + pause;
@@ -1087,15 +1090,16 @@ std::vector<Quad> text_quads(const TextLayout& layout, const GlyphAtlas& atlas, 
     // Whole pixels, so the bitmap's pixels land on the target's pixels.
     const float x = std::round(origin.x + (glyph.origin.x * scale));
     const float y = std::round(origin.y + (glyph.origin.y * scale));
-    quads.push_back(quad_from_rect(RectF{.x = x + static_cast<float>(placed->left),
-                                         .y = y - static_cast<float>(placed->top),
-                                         .width = static_cast<float>(placed->width),
-                                         .height = static_cast<float>(placed->height)},
-                                   RectF{.x = static_cast<float>(placed->x) / atlas_width,
-                                         .y = static_cast<float>(placed->y) / atlas_height,
-                                         .width = static_cast<float>(placed->width) / atlas_width,
-                                         .height = static_cast<float>(placed->height) / atlas_height},
-                                   glyph.color.value_or(tint)));
+    quads.push_back(
+        quad_from_rect(RectF{.x = x + static_cast<float>(placed->left),
+                             .y = y - static_cast<float>(placed->top),
+                             .width = static_cast<float>(placed->width),
+                             .height = static_cast<float>(placed->height)},
+                       RectF{.x = static_cast<float>(placed->x) / atlas_width,
+                             .y = static_cast<float>(placed->y) / atlas_height,
+                             .width = static_cast<float>(placed->width) / atlas_width,
+                             .height = static_cast<float>(placed->height) / atlas_height},
+                       glyph.color.value_or(tint)));
   };
   std::size_t remaining = visible_glyphs;
   for (const TextLine& line : layout.lines) {
