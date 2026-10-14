@@ -892,7 +892,7 @@ void ScriptRuntime::Impl::bind_engine() {
                                      std::int64_t high) {
     std::uint64_t rng = random_state(state);
     // Unbiased: reject the top partial interval of the 64-bit output.
-    const std::uint64_t span = static_cast<std::uint64_t>(high) - static_cast<std::uint64_t>(low);
+    const auto span = static_cast<std::uint64_t>(high) - static_cast<std::uint64_t>(low);
     std::uint64_t value = splitmix64(rng);
     if (span != std::numeric_limits<std::uint64_t>::max()) {
       const std::uint64_t count = span + 1;
@@ -910,7 +910,7 @@ void ScriptRuntime::Impl::bind_engine() {
     constexpr int kDroppedBits = std::numeric_limits<std::uint64_t>::digits - kMantissaBits;
     constexpr double kScale = 1.0 / static_cast<double>(std::uint64_t{1} << kMantissaBits);
     std::uint64_t rng = random_state(state);
-    const double value = static_cast<double>(splitmix64(rng) >> kDroppedBits) * kScale;
+    const auto value = static_cast<double>(splitmix64(rng) >> kDroppedBits) * kScale;
     return std::tuple{value, static_cast<std::int64_t>(rng)};
   };
 }

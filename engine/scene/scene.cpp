@@ -266,8 +266,8 @@ std::string Scene::show(const ShowRequest& request) {
   if (!path.has_value()) {
     return missing_image(request.image);
   }
-  const float width = static_cast<float>(virtual_size_.width);
-  const float height = static_cast<float>(virtual_size_.height);
+  const auto width = static_cast<float>(virtual_size_.width);
+  const auto height = static_cast<float>(virtual_size_.height);
   const std::optional<Slot> shown = locate(request.tag);
 
   Layer layer = Layer::kCharacters;

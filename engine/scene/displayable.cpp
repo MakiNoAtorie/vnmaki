@@ -13,8 +13,8 @@ constexpr float kDegreesPerHalfTurn = 180.0F;
 
 // Where the corners of a `size` box land (top-left, top-right, bottom-right, bottom-left).
 std::array<PointF, 4> place_corners(const DisplayProperties& properties, Size size) {
-  const float width = static_cast<float>(size.width) * properties.crop.width;
-  const float height = static_cast<float>(size.height) * properties.crop.height;
+  const auto width = static_cast<float>(size.width) * properties.crop.width;
+  const auto height = static_cast<float>(size.height) * properties.crop.height;
   const float radians = properties.rotation * std::numbers::pi_v<float> / kDegreesPerHalfTurn;
   const float cosine = std::cos(radians);
   const float sine = std::sin(radians);
