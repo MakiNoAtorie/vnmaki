@@ -59,3 +59,6 @@ vnmaki_add_fixture_generator(
 
 # Scene graph, layers and displayables (ticket 09).
 target_sources(vnmaki_unit_tests PRIVATE unit/scene_test.cpp)
+
+# Say box: characters, the dialogue presenter and the say box view (ticket 08).
+target_sources(vnmaki_unit_tests PRIVATE unit/character_test.cpp)

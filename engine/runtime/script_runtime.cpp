@@ -148,12 +148,38 @@ function ret()
   transfer("ret", "")
 end
 
+-- character { name =, color = "#rrggbb", voice_tag = }: a table `say` reads.
+function character(definition)
+  if type(definition) ~= "table" then
+    bad_argument("character", 1, "table", definition)
+  end
+  if type(definition.name) ~= "string" then
+    error(format("bad option 'name' to 'character' (string expected, got %s)",
+                 type(definition.name)), 2)
+  end
+  local color = definition.color
+  if color ~= nil and (type(color) ~= "string" or not color:match("^#%x%x%x%x%x%x$")) then
+    error("bad option 'color' to 'character' (\"#rrggbb\" expected)", 2)
+  end
+  if definition.voice_tag ~= nil and type(definition.voice_tag) ~= "string" then
+    error(format("bad option 'voice_tag' to 'character' (string expected, got %s)",
+                 type(definition.voice_tag)), 2)
+  end
+  return { name = definition.name, color = color, voice_tag = definition.voice_tag }
+end
+
 function say(who, text)
-  local speaker
+  local speaker, color, voice_tag
   if type(who) == "string" then
     speaker = who
   elseif type(who) == "table" and type(who.name) == "string" then
     speaker = who.name
+    if type(who.color) == "string" and who.color:match("^#%x%x%x%x%x%x$") then
+      color = tonumber(who.color:sub(2), 16)
+    end
+    if type(who.voice_tag) == "string" then
+      voice_tag = who.voice_tag
+    end
   elseif who ~= nil then
     bad_argument("say", 1, "string, character or nil", who)
   end
@@ -164,7 +190,7 @@ function say(who, text)
   if speaker == nil then
     engine.narrate(text)
   else
-    engine.say(speaker, text)
+    engine.say(speaker, text, color, voice_tag or "")
   end
 end
 
@@ -791,8 +817,16 @@ void ScriptRuntime::Impl::bind_engine() {
     return sol::make_object(state, problem);
   };
   engine_["say"] = sol::yielding(
-      [this](sol::this_state state, const std::string& speaker, const std::string& text) {
-        yield_at(state, SayRequest{.speaker = speaker, .text = text});
+      [this](sol::this_state state, const std::string& speaker, const std::string& text,
+             std::optional<std::int64_t> color, const std::string& voice_tag) {
+        std::optional<std::uint32_t> rgb;
+        if (color) {
+          rgb = static_cast<std::uint32_t>(*color);
+        }
+        yield_at(state, SayRequest{.speaker = speaker,
+                                   .text = text,
+                                   .color = rgb,
+                                   .voice_tag = voice_tag});
       });
   engine_["narrate"] = sol::yielding([this](sol::this_state state, const std::string& text) {
     yield_at(state, NarrateRequest{.text = text});
