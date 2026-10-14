@@ -34,6 +34,7 @@ target_sources(vnmaki_unit_tests PRIVATE unit/image_test.cpp)
 add_subdirectory(render)
 vnmaki_add_fixture_generator(
   render SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
 # Script runtime (ticket 06).
 target_sources(vnmaki_unit_tests PRIVATE unit/headless_runner_test.cpp
@@ -42,6 +43,12 @@ target_sources(vnmaki_unit_tests PRIVATE unit/headless_runner_test.cpp
 vnmaki_add_fixture_generator(
   runtime SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/runtime_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
+
+# Text: layout, glyph atlas, typewriter reveal (ticket 07).
+target_sources(vnmaki_unit_tests PRIVATE unit/text_test.cpp)
+vnmaki_add_fixture_generator(
+  text SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
 
 # State store, step counting and replay (ticket 11).
 target_sources(vnmaki_unit_tests PRIVATE unit/script_state_test.cpp

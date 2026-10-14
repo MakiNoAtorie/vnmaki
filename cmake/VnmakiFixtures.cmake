@@ -2,10 +2,12 @@
 # section 5). Generators live in tools/generators/ and use only the Python
 # standard library.
 #
-# vnmaki_add_fixture_generator(<name> SCRIPT <script.py> TEST_TARGETS <target>...)
+# vnmaki_add_fixture_generator(<name> SCRIPT <script.py> [DEPENDS <module.py>...]
+#                              TEST_TARGETS <target>...)
 #
 # Runs `python <script.py> <out>` at build time, where <out> is
-# ${VNMAKI_FIXTURES_DIR}/<name>, and reruns it when the script changes. Each
+# ${VNMAKI_FIXTURES_DIR}/<name>, and reruns it when the script (or a generator
+# it imports, listed after DEPENDS) changes. Each
 # test target depends on the generated fixtures and gets the compile
 # definition VNMAKI_FIXTURES_DIR="<path>", so a test finds its files at
 # VNMAKI_FIXTURES_DIR "/<name>".
@@ -14,14 +16,14 @@ find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
 set(VNMAKI_FIXTURES_DIR "${PROJECT_BINARY_DIR}/fixtures")
 
 function(vnmaki_add_fixture_generator name)
-  cmake_parse_arguments(PARSE_ARGV 1 arg "" "SCRIPT" "TEST_TARGETS")
+  cmake_parse_arguments(PARSE_ARGV 1 arg "" "SCRIPT" "DEPENDS;TEST_TARGETS")
   set(out "${VNMAKI_FIXTURES_DIR}/${name}")
   set(stamp "${VNMAKI_FIXTURES_DIR}/${name}.stamp")
   add_custom_command(
     OUTPUT "${stamp}"
     COMMAND Python3::Interpreter "${arg_SCRIPT}" "${out}"
     COMMAND "${CMAKE_COMMAND}" -E touch "${stamp}"
-    DEPENDS "${arg_SCRIPT}"
+    DEPENDS "${arg_SCRIPT}" ${arg_DEPENDS}
     COMMENT "Generating ${name} test fixtures"
     VERBATIM)
   add_custom_target(vnmaki_fixtures_${name} DEPENDS "${stamp}")

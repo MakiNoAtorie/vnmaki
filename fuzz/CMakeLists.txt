@@ -32,3 +32,14 @@ vnmaki_add_fuzzer(project_config project_config_fuzzer.cpp)
 
 # Scene snapshots (ticket 09).
 vnmaki_add_fuzzer(scene_state scene_state_fuzzer.cpp)
+
+# Font loading (ticket 07). As for images, random bytes rarely make a font, so a second smoke
+# run starts from the font fixtures.
+vnmaki_add_fuzzer(font font_fuzzer.cpp)
+if(TARGET vnmaki_fixtures_text)
+  add_dependencies(fuzz_font vnmaki_fixtures_text)
+  set(vnmaki_font_corpus "${CMAKE_CURRENT_BINARY_DIR}/corpus/font")
+  file(MAKE_DIRECTORY "${vnmaki_font_corpus}")
+  add_test(NAME fuzz.font.seeded COMMAND fuzz_font -runs=10000 -seed=1 "${vnmaki_font_corpus}"
+                                         "${PROJECT_BINARY_DIR}/fixtures/text/fonts")
+endif()

@@ -22,6 +22,9 @@
       "host": true,
       "platform": "!osx"
     },
+    { "name": "freetype", "default-features": false },
+    { "name": "harfbuzz", "default-features": false },
+    "libunibreak",
     "lua",
     "sol2",
     "stb",
