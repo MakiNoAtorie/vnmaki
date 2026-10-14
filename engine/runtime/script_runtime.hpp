@@ -3,18 +3,27 @@
 // The script runtime (docs/SPEC.md section 7): one Lua 5.4 VM, the script
 // loader, the label registry and the coroutine scheduler.
 //
-// Each label runs as a Lua coroutine. Blocking calls (`say`, `narrate`, later
-// `menu` and `pause`) suspend it and hand the engine a BlockingRequest; the
-// engine resumes it with advance(). `jump`, `call` and `ret` move between
+// Each label runs as a Lua coroutine. Blocking calls (`say`, `narrate`, `menu`,
+// later `pause`) suspend it and hand the engine a BlockingRequest; the engine
+// resumes it with advance() or choose(). `jump`, `call` and `ret` move between
 // labels. Lua itself is private to the runtime: no header includes sol2 or Lua.
+//
+// State and replay (docs/SPEC.md section 8): game state lives in the `store`
+// table. Entering a label takes a LabelSnapshot and starts an input log;
+// replay() restores a snapshot and runs the label again, silently, to a step.
 
+#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
+#include <vector>
 
 namespace vnmaki {
 
@@ -35,9 +44,85 @@ struct NarrateRequest {
   friend bool operator==(const NarrateRequest&, const NarrateRequest&) = default;
 };
 
+/// `menu { ... }`: the player picks one of the options. Answered with
+/// ScriptRuntime::choose().
+struct MenuRequest {
+  std::vector<std::string> options;
+
+  friend bool operator==(const MenuRequest&, const MenuRequest&) = default;
+};
+
 /// What a suspended label waits for. Every alternative is one kind of yield
-/// point; later tickets add menus and pauses.
-using BlockingRequest = std::variant<SayRequest, NarrateRequest>;
+/// point; later tickets add pauses.
+using BlockingRequest = std::variant<SayRequest, NarrateRequest, MenuRequest>;
+
+/// The answer to a MenuRequest: the chosen option, counted from 0.
+struct MenuChoice {
+  std::size_t index = 0;
+
+  friend bool operator==(const MenuChoice&, const MenuChoice&) = default;
+};
+
+/// One entry of the input log: an answer the player gave that a replay must
+/// give again. Advancing past a line carries no data, so it is not logged.
+using InputResult = std::variant<MenuChoice>;
+
+/// A table inside a StoreSnapshot, by its index in StoreSnapshot::tables.
+struct StoreTableRef {
+  std::uint32_t index = 0;
+
+  friend auto operator<=>(const StoreTableRef&, const StoreTableRef&) = default;
+};
+
+/// A value kept in `store`. Keys are never StoreTableRef.
+using StoreValue = std::variant<bool, std::int64_t, double, std::string, StoreTableRef>;
+
+struct StoreTable {
+  /// Key and value of every field, sorted by key (booleans, then integers,
+  /// floats and strings, each in ascending order).
+  std::vector<std::pair<StoreValue, StoreValue>> entries;
+
+  friend bool operator==(const StoreTable&, const StoreTable&) = default;
+};
+
+/// A copy of `store`. tables[0] is `store` itself; the tables it reaches
+/// follow in the order they are first met, so two stores with the same
+/// contents give equal snapshots. Tables reached twice (or in a cycle) are
+/// kept once. Metatables are not kept.
+struct StoreSnapshot {
+  std::vector<StoreTable> tables;
+
+  friend bool operator==(const StoreSnapshot&, const StoreSnapshot&) = default;
+};
+
+/// What the engine keeps when a label is entered, enough to run it again
+/// from its start.
+struct LabelSnapshot {
+  std::string label;
+  StoreSnapshot store;
+  std::vector<std::byte> scene;  ///< SceneState::capture() at entry.
+
+  friend bool operator==(const LabelSnapshot&, const LabelSnapshot&) = default;
+};
+
+/// The engine-side state that is snapshotted with `store` (shown displayables,
+/// playing audio, screens, camera). The runtime treats it as opaque bytes.
+/// Script calls that change it must also change it during a replay; only
+/// their visible and audible effects check ScriptRuntime::replaying().
+class SceneState {
+ public:
+  SceneState() = default;
+  SceneState(const SceneState&) = default;
+  SceneState(SceneState&&) = default;
+  SceneState& operator=(const SceneState&) = default;
+  SceneState& operator=(SceneState&&) = default;
+  virtual ~SceneState() = default;
+
+  /// Serializes the current state. Called at every label entry.
+  [[nodiscard]] virtual std::vector<std::byte> capture() const = 0;
+  /// Replaces the current state with one capture() returned.
+  virtual void restore(std::span<const std::byte> state) = 0;
+};
 
 /// Where a script is: the running label and how many yield points it has
 /// reached since it was entered (docs/SPEC.md section 8, "Position and
@@ -86,6 +171,9 @@ class ScriptObserver {
   virtual void on_warning(std::string_view /*message*/) {}
 };
 
+/// The seed of the script RNG unless ScriptRuntimeOptions::random_seed is set.
+inline constexpr std::uint64_t kDefaultRandomSeed = 0x5EED0F7E570B5EULL;
+
 struct ScriptRuntimeOptions {
   /// Dev mode adds checks that cost time, e.g. warning when a script writes a
   /// new global instead of using `store`.
@@ -99,22 +187,36 @@ struct ScriptRuntimeOptions {
   /// error, so an endless loop fails instead of hanging the engine. Counted
   /// in blocks of up to 1000 instructions, so the bound is approximate.
   std::uint32_t instruction_limit = 0;
-  /// Receives the scripts' requests; may be null.
+  /// Receives the scripts' requests; may be null. Nothing is reported while
+  /// ScriptRuntime::replaying().
   ScriptObserver* observer = nullptr;
+  /// Snapshotted and restored with `store`; may be null. Must outlive the
+  /// runtime.
+  SceneState* scene_state = nullptr;
+  /// The first state of the script RNG (`rand`, `math.random`). The same seed,
+  /// scripts and inputs always give the same story.
+  std::uint64_t random_seed = kDefaultRandomSeed;
 };
 
 /// One Lua VM running a game's scripts.
 ///
 /// Game scripts see a restricted standard library: base (without `dofile`,
 /// `loadfile`; `load` only accepts source text), `string` (without `dump`),
-/// `table`, `math` (with a stub `math.random`, no `math.randomseed`), `utf8`,
+/// `table`, `math` (`math.random` is the engine RNG, no `math.randomseed`), `utf8`,
 /// `coroutine` and an `os` with only `clock`, `date`, `difftime` and `time`.
 /// There is no `io`, `debug`, `package` or `require`. Files are read through
 /// the `vfs` table (`vfs.read`, `vfs.exists`, `vfs.list`), which uses the
 /// engine Vfs. `print` goes to ScriptObserver::on_print.
 ///
 /// The engine API: `label(name, fn)`, `jump(name)`, `call(name)`, `ret()`,
-/// `say(who, text)`, `narrate(text)` and the `store` table.
+/// `say(who, text)`, `narrate(text)`, `menu { "option", ... }` (returns the
+/// number of the chosen option, from 1), `rand` (the same function as
+/// `math.random`) and the `store` table.
+///
+/// `store` is owned by the engine: scripts change its fields but cannot
+/// replace it. It keeps booleans, numbers, strings and tables with such keys
+/// and values; anything else fails the story at the next label entry. The RNG
+/// state is the integer `store.__rng`.
 class ScriptRuntime {
  public:
   /// `vfs` must outlive the runtime.
@@ -141,8 +243,47 @@ class ScriptRuntime {
   void start(std::string_view name);
 
   /// Resumes the waiting label (the player advanced past the request) and
-  /// runs it to its next yield point. Does nothing unless kWaiting.
+  /// runs it to its next yield point. Does nothing unless kWaiting at a say
+  /// or narrate.
   void advance();
+
+  /// Answers the MenuRequest the label waits at with option `index` (from 0),
+  /// logs the choice and runs the label to its next yield point. Does nothing
+  /// unless kWaiting at a menu. Throws std::out_of_range for a bad index.
+  void choose(std::size_t index);
+
+  /// Restores `snapshot` (store and scene state) and runs its label again
+  /// from the start, answering menus from `inputs`, until that label waits at
+  /// yield point `step`. Until then replaying() is true and the observer
+  /// hears nothing; the request at `step` is reported as usual. Step 0 enters
+  /// the label as a jump would. Labels the replayed label calls run again too.
+  ///
+  /// The label replaces the running one; the labels that called it stay as
+  /// they are. On a runtime that has not started, it becomes the outermost
+  /// label (callers are not rebuilt). The runtime fails if the label is
+  /// unknown, the snapshot is malformed, or the label does not reach `step`
+  /// with these inputs (e.g. the script changed).
+  void replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
+              std::uint32_t step);
+
+  /// The engine-wide replay flag: true while replay() runs script code.
+  /// Subsystems check it to skip visible, audible and other outside effects.
+  [[nodiscard]] bool replaying() const;
+
+  /// The snapshot taken when the running label was entered; null when no
+  /// label is running. Invalidated by start(), advance(), choose(), replay().
+  [[nodiscard]] const LabelSnapshot* label_snapshot() const;
+  /// The answers given since the running label was entered, including those
+  /// given in labels it called. Invalidated like label_snapshot().
+  [[nodiscard]] std::span<const InputResult> input_log() const;
+  /// A copy of `store` as it is now. Throws ScriptError if `store` holds a
+  /// value that cannot be kept (function, userdata, thread, table key).
+  [[nodiscard]] StoreSnapshot store_snapshot() const;
+
+  /// A hash of the source text of label `name` (the lines of its function,
+  /// without carriage returns): the same on every platform and unchanged when
+  /// other code in the script moves or changes. Empty for an unknown label.
+  [[nodiscard]] std::optional<std::uint64_t> label_source_hash(std::string_view name) const;
 
   [[nodiscard]] RunState state() const;
   /// What the script waits for; null unless kWaiting.

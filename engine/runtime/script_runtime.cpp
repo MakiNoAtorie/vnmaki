@@ -1,15 +1,18 @@
 #include "engine/runtime/script_runtime.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <map>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -27,10 +30,15 @@ namespace {
 // with the engine primitives as arguments; they never become globals, so
 // scripts reach the engine only through the functions defined here.
 constexpr std::string_view kPrelude = R"lua(
-local engine, dev_mode = ...
+local engine, dev_mode, random_seed = ...
 
 local debug_getinfo, debug_sethook = debug.getinfo, debug.sethook
 local error, type, tostring, select, rawset = error, type, tostring, select, rawset
+local rawget = rawget
+
+-- All game state. The engine keeps this table, snapshots it at label entry
+-- and fills it again on replay; the RNG state is its __rng field.
+local store = { __rng = random_seed }
 local setmetatable, format, concat = setmetatable, string.format, table.concat
 
 -- "script:line" of the code `level` calls up from the function calling this
@@ -117,7 +125,9 @@ function label(name, fn)
   if type(fn) ~= "function" then
     bad_argument("label", 2, "function", fn)
   end
-  local problem = engine.define_label(name, fn, where(2))
+  local info = debug_getinfo(fn, "S")
+  local problem = engine.define_label(name, fn, where(2), info.source, info.linedefined,
+                                      info.lastlinedefined)
   if problem ~= nil then
     error(problem, 2)
   end
@@ -166,6 +176,27 @@ function narrate(text)
   engine.narrate(text)
 end
 
+-- The minimal menu: a list of option texts. Returns the number of the
+-- chosen option, from 1.
+function menu(options)
+  if type(options) ~= "table" then
+    bad_argument("menu", 1, "table", options)
+  end
+  local texts = {}
+  for i = 1, #options do
+    local option = options[i]
+    if type(option) ~= "string" then
+      error(format("bad option #%d to 'menu' (string expected, got %s)", i, type(option)), 2)
+    end
+    texts[i] = option
+  end
+  if #texts == 0 then
+    error("menu() needs at least one option", 2)
+  end
+  require_label("menu")
+  return engine.menu(texts)
+end
+
 function print(...)
   local parts = {}
   for i = 1, select("#", ...) do
@@ -203,10 +234,20 @@ function vfs.list(directory)
   return engine.vfs_list(directory)
 end
 
--- A stub until the state ticket replaces it with the deterministic RNG kept
--- in the store. It follows Lua's math.random argument rules.
-local tointeger, random_integer, random_float = math.tointeger, engine.random_integer,
-    engine.random_float
+-- The deterministic engine RNG. Its state lives in store.__rng, so snapshots
+-- and replay cover it. It follows Lua's math.random argument rules.
+local tointeger, engine_random_integer, engine_random_float = math.tointeger,
+    engine.random_integer, engine.random_float
+local function random_integer(low, high)
+  local value, state = engine_random_integer(rawget(store, "__rng"), low, high)
+  rawset(store, "__rng", state)
+  return value
+end
+local function random_float()
+  local value, state = engine_random_float(rawget(store, "__rng"))
+  rawset(store, "__rng", state)
+  return value
+end
 local function integer_argument(value, index)
   local n = tointeger(value)
   if n == nil then
@@ -240,6 +281,7 @@ function math.random(...)
   return random_integer(low, high)
 end
 math.randomseed = nil
+rand = math.random
 
 -- The restricted standard library.
 local os_clock, os_date, os_difftime, os_time = os.clock, os.date, os.difftime, os.time
@@ -249,19 +291,25 @@ dofile = nil
 loadfile = nil
 string.dump = nil
 
-store = {}
-
-if dev_mode then
+-- Globals the engine owns: scripts read them but cannot replace them.
+local reserved = { store = store }
+do
   local warned = {}
   setmetatable(_G, {
+    __index = reserved,
     __newindex = function(globals, key, value)
-      if not warned[key] then
+      if reserved[key] ~= nil then
+        error(format("'%s' is owned by the engine and cannot be replaced (change its fields)",
+                     tostring(key)), 2)
+      end
+      if dev_mode and not warned[key] then
         warned[key] = true
         engine.warn(format("%s: new global '%s' (keep game state in store, or use a local)",
                            where(2), tostring(key)))
       end
       rawset(globals, key, value)
     end,
+    __metatable = false,
   })
 end
 
@@ -293,7 +341,7 @@ function coroutine.wrap(fn)
   end
 end
 
-local limits = {}
+local limits = { store = store }
 function limits.configure(period)
   hook_period = period
   watch(coroutine.running())
@@ -313,9 +361,6 @@ constexpr std::size_t kMaxCallDepth = 1000;
 // The instruction-limit hook runs every kHookPeriod instructions.
 constexpr std::uint32_t kHookPeriod = 1000;
 
-// Seed of the math.random stub (ticket 11 replaces the stub).
-constexpr std::uint64_t kRandomStubSeed = 0x5EED0F7E570B5EULL;
-
 // splitmix64 (Steele, Lea, Flood 2014): a small generator with a fixed,
 // platform-independent output sequence.
 std::uint64_t splitmix64(std::uint64_t& state) {
@@ -330,6 +375,76 @@ std::uint64_t splitmix64(std::uint64_t& state) {
   z = (z ^ (z >> kShift1)) * kMul1;
   z = (z ^ (z >> kShift2)) * kMul2;
   return z ^ (z >> kShift3);
+}
+
+// FNV-1a over the lines first_line..last_line (from 1) of `text`, without
+// carriage returns, so the hash does not depend on the platform's line ends
+// or on where the lines are in the file.
+// ponytail: covers only the label function's own text, not helpers it calls.
+// Hash the whole script if edits to helpers must invalidate saves too.
+std::uint64_t hash_lines(std::string_view text, std::int64_t first_line, std::int64_t last_line) {
+  constexpr std::uint64_t kOffsetBasis = 0xCBF29CE484222325ULL;
+  constexpr std::uint64_t kPrime = 0x100000001B3ULL;
+  std::uint64_t hash = kOffsetBasis;
+  std::int64_t line = 1;
+  for (const char c : text) {
+    if (line >= first_line && line <= last_line && c != '\r') {
+      hash = (hash ^ static_cast<std::uint64_t>(static_cast<unsigned char>(c))) * kPrime;
+    }
+    if (c == '\n') {
+      ++line;
+    }
+  }
+  return hash;
+}
+
+// Reads the boolean, number or string at `index` into `value`; false for any
+// other type.
+bool read_scalar(lua_State* lua, int index, StoreValue& value) {
+  switch (lua_type(lua, index)) {
+    case LUA_TBOOLEAN:
+      value = lua_toboolean(lua, index) != 0;
+      return true;
+    case LUA_TNUMBER:
+      if (lua_isinteger(lua, index) != 0) {
+        value = static_cast<std::int64_t>(lua_tointegerx(lua, index, nullptr));
+      } else {
+        value = static_cast<double>(lua_tonumberx(lua, index, nullptr));
+      }
+      return true;
+    case LUA_TSTRING: {
+      std::size_t size = 0;
+      const char* text = lua_tolstring(lua, index, &size);
+      value = std::string{text, size};
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
+// Whether restore can build `snapshot` without a Lua error: it has the store
+// table, every table reference exists and every key is a valid table key.
+bool is_valid(const StoreSnapshot& snapshot) {
+  if (snapshot.tables.empty()) {
+    return false;
+  }
+  for (const StoreTable& table : snapshot.tables) {
+    for (const auto& [key, value] : table.entries) {
+      if (std::holds_alternative<StoreTableRef>(key)) {
+        return false;
+      }
+      if (const auto* number = std::get_if<double>(&key);
+          number != nullptr && std::isnan(*number)) {
+        return false;
+      }
+      if (const auto* ref = std::get_if<StoreTableRef>(&value);
+          ref != nullptr && ref->index >= snapshot.tables.size()) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 ScriptObserver& null_observer() {
@@ -370,6 +485,25 @@ class ScriptRuntime::Impl {
   [[nodiscard]] bool has_label(std::string_view name) const { return labels_.contains(name); }
   void start(std::string_view name);
   void advance();
+  void choose(std::size_t index);
+  void replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
+              std::uint32_t step);
+
+  [[nodiscard]] bool replaying() const { return replaying_; }
+  [[nodiscard]] const LabelSnapshot* label_snapshot() const {
+    return frames_.empty() ? nullptr : &frames_.back().snapshot;
+  }
+  [[nodiscard]] std::span<const InputResult> input_log() const {
+    if (frames_.empty()) {
+      return {};
+    }
+    return frames_.back().inputs;
+  }
+  [[nodiscard]] StoreSnapshot capture_store() const;
+  [[nodiscard]] std::optional<std::uint64_t> label_source_hash(std::string_view name) const {
+    const auto found = labels_.find(name);
+    return found == labels_.end() ? std::nullopt : std::optional{found->second.source_hash};
+  }
 
   [[nodiscard]] RunState state() const { return state_; }
   [[nodiscard]] const BlockingRequest* request() const {
@@ -415,14 +549,18 @@ class ScriptRuntime::Impl {
   struct Label {
     sol::main_function function;
     std::string location;  // "script:line" of its label() call
+    std::uint64_t source_hash = 0;
   };
 
-  // One running label: its coroutine and how many yield points it reached.
+  // One running label: its coroutine, how many yield points it reached, the
+  // snapshot taken when it was entered and the answers given since.
   struct Frame {
     std::string label;
     sol::thread thread;
     sol::coroutine coroutine;
     std::uint32_t step = 0;
+    LabelSnapshot snapshot{};
+    std::vector<InputResult> inputs{};
   };
 
   enum class TransferKind : std::uint8_t { kJump, kCall, kReturn };
@@ -439,11 +577,22 @@ class ScriptRuntime::Impl {
   void yield_at(sol::this_state state, BlockingRequest request);
   void transfer(sol::this_state state, std::string_view kind, std::string label);
   [[nodiscard]] Frame make_frame(const std::string& name);
-  void enter(const std::string& name);
-  void run();
+  [[nodiscard]] bool enter(const std::string& name);
+  void run(std::optional<std::int64_t> resume_value = std::nullopt);
+  [[nodiscard]] bool replay_answer(std::optional<std::int64_t>& resume_value);
+  void record(const InputResult& input);
+  void restore_store(const StoreSnapshot& snapshot);
   void fail(std::string message);
   void reset_instruction_budget();
-  [[nodiscard]] std::uint64_t random_u64();
+  [[nodiscard]] std::uint64_t random_state(const sol::stack_object& state) const;
+
+  // What replay() still has to do while replaying_ is set.
+  struct Replay {
+    std::vector<InputResult> inputs;
+    std::size_t next_input = 0;
+    std::size_t depth = 0;  // frames_.size() with the replayed label on top
+    std::uint32_t step = 0;
+  };
 
   const Vfs* vfs_;
   ScriptRuntimeOptions options_;
@@ -453,11 +602,15 @@ class ScriptRuntime::Impl {
   // destroyed after the references and before the allocator state.
   sol::state lua_;
   sol::table engine_;
+  sol::table store_;
   sol::protected_function limits_configure_;
   sol::protected_function limits_watch_;
   sol::protected_function limits_reset_;
 
   std::map<std::string, Label, std::less<>> labels_;
+  // Script path -> source text, for the label source hashes; kept only while
+  // scripts load.
+  std::map<std::string, std::string, std::less<>> sources_;
   std::vector<Frame> frames_;  // back() is the running label; the rest called it
   std::optional<std::variant<BlockingRequest, Transfer>> pending_;
   bool started_ = false;
@@ -465,7 +618,8 @@ class ScriptRuntime::Impl {
   std::uint32_t hook_period_ = 0;
   BlockingRequest request_;
   std::string error_;
-  std::uint64_t random_state_ = kRandomStubSeed;
+  bool replaying_ = false;
+  Replay replay_;
 };
 
 void* ScriptRuntime::Impl::allocate(void* user_data, void* block, std::size_t old_size,
@@ -509,11 +663,13 @@ ScriptRuntime::Impl::Impl(const Vfs& vfs, const ScriptRuntimeOptions& options)
     throw std::logic_error(std::string{"vnmaki prelude: "} + error.what());
   }
   sol::protected_function prelude_function = prelude;
-  sol::protected_function_result limits = prelude_function(engine_, options_.dev_mode);
+  sol::protected_function_result limits =
+      prelude_function(engine_, options_.dev_mode, static_cast<std::int64_t>(options_.random_seed));
   if (!limits.valid()) {
     throw std::logic_error("vnmaki prelude: " + error_text(limits));
   }
   const sol::table limits_table = limits;
+  store_ = limits_table["store"];
   limits_configure_ = limits_table["configure"];
   limits_watch_ = limits_table["watch"];
   limits_reset_ = limits_table["reset"];
@@ -531,8 +687,9 @@ void ScriptRuntime::Impl::bind_engine() {
   // return them as references, so the push back to Lua cannot run out of
   // memory either.
   engine_["define_label"] = [this](sol::this_state state, const std::string& name,
-                                   const sol::stack_object& function,
-                                   const std::string& location) -> sol::object {
+                                   const sol::stack_object& function, const std::string& location,
+                                   const std::string& source, std::int64_t first_line,
+                                   std::int64_t last_line) -> sol::object {
     const MemoryLimitScope unlimited{allocator_, false};
     std::string problem;
     if (started_) {
@@ -540,8 +697,18 @@ void ScriptRuntime::Impl::bind_engine() {
     } else if (const auto existing = labels_.find(name); existing != labels_.end()) {
       problem = "label '" + name + "' is already defined at " + existing->second.location;
     } else {
-      labels_.emplace(name,
-                      Label{.function = function.as<sol::main_function>(), .location = location});
+      // A function from a loaded script hashes its own lines; any other
+      // (from load(), or a C function) hashes the whole chunk it came from.
+      const auto script = source.starts_with('@')
+                              ? sources_.find(std::string_view{source}.substr(1))
+                              : sources_.end();
+      const std::uint64_t source_hash =
+          script != sources_.end()
+              ? hash_lines(script->second, first_line, last_line)
+              : hash_lines(source, 1, std::numeric_limits<std::int64_t>::max());
+      labels_.emplace(name, Label{.function = function.as<sol::main_function>(),
+                                  .location = location,
+                                  .source_hash = source_hash});
       return sol::lua_nil;
     }
     return sol::make_object(state, problem);
@@ -553,11 +720,30 @@ void ScriptRuntime::Impl::bind_engine() {
   engine_["narrate"] = sol::yielding([this](sol::this_state state, const std::string& text) {
     yield_at(state, NarrateRequest{.text = text});
   });
+  // The prelude checked that `options` is a list of strings. A stack_table
+  // makes no registry reference, so nothing here can raise a Lua error.
+  engine_["menu"] = sol::yielding([this](sol::this_state state, const sol::stack_table& options) {
+    MenuRequest request;
+    const std::size_t count = options.size();
+    request.options.reserve(count);
+    for (std::size_t i = 1; i <= count; ++i) {
+      request.options.push_back(options.get<std::string>(i));
+    }
+    yield_at(state, std::move(request));
+  });
   engine_["transfer"] =
       sol::yielding([this](sol::this_state state, const std::string& kind,
                            const std::string& label) { transfer(state, kind, label); });
-  engine_["print"] = [this](const std::string& text) { observer_->on_print(text); };
-  engine_["warn"] = [this](const std::string& message) { observer_->on_warning(message); };
+  engine_["print"] = [this](const std::string& text) {
+    if (!replaying_) {
+      observer_->on_print(text);
+    }
+  };
+  engine_["warn"] = [this](const std::string& message) {
+    if (!replaying_) {
+      observer_->on_warning(message);
+    }
+  };
   engine_["vfs_read"] = [this](sol::this_state state, const std::string& path) -> sol::object {
     const MemoryLimitScope unlimited{allocator_, false};
     const std::optional<std::vector<std::byte>> bytes = vfs_->read(path);
@@ -578,36 +764,158 @@ void ScriptRuntime::Impl::bind_engine() {
     }
     return entries;
   };
-  engine_["random_integer"] = [this](std::int64_t low, std::int64_t high) {
+  // The RNG primitives take the state (store.__rng) and return the value and
+  // the next state, which the prelude writes back to the store.
+  engine_["random_integer"] = [this](const sol::stack_object& state, std::int64_t low,
+                                     std::int64_t high) {
+    std::uint64_t rng = random_state(state);
     // Unbiased: reject the top partial interval of the 64-bit output.
     const std::uint64_t span = static_cast<std::uint64_t>(high) - static_cast<std::uint64_t>(low);
-    std::uint64_t value = random_u64();
+    std::uint64_t value = splitmix64(rng);
     if (span != std::numeric_limits<std::uint64_t>::max()) {
       const std::uint64_t count = span + 1;
       const std::uint64_t threshold = (0 - count) % count;
       while (value < threshold) {
-        value = random_u64();
+        value = splitmix64(rng);
       }
       value %= count;
     }
-    return static_cast<std::int64_t>(static_cast<std::uint64_t>(low) + value);
+    return std::tuple{static_cast<std::int64_t>(static_cast<std::uint64_t>(low) + value),
+                      static_cast<std::int64_t>(rng)};
   };
-  engine_["random_float"] = [this] {
+  engine_["random_float"] = [this](const sol::stack_object& state) {
     constexpr int kMantissaBits = 53;
     constexpr int kDroppedBits = std::numeric_limits<std::uint64_t>::digits - kMantissaBits;
     constexpr double kScale = 1.0 / static_cast<double>(std::uint64_t{1} << kMantissaBits);
-    return static_cast<double>(random_u64() >> kDroppedBits) * kScale;
+    std::uint64_t rng = random_state(state);
+    const double value = static_cast<double>(splitmix64(rng) >> kDroppedBits) * kScale;
+    return std::tuple{value, static_cast<std::int64_t>(rng)};
   };
+}
+
+// The RNG state a script holds in store.__rng. A script that removed or
+// broke the field starts again from the seed.
+std::uint64_t ScriptRuntime::Impl::random_state(const sol::stack_object& state) const {
+  if (lua_isinteger(state.lua_state(), state.stack_index()) != 0) {
+    return static_cast<std::uint64_t>(
+        lua_tointegerx(state.lua_state(), state.stack_index(), nullptr));
+  }
+  return options_.random_seed;
+}
+
+// Copies the store breadth-first. Sorting each table's fields by key before
+// numbering the tables they hold makes the result independent of Lua's
+// iteration order.
+StoreSnapshot ScriptRuntime::Impl::capture_store() const {
+  struct Field {
+    StoreValue key;
+    StoreValue value;
+    std::optional<sol::table> table;  // set when the value is a table
+  };
+  lua_State* lua = lua_.lua_state();
+  const int top = lua_gettop(lua);
+  StoreSnapshot snapshot;
+  std::vector<sol::table> tables{store_};
+  std::map<const void*, std::uint32_t> indices{{store_.pointer(), 0}};
+  for (std::size_t current = 0; current < tables.size(); ++current) {
+    std::vector<Field> fields;
+    tables[current].push(lua);
+    lua_pushnil(lua);
+    while (lua_next(lua, -2) != 0) {
+      Field field;
+      const bool key_ok = read_scalar(lua, -2, field.key);
+      const int value_type = lua_type(lua, -1);
+      if (key_ok && value_type == LUA_TTABLE) {
+        field.table = sol::table{lua, -1};
+      } else if (!key_ok || !read_scalar(lua, -1, field.value)) {
+        std::string problem = "store holds a ";
+        problem += lua_typename(lua, key_ok ? value_type : lua_type(lua, -2));
+        problem += key_ok ? " value" : " key";
+        if (const auto* name = std::get_if<std::string>(&field.key); key_ok && name != nullptr) {
+          problem += " (field '" + *name + "')";
+        }
+        lua_settop(lua, top);
+        throw ScriptError(problem + "; it keeps only booleans, numbers, strings and tables");
+      }
+      fields.push_back(std::move(field));
+      lua_pop(lua, 1);
+    }
+    lua_pop(lua, 1);
+    std::sort(fields.begin(), fields.end(),
+              [](const Field& a, const Field& b) { return a.key < b.key; });
+    StoreTable table;
+    table.entries.reserve(fields.size());
+    for (Field& field : fields) {
+      if (field.table) {
+        const auto [found, is_new] =
+            indices.try_emplace(field.table->pointer(), static_cast<std::uint32_t>(tables.size()));
+        if (is_new) {
+          tables.push_back(std::move(*field.table));
+        }
+        field.value = StoreTableRef{.index = found->second};
+      }
+      table.entries.emplace_back(std::move(field.key), std::move(field.value));
+    }
+    snapshot.tables.push_back(std::move(table));
+  }
+  return snapshot;
+}
+
+// Makes the store equal to `snapshot` (which is_valid). The store table
+// itself is kept, because scripts hold references to it; the tables inside
+// it are new.
+void ScriptRuntime::Impl::restore_store(const StoreSnapshot& snapshot) {
+  lua_State* lua = lua_.lua_state();
+  std::vector<sol::table> tables;
+  tables.reserve(snapshot.tables.size());
+  tables.push_back(store_);
+  for (std::size_t i = 1; i < snapshot.tables.size(); ++i) {
+    tables.push_back(lua_.create_table());
+  }
+
+  store_.push(lua);
+  lua_pushnil(lua);
+  while (lua_next(lua, -2) != 0) {
+    // Setting a field to nil during a traversal is allowed.
+    lua_pop(lua, 1);
+    lua_pushvalue(lua, -1);
+    lua_pushnil(lua);
+    lua_rawset(lua, -4);
+  }
+  lua_pop(lua, 1);
+
+  const auto push = [lua, &tables](const StoreValue& value) {
+    if (const auto* boolean = std::get_if<bool>(&value)) {
+      lua_pushboolean(lua, *boolean ? 1 : 0);
+    } else if (const auto* integer = std::get_if<std::int64_t>(&value)) {
+      lua_pushinteger(lua, *integer);
+    } else if (const auto* number = std::get_if<double>(&value)) {
+      lua_pushnumber(lua, *number);
+    } else if (const auto* text = std::get_if<std::string>(&value)) {
+      lua_pushlstring(lua, text->data(), text->size());
+    } else {
+      tables[std::get<StoreTableRef>(value).index].push(lua);
+    }
+  };
+  for (std::size_t i = 0; i < snapshot.tables.size(); ++i) {
+    tables[i].push(lua);
+    for (const auto& [key, value] : snapshot.tables[i].entries) {
+      push(key);
+      push(value);
+      lua_rawset(lua, -3);
+    }
+    lua_pop(lua, 1);
+  }
 }
 
 bool ScriptRuntime::Impl::in_label(sol::this_state state) const {
   return !frames_.empty() && state.lua_state() == frames_.back().thread.thread_state();
 }
 
-// The one engine-side path every blocking call (say, narrate; later menu and
+// The one engine-side path every blocking call (say, narrate, menu; later
 // pause) goes through. run() sees the pending request when the coroutine
-// yields, counts the step and hands the request to the engine. Step counting
-// and replay (ticket 11) hook in here and in run().
+// yields, counts the step and hands the request to the engine, or answers it
+// from the input log during a replay.
 void ScriptRuntime::Impl::yield_at(sol::this_state state, BlockingRequest request) {
   if (!in_label(state)) {
     throw std::runtime_error("blocking calls can only be made from a running label");
@@ -637,7 +945,8 @@ void ScriptRuntime::Impl::load_script(std::string_view path) {
   if (!bytes) {
     throw ScriptError("cannot read script '" + std::string{path} + "'");
   }
-  const std::string source = to_string(*bytes);
+  const std::string& source =
+      sources_.insert_or_assign(std::string{path}, to_string(*bytes)).first->second;
   reset_instruction_budget();
   const MemoryLimitScope limited{allocator_, true};
   sol::load_result chunk = lua_.load(source, "@" + std::string{path}, sol::load_mode::text);
@@ -686,30 +995,132 @@ void ScriptRuntime::Impl::start(std::string_view name) {
     throw std::logic_error("ScriptRuntime::start: the story already started");
   }
   started_ = true;
+  sources_.clear();
   const std::string label{name};
   if (!has_label(label)) {
     fail("unknown label '" + label + "'");
     return;
   }
-  enter(label);
-  run();
+  if (enter(label)) {
+    run();
+  }
 }
 
-void ScriptRuntime::Impl::enter(const std::string& name) {
+// Snapshots the state and puts label `name` on top of the stack. Returns
+// false, with the runtime failed, if the store cannot be snapshotted.
+bool ScriptRuntime::Impl::enter(const std::string& name) {
+  LabelSnapshot snapshot;
+  snapshot.label = name;
+  try {
+    snapshot.store = capture_store();
+  } catch (const ScriptError& error) {
+    fail("entering label '" + name + "': " + error.what());
+    return false;
+  }
+  if (options_.scene_state != nullptr) {
+    snapshot.scene = options_.scene_state->capture();
+  }
   frames_.push_back(make_frame(name));
-  observer_->on_label_entered(name);
+  frames_.back().snapshot = std::move(snapshot);
+  if (!replaying_) {
+    observer_->on_label_entered(name);
+  }
+  return true;
 }
 
 void ScriptRuntime::Impl::advance() {
-  if (state_ != RunState::kWaiting) {
+  if (state_ != RunState::kWaiting || std::holds_alternative<MenuRequest>(request_)) {
     return;
   }
   run();
 }
 
+void ScriptRuntime::Impl::choose(std::size_t index) {
+  const auto* menu = std::get_if<MenuRequest>(&request_);
+  if (state_ != RunState::kWaiting || menu == nullptr) {
+    return;
+  }
+  if (index >= menu->options.size()) {
+    throw std::out_of_range("ScriptRuntime::choose: the menu has no option " +
+                            std::to_string(index));
+  }
+  record(MenuChoice{.index = index});
+  run(static_cast<std::int64_t>(index) + 1);
+}
+
+// Every label on the stack logs the answer: a caller's log covers the labels
+// it called, so the caller can be replayed past the call.
+void ScriptRuntime::Impl::record(const InputResult& input) {
+  for (Frame& frame : frames_) {
+    frame.inputs.push_back(input);
+  }
+}
+
+void ScriptRuntime::Impl::replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
+                                 std::uint32_t step) {
+  // Copies first: the arguments may belong to the frame replaced below.
+  LabelSnapshot entry = snapshot;
+  Replay replay{.inputs = {inputs.begin(), inputs.end()}, .step = step};
+  started_ = true;
+  sources_.clear();
+  error_.clear();
+  if (!has_label(entry.label)) {
+    fail("replay: unknown label '" + entry.label + "'");
+    return;
+  }
+  if (!is_valid(entry.store)) {
+    fail("replay: the store snapshot of label '" + entry.label + "' is malformed");
+    return;
+  }
+  if (!frames_.empty()) {
+    frames_.pop_back();
+  }
+  replaying_ = step > 0;
+  restore_store(entry.store);
+  if (options_.scene_state != nullptr) {
+    options_.scene_state->restore(entry.scene);
+  }
+  frames_.push_back(make_frame(entry.label));
+  frames_.back().snapshot = std::move(entry);
+  replay.depth = frames_.size();
+  replay_ = std::move(replay);
+  if (!replaying_) {
+    observer_->on_label_entered(frames_.back().label);
+  }
+  run();
+}
+
+// Answers the request a replay just reached from the input log:
+// `resume_value` becomes what the blocking call returns. Returns false, with
+// the runtime failed, if the log has no answer for it.
+bool ScriptRuntime::Impl::replay_answer(std::optional<std::int64_t>& resume_value) {
+  const auto* menu = std::get_if<MenuRequest>(&request_);
+  if (menu == nullptr) {
+    return true;  // say and narrate take no answer
+  }
+  const std::string where =
+      "replay: label '" + frames_.back().label + "', step " + std::to_string(frames_.back().step);
+  if (replay_.next_input >= replay_.inputs.size()) {
+    fail(where + ": the input log has no choice for this menu");
+    return false;
+  }
+  const InputResult input = replay_.inputs[replay_.next_input++];
+  const std::size_t index = std::get<MenuChoice>(input).index;
+  if (index >= menu->options.size()) {
+    fail(where + ": the logged choice is not an option of this menu");
+    return false;
+  }
+  record(input);
+  resume_value = static_cast<std::int64_t>(index) + 1;
+  return true;
+}
+
 // Resumes the running label until it reaches a yield point, the story ends
 // or a script fails, following jumps, calls and returns on the way.
-void ScriptRuntime::Impl::run() {
+//
+// `resume_value` is what the blocking call the label waits in returns (the
+// chosen option of a menu).
+void ScriptRuntime::Impl::run(std::optional<std::int64_t> resume_value) {
   // One budget for the whole run, so labels that jump or call each other
   // forever without yielding hit the limit too.
   reset_instruction_budget();
@@ -719,7 +1130,10 @@ void ScriptRuntime::Impl::run() {
     bool yielded = false;
     {
       const MemoryLimitScope limited{allocator_, true};
-      const sol::protected_function_result result = frames_.back().coroutine();
+      sol::coroutine& coroutine = frames_.back().coroutine;
+      const sol::protected_function_result result =
+          resume_value ? coroutine(*resume_value) : coroutine();
+      resume_value.reset();
       if (!result.valid()) {
         fail(error_text(result));
         return;
@@ -735,6 +1149,16 @@ void ScriptRuntime::Impl::run() {
       Frame& frame = frames_.back();
       ++frame.step;
       request_ = std::get<BlockingRequest>(std::move(*pending_));
+      if (replaying_ && (frames_.size() != replay_.depth || frame.step != replay_.step)) {
+        // Not the target yet: answer from the log and go on, with a fresh
+        // budget as in live play.
+        if (!replay_answer(resume_value)) {
+          return;
+        }
+        reset_instruction_budget();
+        continue;
+      }
+      replaying_ = false;
       state_ = RunState::kWaiting;
       observer_->on_blocked(request_, ScriptPosition{.label = frame.label, .step = frame.step});
       return;
@@ -746,29 +1170,41 @@ void ScriptRuntime::Impl::run() {
       kind = transfer.kind;
       target = std::move(transfer.label);
     }
+    if (replaying_ && kind != TransferKind::kCall && frames_.size() == replay_.depth) {
+      fail("replay: label '" + frames_.back().label + "' ended before step " +
+           std::to_string(replay_.step));
+      return;
+    }
     if (kind == TransferKind::kJump) {
       frames_.pop_back();
-      enter(target);
+      if (!enter(target)) {
+        return;
+      }
     } else if (kind == TransferKind::kCall) {
       if (frames_.size() >= kMaxCallDepth) {
         fail("label '" + frames_.back().label + "': more than " + std::to_string(kMaxCallDepth) +
              " nested calls (a call without a return?)");
         return;
       }
-      enter(target);
+      if (!enter(target)) {
+        return;
+      }
     } else {
       frames_.pop_back();
       if (frames_.empty()) {
         state_ = RunState::kFinished;
         return;
       }
-      observer_->on_label_resumed(frames_.back().label);
+      if (!replaying_) {
+        observer_->on_label_resumed(frames_.back().label);
+      }
     }
   }
 }
 
 void ScriptRuntime::Impl::fail(std::string message) {
   state_ = RunState::kFailed;
+  replaying_ = false;
   error_ = std::move(message);
 }
 
@@ -777,8 +1213,6 @@ void ScriptRuntime::Impl::reset_instruction_budget() {
     limits_reset_(options_.instruction_limit / hook_period_);
   }
 }
-
-std::uint64_t ScriptRuntime::Impl::random_u64() { return splitmix64(random_state_); }
 
 ScriptRuntime::ScriptRuntime(const Vfs& vfs, ScriptRuntimeOptions options)
     : impl_(std::make_unique<Impl>(vfs, options)) {}
@@ -790,6 +1224,18 @@ void ScriptRuntime::load_scripts() { impl_->load_scripts(); }
 bool ScriptRuntime::has_label(std::string_view name) const { return impl_->has_label(name); }
 void ScriptRuntime::start(std::string_view name) { impl_->start(name); }
 void ScriptRuntime::advance() { impl_->advance(); }
+void ScriptRuntime::choose(std::size_t index) { impl_->choose(index); }
+void ScriptRuntime::replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
+                           std::uint32_t step) {
+  impl_->replay(snapshot, inputs, step);
+}
+bool ScriptRuntime::replaying() const { return impl_->replaying(); }
+const LabelSnapshot* ScriptRuntime::label_snapshot() const { return impl_->label_snapshot(); }
+std::span<const InputResult> ScriptRuntime::input_log() const { return impl_->input_log(); }
+StoreSnapshot ScriptRuntime::store_snapshot() const { return impl_->capture_store(); }
+std::optional<std::uint64_t> ScriptRuntime::label_source_hash(std::string_view name) const {
+  return impl_->label_source_hash(name);
+}
 RunState ScriptRuntime::state() const { return impl_->state(); }
 const BlockingRequest* ScriptRuntime::request() const { return impl_->request(); }
 ScriptPosition ScriptRuntime::position() const { return impl_->position(); }

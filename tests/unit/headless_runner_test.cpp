@@ -318,3 +318,48 @@ TEST_CASE("headless: print goes to the transcript") {
   CHECK(result.outcome == HeadlessOutcome::kFinished);
   CHECK(result.transcript == Lines{"label start", "print score\t3\tnil\ttrue"});
 }
+
+TEST_CASE("headless: a menu lists its options and takes a choice") {
+  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs({{"scripts/main.lua", R"(
+label("start", function()
+  local picked = menu({ "Of course I did.", "I forgot my bag." })
+  narrate("picked " .. picked)
+end)
+)"}});
+  const Lines until_the_menu{"label start", "menu 1: Of course I did.", "menu 2: I forgot my bag."};
+
+  SUBCASE("a choice input picks the option") {
+    const std::vector<ScriptInput> inputs{vnmaki::ChooseInput{.index = 1}, vnmaki::AdvanceInput{}};
+    const HeadlessResult result = vnmaki::run_headless(vfs, inputs);
+
+    CHECK(result.outcome == HeadlessOutcome::kFinished);
+    Lines expected = until_the_menu;
+    expected.emplace_back("narrate picked 2");
+    CHECK(result.transcript == expected);
+    CHECK(result.stops == std::vector<vnmaki::ScriptPosition>{{.label = "start", .step = 1},
+                                                              {.label = "start", .step = 2}});
+  }
+  SUBCASE("an advance does not answer a menu") {
+    const HeadlessResult result = vnmaki::run_headless(vfs, advances(1));
+
+    CHECK(result.outcome == HeadlessOutcome::kFailed);
+    CHECK(result.transcript == until_the_menu);
+    CHECK(result.error ==
+          "the story waits at a menu, and the next input is not one of its options");
+  }
+  SUBCASE("a choice the menu does not have is refused") {
+    const std::vector<ScriptInput> inputs{vnmaki::ChooseInput{.index = 2}};
+    const HeadlessResult result = vnmaki::run_headless(vfs, inputs);
+
+    CHECK(result.outcome == HeadlessOutcome::kFailed);
+    CHECK(result.error ==
+          "the story waits at a menu, and the next input is not one of its options");
+  }
+  SUBCASE("a choice does not answer a line") {
+    const std::vector<ScriptInput> inputs{vnmaki::ChooseInput{.index = 0}, vnmaki::ChooseInput{}};
+    const HeadlessResult result = vnmaki::run_headless(vfs, inputs);
+
+    CHECK(result.outcome == HeadlessOutcome::kFailed);
+    CHECK(result.error == "the next input is a menu choice, but the story does not wait at a menu");
+  }
+}

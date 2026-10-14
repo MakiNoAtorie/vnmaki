@@ -49,3 +49,10 @@ target_sources(vnmaki_unit_tests PRIVATE unit/text_test.cpp)
 vnmaki_add_fixture_generator(
   text SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
+
+# State store, step counting and replay (ticket 11).
+target_sources(vnmaki_unit_tests PRIVATE unit/script_state_test.cpp
+                                         unit/replay_property_test.cpp)
+vnmaki_add_fixture_generator(
+  replay SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/replay_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
