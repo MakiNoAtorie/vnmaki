@@ -22,6 +22,9 @@ import sys
 import zlib
 from pathlib import Path
 
+sys.dont_write_bytecode = True  # No __pycache__ in the source tree.
+import text_fixtures  # noqa: E402  (the font the text scene is drawn with)
+
 # --- PNG -------------------------------------------------------------------
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -204,6 +207,31 @@ def grayscale(amount: float):
     return shade
 
 
+# The text scene (tests/render/text_render_test.cpp): "Hello, VN. こんにちは、世界。" in the box
+# font of text_fixtures.py at 20 pixels per em, wrapped at 100 pixels. Ten Latin advances fill
+# the first line; "、" may not start a line, so "は" goes down with it. The typewriter reveal
+# has not reached the last two glyphs ("界。").
+TEXT_TARGET = (112, 64)
+TEXT_ORIGIN = (6, 2)
+TEXT_PIXELS_PER_EM = 20
+TEXT_TINT = (255, 224, 128, 255)
+TEXT_LINES = ["Hello, VN. ", "こんにち", "は、世"]
+
+
+def draw_text(canvas: Canvas, lines: list) -> None:
+    """Draws each glyph's box where layout and the glyph atlas must put it."""
+    units = text_fixtures.UNITS_PER_EM // TEXT_PIXELS_PER_EM  # font units per pixel
+    for index, line in enumerate(lines):
+        baseline = TEXT_ORIGIN[1] + index * TEXT_PIXELS_PER_EM + text_fixtures.ASCENT // units
+        pen = TEXT_ORIGIN[0]
+        for char in line:
+            advance, box = text_fixtures.glyph_box(char)
+            if box:
+                x0, y0, x1, y1 = (edge // units for edge in box)
+                canvas.draw(WHITE, (pen + x0, baseline - y1, x1 - x0, y1 - y0), tint=TEXT_TINT)
+            pen += advance // units
+
+
 def golden_scenes() -> dict:
     scenes = {}
 
@@ -237,6 +265,10 @@ def golden_scenes() -> dict:
         for x in range(4):
             canvas.draw(CHECKER, (x * 8 + 1, y * 8 + 1, 6, 6), uv=(x / 4, y / 4, 0.25, 0.25))
     scenes["sprite_batch"] = canvas
+
+    canvas = Canvas(*TEXT_TARGET, GRAY)
+    draw_text(canvas, TEXT_LINES)
+    scenes["text_paragraph"] = canvas
 
     return {name + ".png": canvas.png() for name, canvas in scenes.items()}
 

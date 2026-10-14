@@ -2,7 +2,7 @@
 # only it needs a GPU, and on Linux it runs with SDL's offscreen video driver (no display), which
 # reaches Vulkan through a software driver such as Mesa's lavapipe.
 add_executable(vnmaki_render_tests ../unit/main.cpp gpu_test_support.cpp gpu_test_support.hpp
-                                   renderer_test.cpp window_renderer_test.cpp)
+                                   renderer_test.cpp text_render_test.cpp window_renderer_test.cpp)
 target_link_libraries(vnmaki_render_tests PRIVATE vnmaki::engine vnmaki::options doctest::doctest)
 target_compile_definitions(
   vnmaki_render_tests
