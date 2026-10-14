@@ -43,3 +43,9 @@ if(TARGET vnmaki_fixtures_text)
   add_test(NAME fuzz.font.seeded COMMAND fuzz_font -runs=10000 -seed=1 "${vnmaki_font_corpus}"
                                          "${PROJECT_BINARY_DIR}/fixtures/text/fonts")
 endif()
+
+# Text tags (ticket 17). A tag needs a "{" and a known name, so a dictionary gives libFuzzer the
+# pieces.
+vnmaki_add_fuzzer(markup markup_fuzzer.cpp markup_properties.hpp)
+add_test(NAME fuzz.markup.dictionary
+         COMMAND fuzz_markup -runs=10000 -seed=1 "-dict=${CMAKE_CURRENT_SOURCE_DIR}/markup.dict")

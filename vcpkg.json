@@ -25,6 +25,7 @@
     { "name": "freetype", "default-features": false },
     { "name": "harfbuzz", "default-features": false },
     "libunibreak",
+    "sheenbidi",
     "lua",
     "sol2",
     "stb",

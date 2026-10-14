@@ -16,13 +16,12 @@
 #include "engine/platform/geometry.hpp"
 #include "engine/render/image.hpp"
 #include "engine/render/renderer.hpp"
+#include "engine/text/markup.hpp"
 
 namespace vnmaki {
 
 class Vfs;
 
-/// The largest font size, in pixels per em, that layout and the glyph atlas accept.
-inline constexpr float kMaxFontPixelSize = 1024;
 /// A glyph wider or taller than this many ems is not drawn, so a hostile font cannot make the
 /// atlas allocate huge bitmaps.
 inline constexpr int kMaxGlyphEms = 16;
