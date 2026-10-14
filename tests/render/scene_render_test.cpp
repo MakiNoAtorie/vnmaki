@@ -2,8 +2,6 @@
 // scene_game (tools/generators/render_fixtures.py) shows a background and two sprites, and the
 // frame must match the golden image the generator's reference rasterizer drew.
 
-#include "engine/scene/scene.hpp"
-
 #include <filesystem>
 
 #include <doctest/doctest.h>
@@ -12,6 +10,7 @@
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
 #include "engine/runtime/script_runtime.hpp"
+#include "engine/scene/scene.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/render/gpu_test_support.hpp"
 
