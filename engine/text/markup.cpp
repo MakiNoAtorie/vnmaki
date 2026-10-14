@@ -75,7 +75,7 @@ std::optional<Color> parse_color(std::string_view text) {
   if (!is_short && text.size() != kLong && text.size() != kLongAlpha) {
     return std::nullopt;
   }
-  std::vector<std::uint8_t> channels;
+  std::vector<std::uint8_t> channels{};
   channels.reserve(kShortAlpha);
   for (std::size_t i = 0; i < text.size(); i += is_short ? 1 : 2) {
     const std::optional<int> high = hex_digit(text[i]);
@@ -111,15 +111,15 @@ struct OpenTag {
   std::string_view name;
   std::size_t offset = 0;
   /// The style to go back to when the tag closes.
-  TextStyle outer;
+  TextStyle outer{};
 };
 
 }  // namespace
 
 StyledText parse_markup(std::string_view markup) {
-  StyledText styled;
-  TextStyle style;
-  std::vector<OpenTag> open_tags;
+  StyledText styled{};
+  TextStyle style{};
+  std::vector<OpenTag> open_tags{};
   std::size_t run_begin = 0;
   // Ends the run of `style` at the end of the text so far.
   const auto end_run = [&] {
@@ -218,7 +218,7 @@ StyledText parse_markup(std::string_view markup) {
 }
 
 std::string escape_markup(std::string_view text) {
-  std::string escaped;
+  std::string escaped{};
   escaped.reserve(text.size());
   for (const char c : text) {
     escaped.push_back(c);
@@ -230,7 +230,7 @@ std::string escape_markup(std::string_view text) {
 }
 
 StyledText plain_text(std::string_view text, TextStyle style) {
-  StyledText styled;
+  StyledText styled{};
   styled.text = text;
   if (!text.empty()) {
     styled.runs.push_back(StyledRun{.begin = 0, .end = text.size(), .style = std::move(style)});

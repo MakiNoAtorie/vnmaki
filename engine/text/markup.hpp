@@ -22,20 +22,20 @@ inline constexpr double kMaxTagNumber = 100000;
 /// How one part of a text is drawn and revealed. The default is "as the text around it".
 struct TextStyle {
   /// `{color=#rrggbb}`. Not set: the colour the text is drawn with.
-  std::optional<Color> color;
+  std::optional<Color> color{};
   /// `{size=N}`: pixels per em. 0: the size of the layout.
   float size = 0;
   /// `{font=name}`: a family of the FontSet. Empty: the base family.
-  std::string font;
+  std::string font{};
   /// `{b}` and `{i}`.
   bool bold = false;
   bool italic = false;
   /// `{speed=N}`: characters per second of the typewriter reveal. 0: the speed of the reveal.
   double speed = 0;
   /// `{ruby=text}`: small text (furigana) drawn above this part.
-  std::string ruby;
+  std::string ruby{};
   /// `{link=id}`: this part can be clicked, and reports `id`.
-  std::string link;
+  std::string link{};
 
   bool operator==(const TextStyle&) const = default;
 };
@@ -44,7 +44,7 @@ struct TextStyle {
 struct StyledRun {
   std::size_t begin = 0;
   std::size_t end = 0;
-  TextStyle style;
+  TextStyle style{};
 
   bool operator==(const StyledRun&) const = default;
 };
@@ -59,11 +59,11 @@ struct TextPause {
 
 struct StyledText {
   /// The text without its tags (UTF-8).
-  std::string text;
+  std::string text{};
   /// In text order, without gaps or empty runs; together they cover all of `text`.
-  std::vector<StyledRun> runs;
+  std::vector<StyledRun> runs{};
   /// In text order.
-  std::vector<TextPause> pauses;
+  std::vector<TextPause> pauses{};
 
   bool operator==(const StyledText&) const = default;
 };

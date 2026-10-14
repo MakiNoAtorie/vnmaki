@@ -80,7 +80,7 @@ struct LayoutGlyph {
   float pixel_size = 0;
   float advance = 0;
   /// The colour from a `color` tag. Not set: the tint given to text_quads.
-  std::optional<Color> color;
+  std::optional<Color> color{};
   /// Typewriter reveal: the seconds to wait before this glyph shows (`pause` tags), and its
   /// speed in characters per second (`speed` tag; 0: the speed of the reveal).
   double reveal_pause = 0;
@@ -94,7 +94,7 @@ struct LayoutGlyph {
 struct RubyText {
   /// The index in TextLine::glyphs of the first base glyph.
   std::size_t base_glyph = 0;
-  std::vector<LayoutGlyph> glyphs;
+  std::vector<LayoutGlyph> glyphs{};
 
   bool operator==(const RubyText&) const = default;
 };
@@ -102,7 +102,7 @@ struct RubyText {
 /// Where the text of a `link` tag is, for pointer hit tests: one region for each run of the
 /// link on each line.
 struct LinkRegion {
-  std::string id;
+  std::string id{};
   /// From the layout's top-left corner; the full height of the line.
   RectF rect{};
 
@@ -112,7 +112,7 @@ struct LinkRegion {
 struct TextLine {
   /// In logical (reading and reveal) order. In right-to-left text the first glyph is the
   /// rightmost one.
-  std::vector<LayoutGlyph> glyphs;
+  std::vector<LayoutGlyph> glyphs{};
   /// The baseline's distance below the layout's top.
   float baseline = 0;
   /// The line's advance width, without spaces at its end.
@@ -121,7 +121,7 @@ struct TextLine {
   /// with ruby is higher than TextLayout::line_height.
   float top = 0;
   float height = 0;
-  std::vector<RubyText> ruby;
+  std::vector<RubyText> ruby{};
 
   bool operator==(const TextLine&) const = default;
 };
@@ -131,12 +131,12 @@ struct TextLayout {
   float pixel_size = 0;
   /// The distance from one baseline to the next, for lines of the base font at `pixel_size`.
   float line_height = 0;
-  std::vector<TextLine> lines;
+  std::vector<TextLine> lines{};
   /// The glyphs of all lines together: what a typewriter reveal counts up to.
   std::size_t glyph_count = 0;
   /// The fonts the glyphs use (LayoutGlyph::font). They must outlive the layout's use.
-  std::vector<const Font*> fonts;
-  std::vector<LinkRegion> links;
+  std::vector<const Font*> fonts{};
+  std::vector<LinkRegion> links{};
 
   bool operator==(const TextLayout&) const = default;
 };
@@ -162,12 +162,12 @@ struct FontFamily {
 /// The fonts a styled text is laid out with. They must outlive the layouts made with them.
 struct FontSet {
   /// The family of text without a `font` tag. `base.regular` must be set.
-  FontFamily base;
+  FontFamily base{};
   /// The families a `font` tag can name. A name that is not here uses `base`.
-  std::map<std::string, FontFamily, std::less<>> families;
+  std::map<std::string, FontFamily, std::less<>> families{};
   /// The fallback chain: a character that the style's font does not have uses the first of
   /// these fonts that has it. Build it from ProjectConfig::font_fallbacks for the language.
-  std::vector<const Font*> fallbacks;
+  std::vector<const Font*> fallbacks{};
 };
 
 /// As layout_text above, for text with styles (see parse_markup) and more than one font.
@@ -287,12 +287,12 @@ class GlyphAtlas {
 
   GlyphRaster raster_ = GlyphRaster::kCoverage;
   /// fonts_[0] is the constructor's font, if it took one.
-  std::vector<const Font*> fonts_;
+  std::vector<const Font*> fonts_{};
   float pixel_size_ = 0;
   /// Screen pixels per layout pixel at the last prepare().
   float scale_ = 1;
-  std::map<Key, Bitmap> glyphs_;
-  Image image_;
+  std::map<Key, Bitmap> glyphs_{};
+  Image image_{};
 };
 
 /// The quads that draw the first `visible_glyphs` glyphs of `layout` (see revealed_glyphs) with

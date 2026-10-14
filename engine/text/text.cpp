@@ -86,7 +86,7 @@ struct Font::Impl {
   }
 
   /// The font file. FreeType and HarfBuzz both read from it for as long as the faces live.
-  std::vector<std::byte> data;
+  std::vector<std::byte> data{};
   std::unique_ptr<std::remove_pointer_t<FT_Library>, FreeLibrary> library;
   std::unique_ptr<std::remove_pointer_t<FT_Face>, FreeFace> face;
   std::unique_ptr<hb_face_t, FreeShapingFace> shaping_face;
@@ -186,9 +186,9 @@ std::vector<char> line_breaks(std::string_view text) {
 /// The direction of each byte of a text, from the Unicode bidirectional algorithm.
 struct BidiLevels {
   /// The embedding level: even is left-to-right, odd is right-to-left.
-  std::vector<std::uint8_t> level;
+  std::vector<std::uint8_t> level{};
   /// The base level of the byte's paragraph.
-  std::vector<std::uint8_t> paragraph;
+  std::vector<std::uint8_t> paragraph{};
 };
 
 BidiLevels bidi_levels(std::string_view text) {
@@ -406,16 +406,16 @@ class Shaper {
   const FontSet* fonts_ = nullptr;
   TextLayout* layout_ = nullptr;
   std::unique_ptr<hb_buffer_t, FreeBuffer> buffer_;
-  std::map<std::pair<std::uint16_t, int>, SizedFont> sized_;
+  std::map<std::pair<std::uint16_t, int>, SizedFont> sized_{};
   /// Fonts without a size, to ask which characters they have.
-  std::map<const Font*, std::unique_ptr<hb_font_t, FreeShapingFont>> probes_;
+  std::map<const Font*, std::unique_ptr<hb_font_t, FreeShapingFont>> probes_{};
 };
 
 /// The ruby text of one `ruby` tag, shaped, and where its base is in the paragraph's glyphs.
 struct Ruby {
   std::size_t first = 0;
   std::size_t last = 0;
-  std::vector<Shaped> glyphs;
+  std::vector<Shaped> glyphs{};
   float width = 0;
   float ascent = 0;
   float line_height = 0;
@@ -719,10 +719,10 @@ class Paragraphs {
   float wrap_width_ = 0;
   Shaper* shaper_ = nullptr;
   TextLayout* layout_ = nullptr;
-  std::vector<char> breaks_;
-  BidiLevels bidi_;
+  std::vector<char> breaks_{};
+  BidiLevels bidi_{};
   /// For each byte of the text, the index of its StyledRun, or kNoRun.
-  std::vector<std::size_t> run_of_;
+  std::vector<std::size_t> run_of_{};
   /// The top of the next line.
   float top_ = 0;
   /// The first pause that no glyph has yet.
@@ -813,7 +813,7 @@ Font load_font(const Vfs& vfs, std::string_view path) {
 
 TextLayout layout_text(const Font& font, std::string_view text, float pixel_size,
                        float wrap_width) {
-  FontSet fonts;
+  FontSet fonts{};
   fonts.base.regular = &font;
   return layout_text(fonts, plain_text(text), pixel_size, wrap_width);
 }
@@ -826,7 +826,7 @@ TextLayout layout_text(const FontSet& fonts, const StyledText& text, float pixel
   if (text.text.size() > static_cast<std::size_t>(INT_MAX)) {
     throw std::invalid_argument{"text is too long"};
   }
-  TextLayout layout;
+  TextLayout layout{};
   layout.pixel_size = pixel_size;
   Shaper shaper{fonts, layout};
   layout.line_height = shaper.sized(0, pixel_size).line_height;
@@ -956,7 +956,7 @@ bool GlyphAtlas::prepare(const TextLayout& layout, float scale) {
   }
 
   // The font and size that FreeType is set to.
-  std::optional<Key> set;
+  std::optional<Key> set{};
   bool cannot_draw = false;
   for_each_glyph(layout, [&](const LayoutGlyph& glyph) {
     const std::optional<Key> key = key_for(layout, glyph);
@@ -1052,7 +1052,7 @@ bool GlyphAtlas::pack() {
   }
   const int height = y + row_height + kBorder;
 
-  Image packed;
+  Image packed{};
   packed.size = Size{.width = width, .height = height};
   packed.pixels.assign(
       static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * kChannels, 0);
@@ -1074,7 +1074,7 @@ bool GlyphAtlas::pack() {
 
 std::vector<Quad> text_quads(const TextLayout& layout, const GlyphAtlas& atlas, PointF origin,
                              std::size_t visible_glyphs, Color tint) {
-  std::vector<Quad> quads;
+  std::vector<Quad> quads{};
   if (!(layout.pixel_size > 0)) {
     return quads;
   }
