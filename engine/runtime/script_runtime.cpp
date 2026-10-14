@@ -176,6 +176,83 @@ function narrate(text)
   engine.narrate(text)
 end
 
+-- Visuals. The engine primitives return why a call cannot be done, or nil.
+-- Option keys these functions do not know are left for later features.
+local function option(fname, options, key, expected)
+  local value = options[key]
+  if value ~= nil and type(value) ~= expected then
+    error(format("bad option '%s' to '%s' (%s expected, got %s)", key, fname, expected,
+                 type(value)), 3)
+  end
+  return value
+end
+
+local function options_argument(fname, options)
+  if options == nil then
+    return {}
+  end
+  if type(options) ~= "table" then
+    bad_argument(fname, 2, "table or nil", options, 1)
+  end
+  return options
+end
+
+function scene(image, options)
+  if type(image) ~= "string" then
+    bad_argument("scene", 1, "string", image)
+  end
+  options_argument("scene", options)
+  require_label("scene")
+  local problem = engine.scene(image)
+  if problem then
+    error(problem, 2)
+  end
+  engine.scene_command("scene " .. image)
+end
+
+function show(tag, options)
+  if type(tag) ~= "string" then
+    bad_argument("show", 1, "string", tag)
+  end
+  options = options_argument("show", options)
+  local image = option("show", options, "image", "string")
+  local at = option("show", options, "at", "string")
+  local x = option("show", options, "x", "number")
+  local y = option("show", options, "y", "number")
+  local layer = option("show", options, "layer", "string")
+  require_label("show")
+  local problem = engine.show(tag, image or tag, at, x, y, layer)
+  if problem then
+    error(problem, 2)
+  end
+  local command = "show " .. tag
+  if image then
+    command = command .. " image " .. image
+  end
+  if at then
+    command = command .. " at " .. at
+  end
+  if x then
+    command = command .. format(" x %.14g", x)
+  end
+  if y then
+    command = command .. format(" y %.14g", y)
+  end
+  if layer then
+    command = command .. " layer " .. layer
+  end
+  engine.scene_command(command)
+end
+
+function hide(tag)
+  if type(tag) ~= "string" then
+    bad_argument("hide", 1, "string", tag)
+  end
+  require_label("hide")
+  engine.hide(tag)
+  engine.scene_command("hide " .. tag)
+end
+
 -- The minimal menu: a list of option texts. Returns the number of the
 -- chosen option, from 1.
 function menu(options)
@@ -731,6 +808,51 @@ void ScriptRuntime::Impl::bind_engine() {
     }
     yield_at(state, std::move(request));
   });
+  // The scene changes during a replay too; only the report is skipped.
+  const auto problem_or_nil = [this](sol::this_state state,
+                                     const std::string& problem) -> sol::object {
+    if (problem.empty()) {
+      return sol::lua_nil;
+    }
+    const MemoryLimitScope unlimited{allocator_, false};
+    return sol::make_object(state, problem);
+  };
+  engine_["scene"] = [this, problem_or_nil](sol::this_state state, const std::string& image) {
+    return problem_or_nil(state,
+                          options_.scene != nullptr ? options_.scene->scene(image) : std::string{});
+  };
+  engine_["show"] = [this, problem_or_nil](
+                        sol::this_state state, const std::string& tag, const std::string& image,
+                        const sol::optional<std::string>& at, sol::optional<double> x,
+                        sol::optional<double> y, const sol::optional<std::string>& layer) {
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    ShowRequest request{.tag = tag, .image = image};
+    if (at) {
+      request.at = *at;
+    }
+    if (x) {
+      request.x = *x;
+    }
+    if (y) {
+      request.y = *y;
+    }
+    if (layer) {
+      request.layer = *layer;
+    }
+    return problem_or_nil(state, options_.scene->show(request));
+  };
+  engine_["hide"] = [this](const std::string& tag) {
+    if (options_.scene != nullptr) {
+      options_.scene->hide(tag);
+    }
+  };
+  engine_["scene_command"] = [this](const std::string& command) {
+    if (!replaying_) {
+      observer_->on_scene_command(command);
+    }
+  };
   engine_["transfer"] =
       sol::yielding([this](sol::this_state state, const std::string& kind,
                            const std::string& label) { transfer(state, kind, label); });
@@ -1075,11 +1197,17 @@ void ScriptRuntime::Impl::replay(const LabelSnapshot& snapshot, std::span<const 
   if (!frames_.empty()) {
     frames_.pop_back();
   }
+  if (options_.scene_state != nullptr) {
+    try {
+      options_.scene_state->restore(entry.scene);
+    } catch (const std::invalid_argument& error) {
+      fail("replay: the scene snapshot of label '" + entry.label + "' is malformed (" +
+           error.what() + ")");
+      return;
+    }
+  }
   replaying_ = step > 0;
   restore_store(entry.store);
-  if (options_.scene_state != nullptr) {
-    options_.scene_state->restore(entry.scene);
-  }
   frames_.push_back(make_frame(entry.label));
   frames_.back().snapshot = std::move(entry);
   replay.depth = frames_.size();

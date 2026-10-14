@@ -41,6 +41,10 @@ enum class HeadlessOutcome : std::uint8_t {
 ///   say <who>: <text>     say(who, text)
 ///   narrate <text>        narrate(text), or say(nil, text)
 ///   menu <n>: <text>      option n (from 1) of a menu; one line per option
+///   scene <image>         scene(image)
+///   show <tag> ...        show(tag, options), then the options given (see
+///                         ScriptObserver::on_scene_command)
+///   hide <tag>            hide(tag)
 ///   print <text>          print(...), arguments joined by tabs
 ///   warning <message>     a dev-mode warning
 struct HeadlessResult {

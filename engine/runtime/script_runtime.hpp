@@ -120,8 +120,39 @@ class SceneState {
 
   /// Serializes the current state. Called at every label entry.
   [[nodiscard]] virtual std::vector<std::byte> capture() const = 0;
-  /// Replaces the current state with one capture() returned.
+  /// Replaces the current state with one capture() returned. Throws
+  /// std::invalid_argument, leaving the state as it was, if `state` is
+  /// malformed; a replay() then fails the runtime.
   virtual void restore(std::span<const std::byte> state) = 0;
+};
+
+/// `show(tag, options)`. Fields the script left out are empty.
+struct ShowRequest {
+  std::string tag{};
+  /// The image name: the `image` option, or the tag without it.
+  std::string image{};
+  std::optional<std::string> at{};  ///< A named position: left, center, right.
+  std::optional<double> x{};        ///< A fraction of the virtual width.
+  std::optional<double> y{};        ///< A fraction of the virtual height.
+  std::optional<std::string> layer{};
+};
+
+/// What `scene`, `show` and `hide` do to the engine (engine/scene/scene.hpp
+/// implements it). A call that cannot be done returns why, and the runtime
+/// raises that as a script error at the calling script line; it returns an
+/// empty string otherwise. Calls arrive during a replay too.
+class SceneCommands {
+ public:
+  SceneCommands() = default;
+  SceneCommands(const SceneCommands&) = default;
+  SceneCommands(SceneCommands&&) = default;
+  SceneCommands& operator=(const SceneCommands&) = default;
+  SceneCommands& operator=(SceneCommands&&) = default;
+  virtual ~SceneCommands() = default;
+
+  [[nodiscard]] virtual std::string scene(std::string_view image) = 0;
+  [[nodiscard]] virtual std::string show(const ShowRequest& request) = 0;
+  virtual void hide(std::string_view tag) = 0;
 };
 
 /// Where a script is: the running label and how many yield points it has
@@ -165,6 +196,11 @@ class ScriptObserver {
   virtual void on_label_resumed(std::string_view /*label*/) {}
   /// The running label reached a yield point and waits at `position`.
   virtual void on_blocked(const BlockingRequest& /*request*/, const ScriptPosition& /*position*/) {}
+  /// A `scene`, `show` or `hide` call was done. `command` is its transcript
+  /// form: "scene <image>", "hide <tag>", or "show <tag>" followed by the
+  /// options given, in this order: " image <name>", " at <position>",
+  /// " x <number>", " y <number>", " layer <name>".
+  virtual void on_scene_command(std::string_view /*command*/) {}
   /// A script called `print`.
   virtual void on_print(std::string_view /*text*/) {}
   /// A dev-mode warning, e.g. a new global outside `store`.
@@ -193,6 +229,10 @@ struct ScriptRuntimeOptions {
   /// Snapshotted and restored with `store`; may be null. Must outlive the
   /// runtime.
   SceneState* scene_state = nullptr;
+  /// Carries out `scene`, `show` and `hide`; may be null, and then those
+  /// calls only reach the observer. Must outlive the runtime. A Scene goes
+  /// here and in `scene_state`.
+  SceneCommands* scene = nullptr;
   /// The first state of the script RNG (`rand`, `math.random`). The same seed,
   /// scripts and inputs always give the same story.
   std::uint64_t random_seed = kDefaultRandomSeed;
@@ -211,7 +251,9 @@ struct ScriptRuntimeOptions {
 /// The engine API: `label(name, fn)`, `jump(name)`, `call(name)`, `ret()`,
 /// `say(who, text)`, `narrate(text)`, `menu { "option", ... }` (returns the
 /// number of the chosen option, from 1), `rand` (the same function as
-/// `math.random`) and the `store` table.
+/// `math.random`) and the `store` table. Visuals: `scene(image)`,
+/// `show(tag, { image =, at =, x =, y =, layer = })` and `hide(tag)`; option
+/// keys they do not know are ignored (later tickets add `with`, `outfit`...).
 ///
 /// `store` is owned by the engine: scripts change its fields but cannot
 /// replace it. It keeps booleans, numbers, strings and tables with such keys

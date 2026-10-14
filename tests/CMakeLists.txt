@@ -49,3 +49,6 @@ target_sources(vnmaki_unit_tests PRIVATE unit/script_state_test.cpp
 vnmaki_add_fixture_generator(
   replay SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/replay_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
+
+# Scene graph, layers and displayables (ticket 09).
+target_sources(vnmaki_unit_tests PRIVATE unit/scene_test.cpp)

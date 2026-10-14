@@ -12,8 +12,10 @@
 #include <system_error>
 #include <vector>
 
+#include "engine/platform/geometry.hpp"
 #include "engine/runtime/headless_runner.hpp"
 #include "engine/runtime/project_config.hpp"
+#include "engine/scene/scene.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki::cli {
@@ -86,15 +88,22 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
     err << "vnmaki: " << arguments->project_dir << " is not a directory\n";
     return kExitError;
   }
+  Size resolution;
   try {
-    static_cast<void>(load_project_config(vfs));
+    const Resolution configured = load_project_config(vfs).resolution;
+    resolution = Size{.width = configured.width, .height = configured.height};
   } catch (const ProjectConfigError& error) {
     err << "vnmaki: " << error.what() << '\n';
     return kExitError;
   }
 
+  // Nothing is drawn, but the scene still checks every image a script shows.
+  Scene scene{vfs, resolution};
+  HeadlessOptions options;
+  options.runtime.scene = &scene;
+  options.runtime.scene_state = &scene;
   const std::vector<ScriptInput> inputs(arguments->max_steps, AdvanceInput{});
-  const HeadlessResult result = run_headless(vfs, inputs);
+  const HeadlessResult result = run_headless(vfs, inputs, options);
   for (const std::string& line : result.transcript) {
     out << line << '\n';
   }
