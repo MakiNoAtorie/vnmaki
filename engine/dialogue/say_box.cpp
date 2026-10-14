@@ -40,6 +40,8 @@ SayBoxStyle SayBoxStyle::for_resolution(Size virtual_size) {
   const int margin = virtual_size.width / kMarginDivisor;
   const int padding = virtual_size.width / kPaddingDivisor;
   const int name_size = virtual_size.height / kNameSizeDivisor;
+  const int text_size = virtual_size.height / kTextSizeDivisor;
+  const int name_gap = padding / kNamePaddingDivisor;
   const int box_height = virtual_size.height * kBoxHeightNumerator / kBoxHeightDenominator;
   const int box_width = virtual_size.width - (2 * margin);
   const int box_top = virtual_size.height - (virtual_size.height / kBottomGapDivisor) - box_height;
@@ -51,10 +53,9 @@ SayBoxStyle SayBoxStyle::for_resolution(Size virtual_size) {
       .box_color = rgba8(kBoxRed, kBoxGreen, kBoxBlue, kBoxAlpha),
       .name_offset = {.x = static_cast<float>(padding), .y = static_cast<float>(padding)},
       .text_offset = {.x = static_cast<float>(padding),
-                      .y = static_cast<float>(padding + name_size +
-                                              (padding / kNamePaddingDivisor))},
+                      .y = static_cast<float>(padding + name_size + name_gap)},
       .name_size = static_cast<float>(name_size),
-      .text_size = static_cast<float>(virtual_size.height / kTextSizeDivisor),
+      .text_size = static_cast<float>(text_size),
       .wrap_width = static_cast<float>(box_width - (2 * padding)),
       .text_color = kWhite,
   };
