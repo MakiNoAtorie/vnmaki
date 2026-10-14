@@ -29,3 +29,6 @@ endif()
 # Script runtime (ticket 06).
 vnmaki_add_fuzzer(script_loader script_loader_fuzzer.cpp)
 vnmaki_add_fuzzer(project_config project_config_fuzzer.cpp)
+
+# Scene snapshots (ticket 09).
+vnmaki_add_fuzzer(scene_state scene_state_fuzzer.cpp)

@@ -10,6 +10,8 @@ Layout:
                     textures for the renderer tests
   OUT_DIR/golden/   what each renderer test scene must look like, computed by
                     the reference rasterizer below
+  OUT_DIR/scene_game/  a game project (script and images) whose composed frame
+                    tests/render/scene_render_test.cpp checks
 
 Pixel values are spelled out here and repeated as literals in the tests
 (tests/unit/image_test.cpp, tests/render/renderer_test.cpp), which are the
@@ -238,7 +240,55 @@ def golden_scenes() -> dict:
             canvas.draw(CHECKER, (x * 8 + 1, y * 8 + 1, 6, 6), uv=(x / 4, y / 4, 0.25, 0.25))
     scenes["sprite_batch"] = canvas
 
+    # What scene_game's script shows at a 32x32 virtual resolution: the
+    # background at the origin, one sprite standing at the bottom centre and
+    # one on the overlay layer whose bottom centre is at (0.25, 0.5).
+    sprite = [[premultiply(pixel) for pixel in row] for row in SPRITE]
+    canvas = Canvas(TARGET_SIZE, TARGET_SIZE, (0, 0, 0, 255))
+    canvas.draw(BACKDROP, (0, 0, TARGET_SIZE, TARGET_SIZE))
+    canvas.draw(sprite, (12, 16, SPRITE_WIDTH, SPRITE_HEIGHT))
+    canvas.draw(sprite, (4, 0, SPRITE_WIDTH, SPRITE_HEIGHT))
+    scenes["scene_frame"] = canvas
+
     return {name + ".png": canvas.png() for name, canvas in scenes.items()}
+
+
+# --- Scene game --------------------------------------------------------------
+
+# 32x32, every pixel a different opaque colour, so a misplaced draw shows.
+BACKDROP = [[(x * 8, y * 8, 96, 255) for x in range(TARGET_SIZE)] for y in range(TARGET_SIZE)]
+
+SPRITE_WIDTH = 8
+SPRITE_HEIGHT = 16
+
+
+def sprite_pixel(x: int, y: int) -> tuple:
+    """Straight alpha: a red head with clear corners, a green body, half-clear blue legs."""
+    if y < 4:
+        return (0, 0, 0, 0) if x in (0, SPRITE_WIDTH - 1) else (200, 40, 40, 255)
+    if y < 12:
+        return (40, 200, 40, 255)
+    return (40, 40, 200, 128)
+
+
+SPRITE = [[sprite_pixel(x, y) for x in range(SPRITE_WIDTH)] for y in range(SPRITE_HEIGHT)]
+
+SCENE_SCRIPT = """\
+label("start", function()
+  scene("bg/room")
+  show("eileen", { at = "center" })
+  show("lucy", { image = "eileen", x = 0.25, y = 0.5, layer = "overlay" })
+  narrate("composed")
+end)
+"""
+
+
+def scene_game() -> dict:
+    return {
+        "scripts/start.lua": SCENE_SCRIPT.encode("utf-8"),
+        "images/bg/room.png": png_rgba(BACKDROP),
+        "images/eileen.png": png_rgba(SPRITE),
+    }
 
 
 # --- Fixtures ----------------------------------------------------------------
@@ -280,7 +330,8 @@ def main() -> int:
         return 2
     out = Path(sys.argv[1])
     shutil.rmtree(out, ignore_errors=True)
-    for directory, files in (("images", image_fixtures()), ("golden", golden_scenes())):
+    for directory, files in (("images", image_fixtures()), ("golden", golden_scenes()),
+                             ("scene_game", scene_game())):
         for name, content in files.items():
             path = out / directory / name
             path.parent.mkdir(parents=True, exist_ok=True)

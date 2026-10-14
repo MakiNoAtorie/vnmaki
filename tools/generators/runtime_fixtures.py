@@ -4,7 +4,8 @@
 Usage: runtime_fixtures.py OUT_DIR
 
 OUT_DIR is deleted and recreated, so the output depends only on this script.
-Each project is a folder with a project.toml and Lua scripts under scripts/.
+Each project is a folder with a project.toml and Lua scripts under scripts/;
+the projects in IMAGES also get image files under images/.
 For projects that run to the end, OUT_DIR/<name>.transcript holds the exact
 stdout `vnmaki run <project> --headless` must print, written by hand from
 the scripts below. The numbers the "dice" project rolls come from the
@@ -15,7 +16,33 @@ import shutil
 import sys
 from pathlib import Path
 
+from render_fixtures import png_rgba
+
 PROJECTS = {
+    # Shows, replaces and hides images.
+    "visuals": {
+        "project.toml": 'title = "Visuals"\nresolution = [1280, 720]\n',
+        "scripts/start.lua": """\
+label("start", function()
+  scene("bg/classroom")
+  show("eileen", { at = "left" })
+  say("Eileen", "You came back.")
+  show("eileen", { image = "eileen_happy", x = 0.5, y = 0.9 })
+  hide("eileen")
+  narrate("She left.")
+end)
+""",
+    },
+    # Shows an image that has no file, on line 3 of its only script.
+    "missing_image": {
+        "project.toml": 'title = "Missing image"\n',
+        "scripts/start.lua": """\
+label("start", function()
+  narrate("before the error")
+  show("ghost")
+end)
+""",
+    },
     # Two scripts, a jump between them, a call and its return.
     "demo": {
         "project.toml": """\
@@ -97,7 +124,24 @@ end)
     },
 }
 
+# Image names each project can show: image name N is the file images/N.png.
+IMAGES = {
+    "visuals": ["bg/classroom", "eileen", "eileen_happy"],
+}
+
+# The headless run draws nothing, so one opaque pixel is enough.
+PIXEL_PNG = png_rgba([[(128, 128, 128, 255)]])
+
 TRANSCRIPTS = {
+    "visuals": """\
+label start
+scene bg/classroom
+show eileen at left
+say Eileen: You came back.
+show eileen image eileen_happy x 0.5 y 0.9
+hide eileen
+narrate She left.
+""",
     "demo": """\
 label start
 narrate It was raining.
@@ -160,6 +204,11 @@ def main() -> int:
             path = out / project / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(text.encode("utf-8"))
+    for project, names in IMAGES.items():
+        for name in names:
+            path = out / project / "images" / f"{name}.png"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(PIXEL_PNG)
     for project, text in TRANSCRIPTS.items():
         (out / f"{project}.transcript").write_bytes(text.encode("utf-8"))
     return 0

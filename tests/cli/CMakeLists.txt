@@ -171,6 +171,20 @@ vnmaki_add_cli_test(
   EXIT 1
   STDERR_REGEX "vnmaki: scripts/start.lua:3: unknown label 'nowhere'")
 
+# Scene, show and hide (ticket 09).
+vnmaki_add_cli_stdout_file_test(
+  run_headless_prints_scene_show_and_hide
+  ARGS run "${vnmaki_run_fixtures}/visuals" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_run_fixtures}/visuals.transcript")
+
+vnmaki_add_cli_test(
+  run_headless_reports_a_missing_image_with_its_script_line
+  ARGS run "${vnmaki_run_fixtures}/missing_image" --headless
+  EXIT 1
+  STDERR_REGEX
+    "vnmaki: scripts/start.lua:3: image 'ghost' not found .no images/ghost.png or images/ghost.jpg.")
+
 vnmaki_add_cli_test(
   run_headless_stops_at_the_step_limit
   ARGS run "${vnmaki_run_fixtures}/endless" --headless --max-steps 3
