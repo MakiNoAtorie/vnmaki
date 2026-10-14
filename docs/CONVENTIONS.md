@@ -82,6 +82,10 @@ The working rules for contributors and agents. The spec is `docs/SPEC.md`. Keep 
   - `DisplayProperties`: position in virtual pixels, anchor and crop as fractions, rotation in degrees clockwise. Tweens write through `Scene::find(tag)->properties()`.
   - Each frame: `scene.prepare(renderer, jobs)` on the main thread, then `scene.draw(renderer)` in a pass on the virtual-resolution target.
   - `SceneCommands` calls return an error string, and the prelude raises it at the script line. They also run during replay.
+- **Dialogue** (`engine/dialogue/`): `DialoguePresenter` holds the current say or narrate line and its reveal. Build it after `runtime.start()`, then advance the story only through `presenter.advance()`: the first advance completes a reveal, the next one moves on.
+  - `SayBoxView`: call `prepare(line, scale)` before `begin_frame`, then `draw(...)` in a screen-resolution pass with the viewport scale and the viewport's top-left as origin.
+  - A project's default font is `fonts/default.ttf` in its VFS. The engine bundles no font.
+  - `vnmaki run <dir> [--frames N]` plays in a window and exits 0 when the story ends. `SayRequest` carries `color` (0xRRGGBB) and `voice_tag` from `character{}`.
 - **Runtime** (`engine/runtime/`): `ScriptRuntime` loads every `.lua` file under `scripts/` through the VFS. Each label runs as a coroutine.
   - The script-facing API is a Lua prelude in `script_runtime.cpp`, backed by private `engine.*` primitives.
   - Every blocking call goes through `Impl::yield_at`. That function counts the step (steps are per label activation and start at 1) and calls `ScriptObserver::on_blocked`.
