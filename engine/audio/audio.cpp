@@ -463,7 +463,8 @@ void Audio::Impl::mix(std::span<float> out) {
 void Audio::Impl::mix_block(std::span<float> out) {
   const auto voice = channels.find(kVoiceChannel);
   const bool voice_plays = voice != channels.end() && !voice->second.tracks.empty();
-  const double seconds = static_cast<double>(out.size() / kAudioChannels) / kFramesPerSecond;
+  const std::size_t frames = out.size() / kAudioChannels;
+  const double seconds = static_cast<double>(frames) / kFramesPerSecond;
   for (auto& [name, target] : channels) {
     if (name == kMusicChannel) {
       const double goal = voice_plays ? options.duck_volume : 1;
