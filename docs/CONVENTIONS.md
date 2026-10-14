@@ -23,7 +23,9 @@ The working rules for contributors and agents. The spec is `docs/SPEC.md`. Keep 
 - C++20, namespace `vnmaki`. Types are `PascalCase`, functions and variables `snake_case`, enumerators `kName`. Scoped enums get a small base type such as `: std::uint8_t`. Files are `.hpp`/`.cpp`, formatted Google style at 100 columns.
 - Includes use the path from the repo root (`"engine/vfs/vfs.hpp"`). Order: the file's own header, then `<std>`, then `<third/party.h>`, then `"engine/..."`.
 - Every warning is an error, and clang-tidy runs with `WarningsAsErrors: '*'`. Fix findings rather than suppress them.
-  - Name literal constants, even in tests. Literals inside doctest `CHECK(...)` are fine.
+  - Name literal constants, even in tests. Integer literals inside doctest `CHECK(...)` are fine; floating-point literals other than 0 and 1 need a name everywhere.
+  - Declare a variable that is initialized with a cast as `auto`.
+  - When a struct is built with designated initializers, every field needs a default initializer.
   - Call `reserve()` before a `push_back` loop.
   - Give struct fields default initializers (`PointF position{};`).
 - The engine is a single static library, `vnmaki_engine`. Each module has `engine/<module>/CMakeLists.txt`, which adds its files with `target_sources(vnmaki_engine PRIVATE ...)` and is listed with `add_subdirectory` in `engine/CMakeLists.txt`.
@@ -74,6 +76,12 @@ The working rules for contributors and agents. The spec is `docs/SPEC.md`. Keep 
   - The atlas is white, premultiplied by coverage; colour comes from the quad tint.
   - A `Font` and its atlases belong to one thread. Bad fonts throw `FontError`.
   - v1 has one left-to-right run per paragraph and one font. Tags, bidi and fallback are ticket 17.
+- **Scene** (`engine/scene/`): `Scene` holds tagged displayables on layers (background, master, characters, 3D, overlay, UI, transient). It implements `SceneState` and `SceneCommands`; set both `ScriptRuntimeOptions::scene` and `::scene_state` to it. The runtime includes no scene headers.
+  - Image name `N` is the VFS file `images/N.png`, else `images/N.jpg`.
+  - A tag is unique across all layers. `show` defaults to layer `characters`, position `center`, anchor bottom-centre.
+  - `DisplayProperties`: position in virtual pixels, anchor and crop as fractions, rotation in degrees clockwise. Tweens write through `Scene::find(tag)->properties()`.
+  - Each frame: `scene.prepare(renderer, jobs)` on the main thread, then `scene.draw(renderer)` in a pass on the virtual-resolution target.
+  - `SceneCommands` calls return an error string, and the prelude raises it at the script line. They also run during replay.
 - **Runtime** (`engine/runtime/`): `ScriptRuntime` loads every `.lua` file under `scripts/` through the VFS. Each label runs as a coroutine.
   - The script-facing API is a Lua prelude in `script_runtime.cpp`, backed by private `engine.*` primitives.
   - Every blocking call goes through `Impl::yield_at`. That function counts the step (steps are per label activation and start at 1) and calls `ScriptObserver::on_blocked`.
