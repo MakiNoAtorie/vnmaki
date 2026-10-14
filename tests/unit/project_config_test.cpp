@@ -87,6 +87,40 @@ TEST_CASE("project.toml: invalid files are reported with the place and the reaso
         "project.toml:2:13: 'languages' lists 'en' twice");
 }
 
+TEST_CASE("project.toml: each language has a font fallback chain") {
+  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs({{"project.toml", R"(
+title = "Game"
+languages = ["en", "ja", "he"]
+
+[fonts.fallback]
+en = ["fonts/latin.ttf"]
+ja = ["fonts/japanese.otf", "fonts/latin.ttf"]
+)"}});
+  const ProjectConfig config = vnmaki::load_project_config(vfs);
+
+  REQUIRE(config.font_fallbacks.size() == 2);
+  CHECK(config.font_fallbacks.at("en") == Strings{"fonts/latin.ttf"});
+  CHECK(config.font_fallbacks.at("ja") == Strings{"fonts/japanese.otf", "fonts/latin.ttf"});
+  // A language without a chain has none.
+  CHECK(config.font_fallbacks.count("he") == 0);
+  CHECK(vnmaki::parse_project_config("title = \"A\"\n").font_fallbacks.empty());
+}
+
+TEST_CASE("project.toml: a bad font fallback chain is reported with the place") {
+  CHECK(error_for("title = \"A\"\nfonts = 3\n") == "project.toml:2:9: 'fonts' must be a table");
+  CHECK(error_for("title = \"A\"\n[fonts]\nfallback = \"a.ttf\"\n") ==
+        "project.toml:3:12: 'fonts.fallback' must be a table of font path lists, one for each "
+        "language");
+  CHECK(error_for("title = \"A\"\n[fonts.fallback]\nen = \"a.ttf\"\n") ==
+        "project.toml:3:6: 'fonts.fallback.en' must be a list of font paths");
+  CHECK(error_for("title = \"A\"\n[fonts.fallback]\nen = [\"a.ttf\", 3]\n") ==
+        "project.toml:3:6: 'fonts.fallback.en' must be a list of font paths");
+  CHECK(error_for("title = \"A\"\n[fonts.fallback]\nen = [\"\"]\n") ==
+        "project.toml:3:6: 'fonts.fallback.en' must be a list of font paths");
+  CHECK(error_for("title = \"A\"\n[fonts.fallback]\nja = [\"a.ttf\"]\n") ==
+        "project.toml:3:6: 'fonts.fallback' has language 'ja', which 'languages' does not list");
+}
+
 TEST_CASE("project.toml: TOML syntax errors give the line and column") {
   const std::string message = error_for("title = \"A\"\nversion = \n");
 

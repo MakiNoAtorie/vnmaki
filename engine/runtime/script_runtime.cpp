@@ -19,6 +19,7 @@
 
 #include <sol/sol.hpp>
 
+#include "engine/text/markup.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki {
@@ -148,6 +149,14 @@ function ret()
   transfer("ret", "")
 end
 
+-- Raises a bad text tag at the caller of the API function that called this.
+local function check_text(text)
+  local problem = engine.check_text(text)
+  if problem then
+    error(problem, 3)
+  end
+end
+
 function say(who, text)
   local speaker
   if type(who) == "string" then
@@ -161,6 +170,7 @@ function say(who, text)
     bad_argument("say", 2, "string", text)
   end
   require_label("say")
+  check_text(text)
   if speaker == nil then
     engine.narrate(text)
   else
@@ -173,7 +183,19 @@ function narrate(text)
     bad_argument("narrate", 1, "string", text)
   end
   require_label("narrate")
+  check_text(text)
   engine.narrate(text)
+end
+
+-- The function the engine calls with a link's id when the player activates a
+-- {link=id} part of the text on screen. It runs outside the labels: it cannot
+-- block, and the replay does not run it again, so it must not change `store`.
+local link_handler
+function on_link(handler)
+  if type(handler) ~= "function" then
+    bad_argument("on_link", 1, "function", handler)
+  end
+  link_handler = handler
 end
 
 -- Visuals. The engine primitives return why a call cannot be done, or nil.
@@ -429,6 +451,13 @@ end
 function limits.reset(ticks)
   ticks_left = ticks
 end
+function limits.link(id)
+  if link_handler == nil then
+    return false
+  end
+  link_handler(id)
+  return true
+end
 return limits
 )lua";
 
@@ -563,6 +592,7 @@ class ScriptRuntime::Impl {
   void start(std::string_view name);
   void advance();
   void choose(std::size_t index);
+  bool activate_link(std::string_view id);
   void replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
               std::uint32_t step);
 
@@ -683,6 +713,7 @@ class ScriptRuntime::Impl {
   sol::protected_function limits_configure_;
   sol::protected_function limits_watch_;
   sol::protected_function limits_reset_;
+  sol::protected_function link_;
 
   std::map<std::string, Label, std::less<>> labels_;
   // Script path -> source text, for the label source hashes; kept only while
@@ -750,6 +781,7 @@ ScriptRuntime::Impl::Impl(const Vfs& vfs, const ScriptRuntimeOptions& options)
   limits_configure_ = limits_table["configure"];
   limits_watch_ = limits_table["watch"];
   limits_reset_ = limits_table["reset"];
+  link_ = limits_table["link"];
   if (options_.instruction_limit != 0) {
     hook_period_ = std::min(options_.instruction_limit, kHookPeriod);
     limits_configure_(hook_period_);
@@ -788,6 +820,20 @@ void ScriptRuntime::Impl::bind_engine() {
                                   .source_hash = source_hash});
       return sol::lua_nil;
     }
+    return sol::make_object(state, problem);
+  };
+  // The prelude raises the problem at the script line of the say or narrate call.
+  engine_["check_text"] = [this](sol::this_state state, const std::string& text) -> sol::object {
+    std::string problem;
+    try {
+      (void)parse_markup(text);
+    } catch (const MarkupError& error) {
+      problem = "bad text tag at byte " + std::to_string(error.offset()) + ": " + error.what();
+    }
+    if (problem.empty()) {
+      return sol::lua_nil;
+    }
+    const MemoryLimitScope unlimited{allocator_, false};
     return sol::make_object(state, problem);
   };
   engine_["say"] = sol::yielding(
@@ -1330,6 +1376,20 @@ void ScriptRuntime::Impl::run(std::optional<std::int64_t> resume_value) {
   }
 }
 
+bool ScriptRuntime::Impl::activate_link(std::string_view id) {
+  if (state_ != RunState::kWaiting) {
+    return false;
+  }
+  reset_instruction_budget();
+  const MemoryLimitScope limited{allocator_, true};
+  const sol::protected_function_result result = link_(std::string{id});
+  if (!result.valid()) {
+    fail(error_text(result));
+    return false;
+  }
+  return result.get<bool>();
+}
+
 void ScriptRuntime::Impl::fail(std::string message) {
   state_ = RunState::kFailed;
   replaying_ = false;
@@ -1353,6 +1413,7 @@ bool ScriptRuntime::has_label(std::string_view name) const { return impl_->has_l
 void ScriptRuntime::start(std::string_view name) { impl_->start(name); }
 void ScriptRuntime::advance() { impl_->advance(); }
 void ScriptRuntime::choose(std::size_t index) { impl_->choose(index); }
+bool ScriptRuntime::activate_link(std::string_view id) { return impl_->activate_link(id); }
 void ScriptRuntime::replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
                            std::uint32_t step) {
   impl_->replay(snapshot, inputs, step);

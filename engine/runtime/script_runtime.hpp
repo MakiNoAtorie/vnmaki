@@ -254,6 +254,9 @@ struct ScriptRuntimeOptions {
 /// `math.random`) and the `store` table. Visuals: `scene(image)`,
 /// `show(tag, { image =, at =, x =, y =, layer = })` and `hide(tag)`; option
 /// keys they do not know are ignored (later tickets add `with`, `outfit`...).
+/// Text: `say` and `narrate` take inline tags (docs/TEXT_TAGS.md), and a bad
+/// tag is a script error at that line. `on_link(fn)` sets the function that
+/// activate_link() calls.
 ///
 /// `store` is owned by the engine: scripts change its fields but cannot
 /// replace it. It keeps booleans, numbers, strings and tables with such keys
@@ -293,6 +296,14 @@ class ScriptRuntime {
   /// logs the choice and runs the label to its next yield point. Does nothing
   /// unless kWaiting at a menu. Throws std::out_of_range for a bad index.
   void choose(std::size_t index);
+
+  /// The player activated the part of the text on screen that has the tag
+  /// `{link=id}` (find it with link_at in engine/text/text.hpp). Calls the
+  /// function the script gave to `on_link` with `id` and returns true, or
+  /// returns false if there is none or the runtime is not kWaiting. The
+  /// function runs outside the labels: an error in it, or a blocking call,
+  /// fails the runtime. A replay does not call it again.
+  bool activate_link(std::string_view id);
 
   /// Restores `snapshot` (store and scene state) and runs its label again
   /// from the start, answering menus from `inputs`, until that label waits at

@@ -3,7 +3,8 @@
 // Besides "does not crash": parsing either throws ProjectConfigError with a
 // message naming project.toml, or returns a config that satisfies the schema
 // (non-empty title, resolution in range, a non-empty list of distinct
-// non-empty language codes).
+// non-empty language codes, font fallback chains only for those languages and
+// without empty paths).
 
 #include <algorithm>
 #include <cstddef>
@@ -33,6 +34,12 @@ void check(const vnmaki::ProjectConfig& config) {
   for (auto it = config.languages.begin(); it != config.languages.end(); ++it) {
     require(!it->empty());
     require(std::find(std::next(it), config.languages.end(), *it) == config.languages.end());
+  }
+  for (const auto& [language, paths] : config.font_fallbacks) {
+    require(std::find(config.languages.begin(), config.languages.end(), language) !=
+            config.languages.end());
+    require(std::none_of(paths.begin(), paths.end(),
+                         [](const std::string& path) { return path.empty(); }));
   }
 }
 

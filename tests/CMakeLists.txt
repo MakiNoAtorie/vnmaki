@@ -46,7 +46,8 @@ vnmaki_add_fixture_generator(
 
 # Text: layout, glyph atlas, typewriter reveal (ticket 07).
 target_sources(vnmaki_unit_tests PRIVATE unit/text_test.cpp unit/markup_test.cpp
-                                         unit/styled_text_test.cpp)
+                                         unit/styled_text_test.cpp
+                                         unit/script_text_test.cpp)
 vnmaki_add_fixture_generator(
   text SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)

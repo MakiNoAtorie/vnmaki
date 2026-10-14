@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -74,6 +75,49 @@ std::vector<std::string> read_languages(const toml::node& node) {
   return languages;
 }
 
+using FontFallbacks = std::map<std::string, std::vector<std::string>>;
+
+/// Reads the `fonts` table. Every language of `fonts.fallback` must be in `languages`.
+FontFallbacks read_font_fallbacks(const toml::node& fonts,
+                                  const std::vector<std::string>& languages) {
+  const toml::table* fonts_table = fonts.as_table();
+  if (fonts_table == nullptr) {
+    fail_at(fonts, "'fonts' must be a table");
+  }
+  FontFallbacks chains;
+  const toml::node* fallback = fonts_table->get("fallback");
+  if (fallback == nullptr) {
+    return chains;
+  }
+  const toml::table* by_language = fallback->as_table();
+  if (by_language == nullptr) {
+    fail_at(*fallback,
+            "'fonts.fallback' must be a table of font path lists, one for each language");
+  }
+  for (const auto& [key, node] : *by_language) {
+    const std::string language{key.str()};
+    if (std::find(languages.begin(), languages.end(), language) == languages.end()) {
+      fail_at(node, "'fonts.fallback' has language '" + language +
+                        "', which 'languages' does not list");
+    }
+    const std::string reason = "'fonts.fallback." + language + "' must be a list of font paths";
+    const toml::array* paths = node.as_array();
+    if (paths == nullptr) {
+      fail_at(node, reason);
+    }
+    std::vector<std::string>& chain = chains[language];
+    chain.reserve(paths->size());
+    for (const toml::node& element : *paths) {
+      const std::optional<std::string> path = element.value_exact<std::string>();
+      if (!path || path->empty()) {
+        fail_at(node, reason);
+      }
+      chain.push_back(*path);
+    }
+  }
+  return chains;
+}
+
 }  // namespace
 
 ProjectConfig parse_project_config(std::string_view toml_text) {
@@ -84,8 +128,11 @@ ProjectConfig parse_project_config(std::string_view toml_text) {
     throw ProjectConfigError(at(error.source().begin) + ": " + std::string{error.description()});
   }
 
-  ProjectConfig config{
-      .title = {}, .version = "0.0.0", .resolution = kDefaultResolution, .languages = {"en"}};
+  ProjectConfig config{.title = {},
+                       .version = "0.0.0",
+                       .resolution = kDefaultResolution,
+                       .languages = {"en"},
+                       .font_fallbacks = {}};
 
   const toml::node* title = table.get("title");
   if (title == nullptr) {
@@ -103,6 +150,9 @@ ProjectConfig parse_project_config(std::string_view toml_text) {
   }
   if (const toml::node* languages = table.get("languages")) {
     config.languages = read_languages(*languages);
+  }
+  if (const toml::node* fonts = table.get("fonts")) {
+    config.font_fallbacks = read_font_fallbacks(*fonts, config.languages);
   }
   return config;
 }
