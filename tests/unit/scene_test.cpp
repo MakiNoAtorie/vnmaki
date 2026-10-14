@@ -33,6 +33,10 @@ using vnmaki::Scene;
 using Lines = std::vector<std::string>;
 using Bytes = std::vector<std::byte>;
 
+constexpr float kQuarter = 0.25F;
+constexpr float kHalf = 0.5F;
+constexpr float kThreeQuarters = 0.75F;
+
 constexpr vnmaki::Size kVirtualSize{.width = 1280, .height = 720};
 
 // A game with one script and the image files the tests show. The scene only checks that an
@@ -141,7 +145,7 @@ end)
   CHECK(scene.tags(Layer::kCharacters) == Lines{"eileen", "lucy"});
   CHECK(path_of(scene, "eileen") == "images/eileen.png");
   CHECK(properties_of(scene, "eileen").position == PointF{.x = 320, .y = 720});
-  CHECK(properties_of(scene, "eileen").anchor == PointF{.x = 0.5F, .y = 1});
+  CHECK(properties_of(scene, "eileen").anchor == PointF{.x = kHalf, .y = 1});
   CHECK(properties_of(scene, "lucy").position == PointF{.x = 640, .y = 180});
 
   for (const Layer layer :
@@ -173,7 +177,7 @@ end)
   CHECK(properties_of(stage.scene, "rain").position == PointF{.x = 960, .y = 720});
   // Without a position a new tag stands at the centre.
   CHECK(properties_of(stage.scene, "eileen_happy").position == PointF{.x = 640, .y = 720});
-  CHECK(properties_of(stage.scene, "eileen_happy").anchor == PointF{.x = 0.5F, .y = 1});
+  CHECK(properties_of(stage.scene, "eileen_happy").anchor == PointF{.x = kHalf, .y = 1});
 }
 
 TEST_CASE("scene: show replaces a tagged displayable and keeps what the call does not set") {
@@ -328,12 +332,12 @@ TEST_CASE("scene: a captured state restores what was shown, where and with which
   // Every property, changed the way a tween will change them.
   constexpr DisplayProperties kChanged{
       .position = {.x = 320, .y = 700},
-      .anchor = {.x = 0.25F, .y = 0.75F},
-      .scale = {.x = 2, .y = 0.5F},
+      .anchor = {.x = kQuarter, .y = kThreeQuarters},
+      .scale = {.x = 2, .y = kHalf},
       .rotation = 30,
-      .alpha = 0.5F,
+      .alpha = kHalf,
       .tint = vnmaki::rgba8(255, 128, 0, 64),
-      .crop = {.x = 0.25F, .y = 0, .width = 0.5F, .height = 1},
+      .crop = {.x = kQuarter, .y = 0, .width = kHalf, .height = 1},
   };
   REQUIRE(scene.find("eileen") != nullptr);
   scene.find("eileen")->properties() = kChanged;
@@ -426,9 +430,9 @@ TEST_CASE("displayable: the properties place, scale, crop and rotate its bounds"
   constexpr vnmaki::Size kImageSize{.width = 8, .height = 16};
   constexpr vnmaki::TextureId kSomeTexture{.value = 1};
   constexpr PointF kPlace{.x = 100, .y = 200};
-  constexpr PointF kBottomCenter{.x = 0.5F, .y = 1};
+  constexpr PointF kBottomCenter{.x = kHalf, .y = 1};
   constexpr PointF kDouble{.x = 2, .y = 2};
-  constexpr RectF kRightHalf{.x = 0.5F, .y = 0, .width = 0.5F, .height = 1};
+  constexpr RectF kRightHalf{.x = kHalf, .y = 0, .width = kHalf, .height = 1};
   constexpr float kQuarterTurn = 90;
   vnmaki::ImageDisplayable image{"images/eileen.png"};
   vnmaki::Displayable& displayable = image;
