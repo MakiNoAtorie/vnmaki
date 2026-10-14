@@ -1,0 +1,283 @@
+# Black-box tests of the vnmaki executable: each runs it as a process.
+function(vnmaki_add_cli_test name)
+  cmake_parse_arguments(PARSE_ARGV 1 arg "NO_STDOUT" "EXIT;STDOUT_LINE;STDERR_REGEX"
+                        "ARGS")
+  # Keep a multi-argument ARGS list in the one -DARGS=... argument.
+  string(REPLACE ";" "\\;" arg_ARGS "${arg_ARGS}")
+  set(script_args -DEXE=$<TARGET_FILE:vnmaki> "-DARGS=${arg_ARGS}"
+                  -DEXPECTED_EXIT=${arg_EXIT})
+  if(arg_NO_STDOUT)
+    list(APPEND script_args -DEXPECTED_NO_STDOUT=ON)
+  elseif(DEFINED arg_STDOUT_LINE)
+    list(APPEND script_args "-DEXPECTED_STDOUT_LINE=${arg_STDOUT_LINE}")
+  endif()
+  if(DEFINED arg_STDERR_REGEX)
+    list(APPEND script_args "-DEXPECTED_STDERR_REGEX=${arg_STDERR_REGEX}")
+  endif()
+  add_test(NAME cli.${name} COMMAND ${CMAKE_COMMAND} ${script_args} -P
+                                    "${CMAKE_CURRENT_SOURCE_DIR}/run_cli.cmake")
+endfunction()
+
+vnmaki_add_cli_test(
+  version
+  ARGS --version
+  EXIT 0
+  STDOUT_LINE "vnmaki ${PROJECT_VERSION}")
+
+vnmaki_add_cli_test(
+  unknown_option_is_a_usage_error
+  ARGS --frobnicate
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "unknown option '--frobnicate'.*usage: vnmaki")
+
+vnmaki_add_cli_test(
+  no_arguments_prints_usage
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki")
+
+# vnmaki window (ticket 04): opens an empty window and runs the main loop.
+vnmaki_add_cli_test(
+  window_opens_and_runs_some_frames
+  ARGS window --frames 3
+  EXIT 0
+  NO_STDOUT)
+
+vnmaki_add_cli_test(
+  window_reports_a_video_driver_that_cannot_start
+  ARGS window --frames 1
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "^vnmaki window: cannot start SDL video")
+set_tests_properties(cli.window_reports_a_video_driver_that_cannot_start
+                     PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=no-such-driver")
+
+vnmaki_add_cli_test(
+  window_frames_must_be_a_number
+  ARGS window --frames many
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki window: --frames needs a whole number, not 'many'")
+
+vnmaki_add_cli_test(
+  window_rejects_unknown_options
+  ARGS window --frobnicate
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki window: unknown option '--frobnicate'.*usage: .*vnmaki window")
+
+# A bug in the frame limit must fail the test, not hang CI with an open window.
+set_tests_properties(cli.window_opens_and_runs_some_frames PROPERTIES TIMEOUT 60)
+# Linux CI has no display: open the window with SDL's offscreen driver there.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set_tests_properties(cli.window_opens_and_runs_some_frames
+                       PROPERTIES ENVIRONMENT "SDL_VIDEO_DRIVER=offscreen")
+endif()
+
+# vnmaki window --image (ticket 05): draws a PNG through the VFS, the job system and the GPU.
+set(vnmaki_cli_images "${VNMAKI_FIXTURES_DIR}/render/images")
+vnmaki_add_cli_test(
+  window_shows_an_image
+  ARGS window --frames 3 --image "${vnmaki_cli_images}/checker_4x4.png"
+  EXIT 0
+  NO_STDOUT)
+vnmaki_add_cli_test(
+  window_reports_a_missing_image
+  ARGS window --frames 1 --image "${vnmaki_cli_images}/no_such_image.png"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "^vnmaki window: no image file at '.*no_such_image.png'")
+vnmaki_add_cli_test(
+  window_reports_an_image_it_cannot_decode
+  ARGS window --frames 1 --image "${vnmaki_cli_images}/truncated.png"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "^vnmaki window: cannot decode image 'truncated.png'")
+set(vnmaki_gpu_cli_tests cli.window_shows_an_image cli.window_reports_an_image_it_cannot_decode)
+set_tests_properties(cli.window_reports_a_missing_image ${vnmaki_gpu_cli_tests} PROPERTIES TIMEOUT
+                                                                                           60)
+set(vnmaki_gpu_cli_env "")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  list(APPEND vnmaki_gpu_cli_env "SDL_VIDEO_DRIVER=offscreen")
+endif()
+# GPU drivers unloaded at exit make LeakSanitizer report false leaks (see
+# tests/render/CMakeLists.txt).
+if("address" IN_LIST VNMAKI_SANITIZERS)
+  list(APPEND vnmaki_gpu_cli_env "ASAN_OPTIONS=detect_leaks=0")
+endif()
+# Races inside the GPU driver's own threads are not the engine's.
+if("thread" IN_LIST VNMAKI_SANITIZERS)
+  list(APPEND vnmaki_gpu_cli_env
+       "TSAN_OPTIONS=suppressions=${PROJECT_SOURCE_DIR}/tests/render/gpu_driver.tsan.supp")
+endif()
+if(vnmaki_gpu_cli_env)
+  set_tests_properties(cli.window_reports_a_missing_image ${vnmaki_gpu_cli_tests}
+                       PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
+endif()
+# Without any usable GPU device (not even a software one) these are skipped, as in
+# tests/render/CMakeLists.txt, unless VNMAKI_REQUIRE_GPU=1 was set when configuring.
+if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+  set_tests_properties(${vnmaki_gpu_cli_tests} PROPERTIES SKIP_REGULAR_EXPRESSION
+                                                          "cannot create a GPU device")
+endif()
+# vnmaki run (ticket 06), on the projects tools/generators/runtime_fixtures.py
+# writes (registered in tests/CMakeLists.txt).
+set(vnmaki_run_fixtures "${VNMAKI_FIXTURES_DIR}/runtime")
+
+# Like vnmaki_add_cli_test, but stdout must equal the file STDOUT_FILE.
+function(vnmaki_add_cli_stdout_file_test name)
+  cmake_parse_arguments(PARSE_ARGV 1 arg "" "EXIT;STDOUT_FILE;STDERR_REGEX" "ARGS")
+  string(REPLACE ";" "\\;" arg_ARGS "${arg_ARGS}")
+  set(script_args -DEXE=$<TARGET_FILE:vnmaki> "-DARGS=${arg_ARGS}"
+                  -DEXPECTED_EXIT=${arg_EXIT} "-DEXPECTED_STDOUT_FILE=${arg_STDOUT_FILE}")
+  if(DEFINED arg_STDERR_REGEX)
+    list(APPEND script_args "-DEXPECTED_STDERR_REGEX=${arg_STDERR_REGEX}")
+  endif()
+  add_test(NAME cli.${name} COMMAND ${CMAKE_COMMAND} ${script_args} -P
+                                    "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_stdout_file.cmake")
+endfunction()
+
+vnmaki_add_cli_stdout_file_test(
+  run_headless_prints_the_transcript
+  ARGS run "${vnmaki_run_fixtures}/demo" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_run_fixtures}/demo.transcript")
+
+# With no project argument, vnmaki run uses the current directory.
+add_test(NAME cli.run_headless_defaults_to_the_current_directory
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> "-DARGS=run;--headless"
+                 -DEXPECTED_EXIT=0
+                 "-DEXPECTED_STDOUT_FILE=${vnmaki_run_fixtures}/demo.transcript" -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_stdout_file.cmake"
+         WORKING_DIRECTORY "${vnmaki_run_fixtures}/demo")
+
+# The engine RNG gives the same numbers on every platform and run.
+vnmaki_add_cli_stdout_file_test(
+  run_headless_rolls_the_same_dice_every_time
+  ARGS run "${vnmaki_run_fixtures}/dice" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_run_fixtures}/dice.transcript")
+
+# Characters, say and narrate (ticket 08). Exit 0 means the story reached its end.
+vnmaki_add_cli_stdout_file_test(
+  run_headless_plays_characters_to_the_end
+  ARGS run "${vnmaki_run_fixtures}/say" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_run_fixtures}/say.transcript")
+
+vnmaki_add_cli_test(
+  run_headless_stops_at_a_menu
+  ARGS run "${vnmaki_run_fixtures}/menu" --headless
+  EXIT 1
+  STDERR_REGEX "vnmaki: the story waits at a menu")
+
+vnmaki_add_cli_test(
+  run_headless_reports_script_errors
+  ARGS run "${vnmaki_run_fixtures}/broken" --headless
+  EXIT 1
+  STDERR_REGEX "vnmaki: scripts/start.lua:3: unknown label 'nowhere'")
+
+# Scene, show and hide (ticket 09).
+vnmaki_add_cli_stdout_file_test(
+  run_headless_prints_scene_show_and_hide
+  ARGS run "${vnmaki_run_fixtures}/visuals" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_run_fixtures}/visuals.transcript")
+
+vnmaki_add_cli_test(
+  run_headless_reports_a_missing_image_with_its_script_line
+  ARGS run "${vnmaki_run_fixtures}/missing_image" --headless
+  EXIT 1
+  STDERR_REGEX
+    "vnmaki: scripts/start.lua:3: image 'ghost' not found .no images/ghost.png or images/ghost.jpg.")
+
+vnmaki_add_cli_test(
+  run_headless_stops_at_the_step_limit
+  ARGS run "${vnmaki_run_fixtures}/endless" --headless --max-steps 3
+  EXIT 1
+  STDERR_REGEX "vnmaki: stopped after 3 steps")
+
+vnmaki_add_cli_test(
+  run_reports_an_invalid_project_toml
+  ARGS run "${vnmaki_run_fixtures}/bad_config" --headless
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: project.toml: missing required key 'title'")
+
+vnmaki_add_cli_test(
+  run_reports_a_missing_project_toml
+  ARGS run "${vnmaki_run_fixtures}/no_config" --headless
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: project.toml: not found")
+
+vnmaki_add_cli_test(
+  run_reports_a_missing_project_folder
+  ARGS run "${vnmaki_run_fixtures}/does_not_exist" --headless
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: .*does_not_exist.* is not a directory")
+
+# vnmaki run without --headless (ticket 08): the story in a window, with the say box. The "say"
+# and "finished" projects carry fonts/default.ttf; "demo" has no font.
+vnmaki_add_cli_test(
+  run_window_plays_a_story_with_a_say_box
+  ARGS run "${vnmaki_run_fixtures}/say" --frames 3
+  EXIT 0
+  NO_STDOUT)
+
+# The window closes by itself once the story has ended (the frame limit is far away).
+vnmaki_add_cli_test(
+  run_window_closes_when_the_story_ends
+  ARGS run "${vnmaki_run_fixtures}/finished" --frames 100000
+  EXIT 0
+  NO_STDOUT)
+
+vnmaki_add_cli_test(
+  run_window_reports_a_script_error
+  ARGS run "${vnmaki_run_fixtures}/broken_with_font" --frames 100000
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: scripts/start.lua:2: unknown label 'nowhere'")
+
+set(vnmaki_run_window_tests cli.run_window_plays_a_story_with_a_say_box
+                            cli.run_window_closes_when_the_story_ends
+                            cli.run_window_reports_a_script_error)
+set_tests_properties(${vnmaki_run_window_tests} PROPERTIES TIMEOUT 60)
+if(vnmaki_gpu_cli_env)
+  set_tests_properties(${vnmaki_run_window_tests} PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
+endif()
+if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+  set_tests_properties(${vnmaki_run_window_tests} PROPERTIES SKIP_REGULAR_EXPRESSION
+                                                             "cannot create a GPU device")
+endif()
+
+# The font is read before any window opens, so this needs no GPU.
+vnmaki_add_cli_test(
+  run_window_needs_the_projects_default_font
+  ARGS run "${vnmaki_run_fixtures}/demo" --frames 1
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: .*fonts/default.ttf")
+
+vnmaki_add_cli_test(
+  run_rejects_frames_with_headless
+  ARGS run "${vnmaki_run_fixtures}/demo" --headless --frames 3
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki run: --frames needs a window")
+
+vnmaki_add_cli_test(
+  run_rejects_a_bad_frame_count
+  ARGS run "${vnmaki_run_fixtures}/demo" --frames nope
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki run: --frames needs a positive whole number")
+
+vnmaki_add_cli_test(
+  run_rejects_a_bad_step_limit
+  ARGS run "${vnmaki_run_fixtures}/demo" --headless --max-steps nope
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki run: --max-steps needs a positive whole number")

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "vnmaki",
+  "version": "0.1.0",
+  "description": "An open-source visual novel engine.",
+  "homepage": "https://github.com/MakiNoAtorie/vnmaki",
+  "license": "MIT",
+  "builtin-baseline": "e456309491fd875487bf02b8a0dca76c1b1b00cc",
+  "dependencies": [
+    "doctest",
+    {
+      "name": "sdl3",
+      "default-features": false,
+      "features": [
+        { "name": "wayland", "platform": "linux" },
+        { "name": "x11", "platform": "linux" },
+        { "name": "vulkan", "platform": "linux | windows" }
+      ]
+    },
+    {
+      "name": "sdl3-shadercross",
+      "host": true,
+      "platform": "!osx"
+    },
+    { "name": "freetype", "default-features": false },
+    { "name": "harfbuzz", "default-features": false },
+    "libunibreak",
+    "lua",
+    "sol2",
+    "stb",
+    "tomlplusplus"
+  ],
+  "overrides": [
+    {
+      "name": "lua",
+      "version": "5.4.8"
+    }
+  ]
+}

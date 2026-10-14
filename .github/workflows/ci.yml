@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CTEST_PARALLEL_LEVEL: 4
+
+jobs:
+  windows-msvc:
+    name: Windows / MSVC (${{ matrix.preset }})
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [debug, release]
+    env:
+      CC: cl
+      CXX: cl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Install Ninja
+        run: choco install ninja --no-progress -y
+      - uses: ./.github/actions/install-sdl3-deps
+      - uses: ./.github/actions/install-gpu-driver
+      - uses: ./.github/actions/setup-shadercross
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-key: windows-msvc-${{ matrix.preset }}
+      - name: Configure, build and test
+        run: cmake --workflow --preset ${{ matrix.preset }}
+
+  linux-clang:
+    name: Linux / Clang (${{ matrix.preset }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [asan-ubsan, tsan, fuzz, release]
+    env:
+      CC: clang-18
+      CXX: clang++-18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build clang-18 libclang-rt-18-dev
+      - name: Allow sanitizers under high-entropy ASLR
+        # Ubuntu 24.04 runners use vm.mmap_rnd_bits=32, which breaks ASan and
+        # TSan from Clang 18.
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - uses: ./.github/actions/install-sdl3-deps
+      - uses: ./.github/actions/install-gpu-driver
+      - uses: ./.github/actions/setup-shadercross
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-key: linux-clang-${{ matrix.preset }}
+      # Some presets name plain clang++; pin Clang 18 explicitly.
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} -DCMAKE_CXX_COMPILER=clang++-18
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+  # Targets without threads (e.g. a future web build) run every job inline.
+  linux-no-threads:
+    name: Linux / Clang (debug, threads disabled)
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang-18
+      CXX: clang++-18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build clang-18
+      - uses: ./.github/actions/install-sdl3-deps
+      - uses: ./.github/actions/install-gpu-driver
+      - uses: ./.github/actions/setup-shadercross
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-key: linux-clang-no-threads
+      - name: Configure
+        run: cmake --preset debug -DVNMAKI_ENABLE_THREADS=OFF
+      - name: Build
+        run: cmake --build --preset debug
+      - name: Test
+        run: ctest --preset debug
+
+  macos-clang:
+    name: macOS / Clang (${{ matrix.preset }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [debug, asan-ubsan]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: brew install ninja
+      - uses: ./.github/actions/install-sdl3-deps
+      - uses: ./.github/actions/install-gpu-driver
+      - uses: ./.github/actions/setup-shadercross
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-key: macos-clang-${{ matrix.preset }}
+      - name: Configure, build and test
+        run: cmake --workflow --preset ${{ matrix.preset }}
+
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build clang-18 clang-tidy-18 libclang-rt-18-dev
+      - uses: ./.github/actions/install-sdl3-deps
+      - uses: ./.github/actions/install-gpu-driver
+      - uses: ./.github/actions/setup-shadercross
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-key: linux-clang-tidy
+      - name: Configure
+        run: >-
+          cmake --preset clang-tidy
+          -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_CXX_CLANG_TIDY=clang-tidy-18
+      - name: Build with clang-tidy (every finding is an error)
+        run: cmake --build --preset clang-tidy
+      - name: Test
+        run: ctest --preset clang-tidy
+
+  format:
+    name: Format check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format-18
+      - name: Check formatting
+        run: git ls-files -z '*.cpp' '*.hpp' '*.h' | xargs -0 --no-run-if-empty clang-format-18 --dry-run --Werror

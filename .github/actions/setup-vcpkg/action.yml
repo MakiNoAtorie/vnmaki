@@ -1,0 +1,41 @@
+name: Set up vcpkg
+description: >
+  Clones vcpkg at the builtin-baseline commit from vcpkg.json, bootstraps it,
+  exports VCPKG_ROOT and restores the vcpkg binary cache.
+
+inputs:
+  cache-key:
+    description: Distinguishes binary caches between jobs (e.g. OS and preset).
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # pwsh runs on every runner OS, so one script handles Windows paths too.
+    - name: Clone and bootstrap vcpkg at the manifest baseline
+      shell: pwsh
+      run: |
+        $PSNativeCommandUseErrorActionPreference = $true
+        $baseline = (Get-Content vcpkg.json -Raw | ConvertFrom-Json).'builtin-baseline'
+        if (-not $baseline) { throw 'vcpkg.json has no builtin-baseline' }
+        $root = Join-Path $env:RUNNER_TEMP 'vcpkg'
+        $cache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+        # A full clone: version overrides need the vcpkg git history.
+        git clone --quiet https://github.com/microsoft/vcpkg.git $root
+        git -C $root checkout --quiet $baseline
+        New-Item -ItemType Directory -Force -Path $cache | Out-Null
+        if ($IsWindows) {
+          & (Join-Path $root 'bootstrap-vcpkg.bat') -disableMetrics
+        } else {
+          & (Join-Path $root 'bootstrap-vcpkg.sh') -disableMetrics
+        }
+        Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_ROOT=$root"
+        Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_DEFAULT_BINARY_CACHE=$cache"
+        Add-Content -Path $env:GITHUB_ENV -Value 'VCPKG_DISABLE_METRICS=1'
+
+    - name: Restore the vcpkg binary cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/vcpkg-binary-cache
+        key: vcpkg-${{ inputs.cache-key }}-${{ hashFiles('vcpkg.json') }}
+        restore-keys: vcpkg-${{ inputs.cache-key }}-
