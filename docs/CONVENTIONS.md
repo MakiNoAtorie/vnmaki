@@ -68,6 +68,12 @@ The working rules for contributors and agents. The spec is `docs/SPEC.md`. Keep 
   - Draw the scene into a virtual-resolution render target, then draw that to `kScreen` at `compute_viewport(virtual, window_metrics().pixels, mode).rect`.
   - Shaders are HLSL under `shaders/`, compiled by shadercross at build time with `vnmaki_add_shaders(...)`. Custom fragment shaders include `vnmaki.hlsli` and may take one constant buffer at `register(b0, space3)`.
   - Images load with `load_image(vfs, jobs, path)` (`JobHandle<Image>`); upload with `create_texture` on the main thread.
+- **Text** (`engine/text/text.hpp`): `load_font`, `layout_text(font, utf8, pixel_size, wrap_width)`, `revealed_glyphs(count, cps, elapsed)`, `GlyphAtlas::prepare(layout, scale)` and `text_quads(...)`.
+  - Layout is in virtual pixels. `prepare` rasterizes at `pixel_size * scale`, and `text_quads` returns quads in screen pixels. Draw text into a screen-resolution target, not the virtual one.
+  - When `prepare` returns true, upload `atlas.image()` again with `create_texture` and destroy the old texture.
+  - The atlas is white, premultiplied by coverage; colour comes from the quad tint.
+  - A `Font` and its atlases belong to one thread. Bad fonts throw `FontError`.
+  - v1 has one left-to-right run per paragraph and one font. Tags, bidi and fallback are ticket 17.
 - **Runtime** (`engine/runtime/`): `ScriptRuntime` loads every `.lua` file under `scripts/` through the VFS. Each label runs as a coroutine.
   - The script-facing API is a Lua prelude in `script_runtime.cpp`, backed by private `engine.*` primitives.
   - Every blocking call goes through `Impl::yield_at`. That function counts the step (steps are per label activation and start at 1) and calls `ScriptObserver::on_blocked`.
