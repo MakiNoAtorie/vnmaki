@@ -27,7 +27,8 @@ namespace vnmaki {
 namespace {
 
 /// FreeType and HarfBuzz count in 1/64 pixel.
-constexpr float kSubpixels = 64;
+constexpr int kSubpixelsPerPixel = 64;
+constexpr auto kSubpixels = static_cast<float>(kSubpixelsPerPixel);
 
 struct FreeLibrary {
   void operator()(FT_Library library) const { FT_Done_FreeType(library); }
@@ -118,15 +119,13 @@ void append_paragraph(TextLayout& layout, hb_font_t* shaping_font, hb_buffer_t* 
       break_at = i;
     }
     while (i > line_start && !is_space(i) && width + advance(i) > wrap_width) {
-      if (!break_at) {
-        // No break is allowed in this line: split the word here, if a glyph may start a line.
-        if (!starts_cluster(i)) {
-          break;
-        }
-        break_at = i;
+      if (!break_at && !starts_cluster(i)) {
+        break;
       }
-      add_line(line_start, *break_at);
-      line_start = *break_at;
+      // If no break is allowed in this line, split the word here.
+      const std::size_t split = break_at.value_or(i);
+      add_line(line_start, split);
+      line_start = split;
       break_at.reset();
       width = 0;
       for (std::size_t moved = line_start; moved < i; ++moved) {
@@ -159,8 +158,11 @@ void rasterize(FT_Face face, std::uint32_t glyph, FT_Pos max_extent, AtlasGlyph&
   const FT_Bitmap& bitmap = slot->bitmap;
   const std::size_t width = bitmap.width;
   const std::size_t height = bitmap.rows;
+  // A bitmap covers whole pixels, so it can be a pixel larger than the outline on each side.
+  const std::size_t max_pixels = static_cast<std::size_t>(max_extent / kSubpixelsPerPixel) + 2;
   if (bitmap.pixel_mode != FT_PIXEL_MODE_GRAY || bitmap.buffer == nullptr || width == 0 ||
-      height == 0 || bitmap.pitch < 0 || static_cast<std::size_t>(bitmap.pitch) < width) {
+      height == 0 || width > max_pixels || height > max_pixels || bitmap.pitch < 0 ||
+      static_cast<std::size_t>(bitmap.pitch) < width) {
     return;
   }
   const auto pitch = static_cast<std::size_t>(bitmap.pitch);
