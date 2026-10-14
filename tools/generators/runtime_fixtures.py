@@ -16,6 +16,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import text_fixtures
 from render_fixtures import png_rgba
 
 PROJECTS = {
@@ -118,6 +119,35 @@ label("start", function()
 end)
 """,
     },
+    # Characters and a mix of say and narrate lines. It also has a font, so the windowed
+    # `vnmaki run` can draw it (see FONT_PROJECTS).
+    "say": {
+        "project.toml": 'title = "Say"\nresolution = [1280, 720]\n',
+        "scripts/start.lua": """\
+local eileen = character { name = "Eileen", color = "#c8a2c8", voice_tag = "eileen" }
+
+label("start", function()
+  narrate("It was raining.")
+  say(eileen, "You came back.")
+  say(eileen, "I thought you would not.")
+  say("???", "Who is there?")
+end)
+""",
+    },
+    # Ends at once, so a windowed run closes by itself.
+    "finished": {
+        "project.toml": 'title = "Finished"\n',
+        "scripts/start.lua": 'label("start", function() end)\n',
+    },
+    # A script error with a font, so the windowed run gets as far as running the story.
+    "broken_with_font": {
+        "project.toml": 'title = "Broken"\n',
+        "scripts/start.lua": """\
+label("start", function()
+  jump("nowhere")
+end)
+""",
+    },
     # No project.toml at all.
     "no_config": {
         "scripts/start.lua": 'label("start", function() end)\n',
@@ -129,10 +159,21 @@ IMAGES = {
     "visuals": ["bg/classroom", "eileen", "eileen_happy"],
 }
 
+# Projects that get the box font of text_fixtures.py as fonts/default.ttf, the font a windowed
+# `vnmaki run` reads.
+FONT_PROJECTS = ["say", "finished", "broken_with_font"]
+
 # The headless run draws nothing, so one opaque pixel is enough.
 PIXEL_PNG = png_rgba([[(128, 128, 128, 255)]])
 
 TRANSCRIPTS = {
+    "say": """\
+label start
+narrate It was raining.
+say Eileen: You came back.
+say Eileen: I thought you would not.
+say ???: Who is there?
+""",
     "visuals": """\
 label start
 scene bg/classroom
@@ -209,6 +250,10 @@ def main() -> int:
             path = out / project / "images" / f"{name}.png"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(PIXEL_PNG)
+    for project in FONT_PROJECTS:
+        path = out / project / "fonts" / "default.ttf"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(text_fixtures.build_font())
     for project, text in TRANSCRIPTS.items():
         (out / f"{project}.transcript").write_bytes(text.encode("utf-8"))
     return 0

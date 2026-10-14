@@ -159,6 +159,13 @@ vnmaki_add_cli_stdout_file_test(
   EXIT 0
   STDOUT_FILE "${vnmaki_run_fixtures}/dice.transcript")
 
+# Characters, say and narrate (ticket 08). Exit 0 means the story reached its end.
+vnmaki_add_cli_stdout_file_test(
+  run_headless_plays_characters_to_the_end
+  ARGS run "${vnmaki_run_fixtures}/say" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_run_fixtures}/say.transcript")
+
 vnmaki_add_cli_test(
   run_headless_stops_at_a_menu
   ARGS run "${vnmaki_run_fixtures}/menu" --headless
@@ -212,13 +219,61 @@ vnmaki_add_cli_test(
   NO_STDOUT
   STDERR_REGEX "vnmaki: .*does_not_exist.* is not a directory")
 
-# Only the headless runner exists so far; the windowed one comes later.
+# vnmaki run without --headless (ticket 08): the story in a window, with the say box. The "say"
+# and "finished" projects carry fonts/default.ttf; "demo" has no font.
 vnmaki_add_cli_test(
-  run_without_headless_is_a_usage_error
-  ARGS run "${vnmaki_run_fixtures}/demo"
+  run_window_plays_a_story_with_a_say_box
+  ARGS run "${vnmaki_run_fixtures}/say" --frames 3
+  EXIT 0
+  NO_STDOUT)
+
+# The window closes by itself once the story has ended (the frame limit is far away).
+vnmaki_add_cli_test(
+  run_window_closes_when_the_story_ends
+  ARGS run "${vnmaki_run_fixtures}/finished" --frames 100000
+  EXIT 0
+  NO_STDOUT)
+
+vnmaki_add_cli_test(
+  run_window_reports_a_script_error
+  ARGS run "${vnmaki_run_fixtures}/broken_with_font" --frames 100000
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: scripts/start.lua:2: unknown label 'nowhere'")
+
+set(vnmaki_run_window_tests cli.run_window_plays_a_story_with_a_say_box
+                            cli.run_window_closes_when_the_story_ends
+                            cli.run_window_reports_a_script_error)
+set_tests_properties(${vnmaki_run_window_tests} PROPERTIES TIMEOUT 60)
+if(vnmaki_gpu_cli_env)
+  set_tests_properties(${vnmaki_run_window_tests} PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
+endif()
+if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+  set_tests_properties(${vnmaki_run_window_tests} PROPERTIES SKIP_REGULAR_EXPRESSION
+                                                             "cannot create a GPU device")
+endif()
+
+# The font is read before any window opens, so this needs no GPU.
+vnmaki_add_cli_test(
+  run_window_needs_the_projects_default_font
+  ARGS run "${vnmaki_run_fixtures}/demo" --frames 1
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: .*fonts/default.ttf")
+
+vnmaki_add_cli_test(
+  run_rejects_frames_with_headless
+  ARGS run "${vnmaki_run_fixtures}/demo" --headless --frames 3
   EXIT 2
   NO_STDOUT
-  STDERR_REGEX "vnmaki run: only --headless is available")
+  STDERR_REGEX "vnmaki run: --frames needs a window")
+
+vnmaki_add_cli_test(
+  run_rejects_a_bad_frame_count
+  ARGS run "${vnmaki_run_fixtures}/demo" --frames nope
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki run: --frames needs a positive whole number")
 
 vnmaki_add_cli_test(
   run_rejects_a_bad_step_limit

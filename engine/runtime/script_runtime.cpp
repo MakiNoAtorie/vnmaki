@@ -816,18 +816,16 @@ void ScriptRuntime::Impl::bind_engine() {
     }
     return sol::make_object(state, problem);
   };
-  engine_["say"] = sol::yielding(
-      [this](sol::this_state state, const std::string& speaker, const std::string& text,
-             std::optional<std::int64_t> color, const std::string& voice_tag) {
-        std::optional<std::uint32_t> rgb;
-        if (color) {
-          rgb = static_cast<std::uint32_t>(*color);
-        }
-        yield_at(state, SayRequest{.speaker = speaker,
-                                   .text = text,
-                                   .color = rgb,
-                                   .voice_tag = voice_tag});
-      });
+  engine_["say"] = sol::yielding([this](sol::this_state state, const std::string& speaker,
+                                        const std::string& text, std::optional<std::int64_t> color,
+                                        const std::string& voice_tag) {
+    std::optional<std::uint32_t> rgb;
+    if (color) {
+      rgb = static_cast<std::uint32_t>(*color);
+    }
+    yield_at(state,
+             SayRequest{.speaker = speaker, .text = text, .color = rgb, .voice_tag = voice_tag});
+  });
   engine_["narrate"] = sol::yielding([this](sol::this_state state, const std::string& text) {
     yield_at(state, NarrateRequest{.text = text});
   });

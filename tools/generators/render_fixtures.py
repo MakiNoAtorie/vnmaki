@@ -220,18 +220,36 @@ TEXT_TINT = (255, 224, 128, 255)
 TEXT_LINES = ["Hello, VN. ", "こんにち", "は、世"]
 
 
-def draw_text(canvas: Canvas, lines: list) -> None:
+def draw_text(canvas: Canvas, lines: list, origin: tuple = TEXT_ORIGIN,
+              pixels_per_em: int = TEXT_PIXELS_PER_EM, tint: tuple = TEXT_TINT) -> None:
     """Draws each glyph's box where layout and the glyph atlas must put it."""
-    units = text_fixtures.UNITS_PER_EM // TEXT_PIXELS_PER_EM  # font units per pixel
+    units = text_fixtures.UNITS_PER_EM // pixels_per_em  # font units per pixel
     for index, line in enumerate(lines):
-        baseline = TEXT_ORIGIN[1] + index * TEXT_PIXELS_PER_EM + text_fixtures.ASCENT // units
-        pen = TEXT_ORIGIN[0]
+        baseline = origin[1] + index * pixels_per_em + text_fixtures.ASCENT // units
+        pen = origin[0]
         for char in line:
             advance, box = text_fixtures.glyph_box(char)
             if box:
                 x0, y0, x1, y1 = (edge // units for edge in box)
-                canvas.draw(WHITE, (pen + x0, baseline - y1, x1 - x0, y1 - y0), tint=TEXT_TINT)
+                canvas.draw(WHITE, (pen + x0, baseline - y1, x1 - x0, y1 - y0), tint=tint)
             pen += advance // units
+
+
+# The say box (tests/render/say_box_render_test.cpp): a translucent panel at (10, 70) of a 320x180
+# canvas, the speaker's name in her colour at 20 pixels per em and the line at 40, with only the
+# first nine glyphs ("You came ") of "You came back." revealed.
+SAY_BOX_TARGET = (320, 180)
+SAY_BOX_RECT = (10, 70, 300, 100)
+SAY_BOX_COLOR = (16, 16, 32, 204)
+SAY_BOX_NAME = ("Eileen", (8, 6), 20, (200, 162, 200, 255))
+SAY_BOX_TEXT = ("You came ", (8, 30), 40, (255, 255, 255, 255))
+
+
+def draw_say_box(canvas: Canvas) -> None:
+    left, top = SAY_BOX_RECT[:2]
+    canvas.draw(WHITE, SAY_BOX_RECT, tint=SAY_BOX_COLOR)
+    for text, offset, size, tint in (SAY_BOX_NAME, SAY_BOX_TEXT):
+        draw_text(canvas, [text], (left + offset[0], top + offset[1]), size, tint)
 
 
 def golden_scenes() -> dict:
@@ -281,6 +299,10 @@ def golden_scenes() -> dict:
     canvas = Canvas(*TEXT_TARGET, GRAY)
     draw_text(canvas, TEXT_LINES)
     scenes["text_paragraph"] = canvas
+
+    canvas = Canvas(*SAY_BOX_TARGET, GRAY)
+    draw_say_box(canvas)
+    scenes["say_box"] = canvas
 
     return {name + ".png": canvas.png() for name, canvas in scenes.items()}
 

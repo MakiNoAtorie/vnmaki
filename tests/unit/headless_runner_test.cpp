@@ -69,6 +69,32 @@ label("start", function() say(eileen, "Hi.") end)
   CHECK(result.transcript == Lines{"label start", "say Eileen: Hi."});
 }
 
+TEST_CASE("headless: a multi-line scene of characters plays line by line to a clear end") {
+  const std::string source = R"(
+local eileen = character { name = "Eileen", color = "#c8a2c8", voice_tag = "eileen" }
+local lucy = character { name = "Lucy" }
+label("start", function()
+  narrate("It was raining.")
+  say(eileen, "You came back.")
+  say(lucy, "Took you long enough.")
+  say(eileen, "I know.")
+end)
+)";
+  const Lines lines{"label start", "narrate It was raining.", "say Eileen: You came back.",
+                    "say Lucy: Took you long enough.", "say Eileen: I know."};
+  constexpr std::size_t kLineCount = 4;
+
+  // One input per line reaches the end; one fewer stops at the last line.
+  const HeadlessResult all = run_script(source, kLineCount);
+  CHECK(all.outcome == HeadlessOutcome::kFinished);
+  CHECK(all.transcript == lines);
+  CHECK(all.stops.size() == kLineCount);
+
+  const HeadlessResult short_of_end = run_script(source, kLineCount - 1);
+  CHECK(short_of_end.outcome == HeadlessOutcome::kOutOfInput);
+  CHECK(short_of_end.transcript == lines);
+}
+
 TEST_CASE("headless: inputs left over after the story ends are ignored") {
   const HeadlessResult result = run_script(R"(
 label("start", function() narrate("Only line.") end)

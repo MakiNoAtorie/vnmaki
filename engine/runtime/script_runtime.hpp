@@ -254,12 +254,12 @@ struct ScriptRuntimeOptions {
 /// the `vfs` table (`vfs.read`, `vfs.exists`, `vfs.list`), which uses the
 /// engine Vfs. `print` goes to ScriptObserver::on_print.
 ///
-/// The engine API: `character { name =, color = "#rrggbb", voice_tag = }`, `label(name, fn)`, `jump(name)`, `call(name)`, `ret()`,
-/// `say(who, text)`, `narrate(text)`, `menu { "option", ... }` (returns the
-/// number of the chosen option, from 1), `rand` (the same function as
-/// `math.random`) and the `store` table. Visuals: `scene(image)`,
-/// `show(tag, { image =, at =, x =, y =, layer = })` and `hide(tag)`; option
-/// keys they do not know are ignored (later tickets add `with`, `outfit`...).
+/// The engine API: `character { name =, color = "#rrggbb", voice_tag = }`, `label(name, fn)`,
+/// `jump(name)`, `call(name)`, `ret()`, `say(who, text)`, `narrate(text)`, `menu { "option", ... }`
+/// (returns the number of the chosen option, from 1), `rand` (the same function as `math.random`)
+/// and the `store` table. Visuals: `scene(image)`, `show(tag, { image =, at =, x =, y =, layer =
+/// })` and `hide(tag)`; option keys they do not know are ignored (later tickets add `with`,
+/// `outfit`...).
 ///
 /// `store` is owned by the engine: scripts change its fields but cannot
 /// replace it. It keeps booleans, numbers, strings and tables with such keys
