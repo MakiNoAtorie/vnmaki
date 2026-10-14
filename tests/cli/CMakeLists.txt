@@ -226,3 +226,18 @@ vnmaki_add_cli_test(
   EXIT 2
   NO_STDOUT
   STDERR_REGEX "vnmaki run: --max-steps needs a positive whole number")
+
+# Audio (ticket 16), on the projects tools/generators/audio_fixtures.py writes.
+set(vnmaki_audio_fixtures "${VNMAKI_FIXTURES_DIR}/audio")
+vnmaki_add_cli_stdout_file_test(
+  run_headless_prints_audio_commands
+  ARGS run "${vnmaki_audio_fixtures}/game" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_audio_fixtures}/game.transcript")
+
+vnmaki_add_cli_test(
+  run_headless_reports_missing_audio_with_its_script_line
+  ARGS run "${vnmaki_audio_fixtures}/missing" --headless
+  EXIT 1
+  STDERR_REGEX
+    "vnmaki: scripts/start.lua:3: audio 'bgm/ghost' not found .no audio/bgm/ghost.opus, .ogg, .flac or .wav.")
