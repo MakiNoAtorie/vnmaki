@@ -43,3 +43,15 @@ if(TARGET vnmaki_fixtures_text)
   add_test(NAME fuzz.font.seeded COMMAND fuzz_font -runs=10000 -seed=1 "${vnmaki_font_corpus}"
                                          "${PROJECT_BINARY_DIR}/fixtures/text/fonts")
 endif()
+
+# Audio (ticket 16): the decoders and the audio snapshot. As for images, random bytes rarely
+# make an audio file, so a second smoke run starts from the small clips among the audio fixtures.
+vnmaki_add_fuzzer(audio audio_fuzzer.cpp)
+vnmaki_add_fuzzer(audio_state audio_state_fuzzer.cpp)
+if(TARGET vnmaki_fixtures_audio)
+  add_dependencies(fuzz_audio vnmaki_fixtures_audio)
+  set(vnmaki_audio_corpus "${CMAKE_CURRENT_BINARY_DIR}/corpus/audio")
+  file(MAKE_DIRECTORY "${vnmaki_audio_corpus}")
+  add_test(NAME fuzz.audio.seeded COMMAND fuzz_audio -runs=10000 -seed=1 "${vnmaki_audio_corpus}"
+                                          "${PROJECT_BINARY_DIR}/fixtures/audio/seeds")
+endif()
