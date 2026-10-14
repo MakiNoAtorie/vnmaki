@@ -56,6 +56,11 @@ struct Game {
   }
 };
 
+// The current line, or an empty one. The tests REQUIRE that a line shows first.
+vnmaki::DialogueLine shown(const Game& game) {
+  return game.presenter->line().value_or(vnmaki::DialogueLine{});
+}
+
 }  // namespace
 
 TEST_CASE("dialogue: the current line has its speaker, colour and text, with nothing revealed") {
@@ -63,9 +68,9 @@ TEST_CASE("dialogue: the current line has its speaker, colour and text, with not
   const auto& line = game.presenter->line();
 
   REQUIRE(line.has_value());
-  CHECK(line.value().speaker == "Eileen");
-  CHECK(line.value().color == std::optional<std::uint32_t>{kLilac});
-  CHECK(line.value().text == "Hello there!");
+  CHECK(shown(game).speaker == "Eileen");
+  CHECK(shown(game).color == std::optional<std::uint32_t>{kLilac});
+  CHECK(shown(game).text == "Hello there!");
   CHECK(game.presenter->visible_glyphs() == 0);
   CHECK(game.presenter->revealing());
 }
@@ -85,15 +90,15 @@ TEST_CASE("dialogue: the first advance completes the line and the next one moves
 
   game.presenter->advance();
   REQUIRE(game.presenter->line().has_value());
-  CHECK(game.presenter->line().value().text == "Hello there!");
+  CHECK(shown(game).text == "Hello there!");
   CHECK(game.presenter->visible_glyphs() == kFullLength);
   CHECK_FALSE(game.presenter->revealing());
 
   game.presenter->advance();
   REQUIRE(game.presenter->line().has_value());
-  CHECK(game.presenter->line().value().text == "Rain.");
-  CHECK(game.presenter->line().value().speaker.empty());
-  CHECK_FALSE(game.presenter->line().value().color.has_value());
+  CHECK(shown(game).text == "Rain.");
+  CHECK(shown(game).speaker.empty());
+  CHECK_FALSE(shown(game).color.has_value());
   CHECK(game.presenter->visible_glyphs() == 0);
   CHECK(game.runtime.position().step == kLineCount);
 }
@@ -104,7 +109,7 @@ TEST_CASE("dialogue: a line that finished on its own needs only one advance") {
   game.presenter->advance();
 
   REQUIRE(game.presenter->line().has_value());
-  CHECK(game.presenter->line().value().text == "Rain.");
+  CHECK(shown(game).text == "Rain.");
 }
 
 TEST_CASE("dialogue: after the last line the story ends cleanly") {
@@ -112,7 +117,7 @@ TEST_CASE("dialogue: after the last line the story ends cleanly") {
   game.presenter->advance();  // completes "Hello there!"
   game.presenter->advance();  // moves to "Rain."
   game.presenter->update(kOneSecond);
-  CHECK(game.presenter->line().value().text == "Rain.");
+  CHECK(shown(game).text == "Rain.");
   CHECK_FALSE(game.presenter->ended());
 
   game.presenter->advance();  // past the last line
