@@ -13,6 +13,7 @@ set -euo pipefail
 PREFIX=${1:-/opt/vnmaki-deps}
 SDL_TAG=release-3.4.18
 SOL2_TAG=v3.5.0
+MINIAUDIO_TAG=0.11.25
 YOGA_TAG=v3.2.1
 SHEENBIDI_TAG=v3.0.0
 SPIRV_CROSS_TAG=vulkan-sdk-1.4.363.0
@@ -34,6 +35,7 @@ $SUDO apt-get install -y -qq --no-install-recommends \
   git cmake ninja-build pkg-config curl ca-certificates \
   doctest-dev liblua5.4-dev libtomlplusplus-dev libclang-rt-18-dev libstb-dev \
   libharfbuzz-dev libfreetype-dev libunibreak-dev \
+  libopusfile-dev libvorbis-dev \
   mesa-vulkan-drivers libvulkan1 \
   libx11-dev libxext-dev libxtst-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
   libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libasound2-dev libpulse-dev
@@ -65,6 +67,11 @@ build yoga facebook/yoga "$YOGA_TAG"
 build sheenbidi Tehreer/SheenBidi "$SHEENBIDI_TAG" -DSB_CONFIG_UNITY=ON
 build spirv-cross KhronosGroup/SPIRV-Cross "$SPIRV_CROSS_TAG" \
   -DSPIRV_CROSS_ENABLE_C_API=ON -DSPIRV_CROSS_ENABLE_TESTS=OFF -DSPIRV_CROSS_CLI=OFF
+
+# miniaudio is one header, and Ubuntu 24.04 has no package for it.
+git clone --quiet --depth 1 --branch "$MINIAUDIO_TAG" https://github.com/mackron/miniaudio \
+  "$WORK/miniaudio"
+install -D -m 644 "$WORK/miniaudio/miniaudio.h" "$PREFIX/include/miniaudio.h"
 
 # DXC is a prebuilt release: bin/dxc, lib/libdxcompiler.so, lib/libdxil.so, include/dxc/.
 curl -fsSL "$DXC_URL" | tar -xz -C "$PREFIX"

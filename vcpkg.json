@@ -25,7 +25,10 @@
     { "name": "freetype", "default-features": false },
     { "name": "harfbuzz", "default-features": false },
     "libunibreak",
+    "libvorbis",
     "lua",
+    "miniaudio",
+    "opusfile",
     "sol2",
     "stb",
     "tomlplusplus"
