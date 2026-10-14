@@ -398,3 +398,42 @@ TEST_CASE("styled text: layout needs a base font and sizes inside the limits") {
   CHECK_THROWS_AS((void)layout_text(fonts.set(), vnmaki::plain_text("a", huge), kSize, kNoWrap),
                   std::invalid_argument);
 }
+
+TEST_CASE("styled text: a distance atlas holds the distance to the glyph's edge") {
+  const Fonts fonts;
+  const TextLayout layout = fonts.layout("A");
+  vnmaki::GlyphAtlas atlas{vnmaki::GlyphRaster::kDistance};
+  CHECK(atlas.prepare(layout));
+  const vnmaki::AtlasGlyph* found = atlas.find(layout, layout.lines.at(0).glyphs.at(0));
+  REQUIRE(found != nullptr);
+  // "A" is a box of 8 by 14 pixels, 1 pixel right of its origin. The field reaches 8 pixels
+  // (kSdfSpread) out on each side.
+  const vnmaki::AtlasGlyph glyph = *found;
+  CHECK(glyph.width == 24);
+  CHECK(glyph.height == 30);
+  CHECK(glyph.left == -7);
+  CHECK(glyph.top == 22);
+
+  // The value at a pixel is 128 on the edge and 16 for each pixel of distance: more inside,
+  // less outside. A pixel's centre is half a pixel from its sides.
+  const vnmaki::Image& image = atlas.image();
+  constexpr std::size_t kChannels = 4;
+  const auto value = [&](int x, int y) {
+    const std::size_t offset =
+        ((static_cast<std::size_t>(glyph.y + y) * static_cast<std::size_t>(image.size.width)) +
+         static_cast<std::size_t>(glyph.x + x)) *
+        kChannels;
+    CHECK(image.pixels.at(offset) == image.pixels.at(offset + 3));
+    return int{image.pixels.at(offset + 3)};
+  };
+  // Half a pixel inside and outside the left edge.
+  CHECK(value(8, 15) == 136);
+  CHECK(value(7, 15) == 120);
+  // Three and a half pixels inside (the box's middle column) and outside.
+  CHECK(value(11, 15) == 184);
+  CHECK(value(4, 15) == 72);
+  // Half a pixel outside two edges: the distance to the corner, 0.707 pixels.
+  CHECK(value(7, 7) == 117);
+  // Farther than the field reaches.
+  CHECK(value(0, 0) == 0);
+}

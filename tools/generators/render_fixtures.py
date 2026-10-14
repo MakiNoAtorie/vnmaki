@@ -18,6 +18,7 @@ Pixel values are spelled out here and repeated as literals in the tests
 specification they check.
 """
 
+import math
 import shutil
 import struct
 import sys
@@ -234,6 +235,71 @@ def draw_text(canvas: Canvas, lines: list) -> None:
             pen += advance // units
 
 
+# The effect text scene (tests/render/text_render_test.cpp): "Ab" from a distance-field glyph
+# atlas, with a half-clear black shadow drawn first and an outline 2 pixels wide.
+SDF_TARGET = (48, 40)
+SDF_ORIGIN = (12, 8)
+SDF_SHADOW_ORIGIN = (15, 11)
+SDF_SPREAD = 8  # kSdfSpread: pixels of distance on each side of the edge.
+SDF_OUTLINE = (32, 48, 160, 255)
+SDF_OUTLINE_WIDTH = 2
+SDF_SHADOW = (0, 0, 0, 128)
+SDF_SHADOW_OUTLINE = (0, 0, 0, 255)
+
+
+def smoothstep(low: float, high: float, x: float) -> float:
+    t = min(1.0, max(0.0, (x - low) / (high - low)))
+    return t * t * (3 - 2 * t)
+
+
+def sdf_value(px: int, py: int, box: tuple) -> int:
+    """What FreeType's distance-field renderer stores for pixel (px, py) of a box glyph with
+    corners (x0, y0) and (x1, y1): 128 on the edge, 128 steps for SDF_SPREAD pixels, rounded
+    towards the edge."""
+    x0, y0, x1, y1 = box
+    dx = max(x0 - (px + 0.5), (px + 0.5) - x1)
+    dy = max(y0 - (py + 0.5), (py + 0.5) - y1)
+    inside = dx <= 0 and dy <= 0
+    distance = -max(dx, dy) if inside else math.hypot(max(dx, 0), max(dy, 0))
+    steps = min(int(distance / SDF_SPREAD * 128), 127 if inside else 128)
+    return 128 + steps if inside else 128 - steps
+
+
+def sdf_coverage(value: int, tint: tuple, outline: tuple, outline_width: float) -> list:
+    """Reference for shaders/sdf_text.frag.hlsl: the premultiplied colour of a fragment whose
+    atlas value is `value`. tint and outline are straight RGBA8."""
+    distance = (value - 128) * SDF_SPREAD / 128
+    fill = smoothstep(-0.5, 0.5, distance)
+    shape = smoothstep(-0.5, 0.5, distance + outline_width)
+    tint_alpha = tint[3] / 255
+    tint_pm = [tint[i] / 255 * tint_alpha for i in range(3)] + [tint_alpha]
+    outline_alpha = outline[3] / 255 * tint_alpha
+    outline_pm = [outline[i] / 255 * outline_alpha for i in range(3)] + [outline_alpha]
+    return [(outline_pm[i] + (tint_pm[i] - outline_pm[i]) * fill) * shape for i in range(4)]
+
+
+def draw_sdf_text(canvas: Canvas, text: str, origin: tuple, tint: tuple, outline: tuple,
+                  outline_width: float) -> None:
+    """Draws one line of box glyphs as the distance-field shader does, glyph after glyph."""
+    units = text_fixtures.UNITS_PER_EM // TEXT_PIXELS_PER_EM
+    baseline = origin[1] + text_fixtures.ASCENT // units
+    pen = origin[0]
+    for char in text:
+        advance, shape = text_fixtures.glyph_box(char)
+        if shape:
+            x0, y0, x1, y1 = (edge // units for edge in shape)
+            box = (pen + x0, baseline - y1, pen + x1, baseline - y0)
+            # The glyph's quad: its box and SDF_SPREAD pixels around it.
+            for py in range(max(0, box[1] - SDF_SPREAD), min(canvas.height, box[3] + SDF_SPREAD)):
+                for px in range(max(0, box[0] - SDF_SPREAD),
+                                min(canvas.width, box[2] + SDF_SPREAD)):
+                    src = sdf_coverage(sdf_value(px, py, box), tint, outline, outline_width)
+                    dst = [c / 255 for c in canvas.pixels[py][px]]
+                    canvas.pixels[py][px] = tuple(
+                        round((src[i] + dst[i] * (1 - src[3])) * 255) for i in range(4))
+        pen += advance // units
+
+
 def golden_scenes() -> dict:
     scenes = {}
 
@@ -281,6 +347,12 @@ def golden_scenes() -> dict:
     canvas = Canvas(*TEXT_TARGET, GRAY)
     draw_text(canvas, TEXT_LINES)
     scenes["text_paragraph"] = canvas
+
+    canvas = Canvas(*SDF_TARGET, GRAY)
+    draw_sdf_text(canvas, "Ab", SDF_SHADOW_ORIGIN, SDF_SHADOW, SDF_SHADOW_OUTLINE,
+                  SDF_OUTLINE_WIDTH)
+    draw_sdf_text(canvas, "Ab", SDF_ORIGIN, TEXT_TINT, SDF_OUTLINE, SDF_OUTLINE_WIDTH)
+    scenes["text_effect"] = canvas
 
     return {name + ".png": canvas.png() for name, canvas in scenes.items()}
 
