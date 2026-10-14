@@ -37,7 +37,7 @@ enum class Layer : std::uint8_t {
 };
 
 /// Every layer, back to front.
-inline constexpr std::array<Layer, 7> kLayerOrder{
+inline constexpr std::array kLayerOrder{
     Layer::kBackground, Layer::kMaster, Layer::kCharacters, Layer::k3d,
     Layer::kOverlay,    Layer::kUi,     Layer::kTransient,
 };
@@ -45,6 +45,9 @@ inline constexpr std::array<Layer, 7> kLayerOrder{
 /// The name scripts use: "background", "master", "characters", "3d", "overlay", "ui", "transient".
 [[nodiscard]] std::string_view layer_name(Layer layer);
 [[nodiscard]] std::optional<Layer> layer_from_name(std::string_view name);
+
+/// The largest `x` or `y` a script may give, as a fraction of the virtual resolution.
+inline constexpr double kMaxPositionFraction = 1'000'000.0;
 
 /// The tag of the displayable `scene(image)` puts on the background layer.
 inline constexpr std::string_view kBackgroundTag = "background";
@@ -58,11 +61,11 @@ inline constexpr std::string_view kBackgroundTag = "background";
 /// `options.layer` (the tag's current layer, or "characters"). `at` is "left", "center" or
 /// "right": a quarter, a half or three quarters across, standing on the bottom edge (the anchor
 /// is the image's bottom centre). `x` and `y` then override either coordinate as a fraction of
-/// the virtual resolution. A new tag starts at "center"; a tag already shown keeps the
-/// properties the call does not set, and its place in the drawing order if the layer is the
-/// same. `scene(image)` empties the background, master and characters layers and puts the image
-/// on the background with its top-left corner at the origin. `hide` of a tag not shown does
-/// nothing.
+/// the virtual resolution (at most kMaxPositionFraction either way). A new tag starts at "center";
+/// a tag already shown keeps the properties the call does not set, and its place in the drawing
+/// order if the layer is the same. `scene(image)` empties the background, master and characters
+/// layers and puts the image on the background with its top-left corner at the origin. `hide` of a
+/// tag not shown does nothing.
 class Scene final : public SceneState, public SceneCommands {
  public:
   /// `vfs` must outlive the scene. `virtual_size` is the virtual resolution.

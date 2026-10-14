@@ -294,7 +294,9 @@ TEST_CASE("scene: a bad argument or option fails the story at its script line") 
   CHECK(line_error(R"(show("eileen", { x = "0.5" }))") ==
         "scripts/main.lua:2: bad option 'x' to 'show' (number expected, got string)");
   CHECK(line_error(R"(show("eileen", { y = 0 / 0 }))") ==
-        "scripts/main.lua:2: option 'y' must be a finite number");
+        "scripts/main.lua:2: option 'y' must be a number from -1000000 to 1000000");
+  CHECK(line_error(R"(show("eileen", { x = 1e300 }))") ==
+        "scripts/main.lua:2: option 'x' must be a number from -1000000 to 1000000");
   CHECK(line_error("show(42)") ==
         "scripts/main.lua:2: bad argument #1 to 'show' (string expected, got number)");
   CHECK(line_error(R"(show("eileen", "left"))") ==
@@ -333,9 +335,8 @@ TEST_CASE("scene: a captured state restores what was shown, where and with which
       .tint = vnmaki::rgba8(255, 128, 0, 64),
       .crop = {.x = 0.25F, .y = 0, .width = 0.5F, .height = 1},
   };
-  const DisplayProperties changed = kChanged;
   REQUIRE(scene.find("eileen") != nullptr);
-  scene.find("eileen")->properties() = changed;
+  scene.find("eileen")->properties() = kChanged;
 
   const Bytes captured = scene.capture();
   scene.hide("eileen");
@@ -347,7 +348,7 @@ TEST_CASE("scene: a captured state restores what was shown, where and with which
   CHECK(path_of(scene, "background") == "images/bg/classroom.png");
   CHECK(scene.tags(Layer::kCharacters) == Lines{"eileen"});
   CHECK(path_of(scene, "eileen") == "images/eileen_happy.png");
-  CHECK(properties_of(scene, "eileen") == changed);
+  CHECK(properties_of(scene, "eileen") == kChanged);
   CHECK(scene.tags(Layer::kOverlay) == Lines{"rain"});
   CHECK(scene.capture() == captured);
 
@@ -355,7 +356,7 @@ TEST_CASE("scene: a captured state restores what was shown, where and with which
     Scene other{vfs, kVirtualSize};
     other.restore(captured);
     CHECK(other.capture() == captured);
-    CHECK(properties_of(other, "eileen") == changed);
+    CHECK(properties_of(other, "eileen") == kChanged);
   }
   SUBCASE("no bytes is the empty scene") {
     scene.restore({});

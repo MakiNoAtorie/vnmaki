@@ -77,6 +77,22 @@ std::optional<float> named_position(std::string_view name) {
   return std::nullopt;
 }
 
+// A coordinate a script gave as a fraction of `extent`, or nothing when it is not a number in
+// range (so the conversion to float is always defined).
+std::optional<float> coordinate(double fraction, float extent) {
+  if (!(std::abs(fraction) <= kMaxPositionFraction)) {
+    return std::nullopt;
+  }
+  return static_cast<float>(fraction) * extent;
+}
+
+std::string out_of_range(std::string_view option) {
+  std::string message = "option '";
+  message += option;
+  message += "' must be a number from -1000000 to 1000000";
+  return message;
+}
+
 std::string quoted(std::string_view prefix, std::string_view name, std::string_view suffix) {
   std::string message{prefix};
   message += name;
@@ -280,16 +296,18 @@ std::string Scene::show(const ShowRequest& request) {
     properties.anchor = kBottomCenter;
   }
   if (request.x.has_value()) {
-    if (!std::isfinite(*request.x)) {
-      return "option 'x' must be a finite number";
+    const std::optional<float> x = coordinate(*request.x, width);
+    if (!x.has_value()) {
+      return out_of_range("x");
     }
-    properties.position.x = static_cast<float>(*request.x) * width;
+    properties.position.x = *x;
   }
   if (request.y.has_value()) {
-    if (!std::isfinite(*request.y)) {
-      return "option 'y' must be a finite number";
+    const std::optional<float> y = coordinate(*request.y, height);
+    if (!y.has_value()) {
+      return out_of_range("y");
     }
-    properties.position.y = static_cast<float>(*request.y) * height;
+    properties.position.y = *y;
   }
 
   ImageDisplayable displayable{std::move(*path)};
