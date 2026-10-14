@@ -19,6 +19,7 @@
 
 #include <sol/sol.hpp>
 
+#include "engine/core/byte_stream.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki {
@@ -251,6 +252,100 @@ function hide(tag)
   require_label("hide")
   engine.hide(tag)
   engine.scene_command("hide " .. tag)
+end
+
+-- Audio. Times are in seconds.
+function music(name, options)
+  if type(name) ~= "string" then
+    bad_argument("music", 1, "string", name)
+  end
+  options = options_argument("music", options)
+  local channel = option("music", options, "channel", "string")
+  local fade = option("music", options, "fade", "number")
+  local loop_start = option("music", options, "loop_start", "number")
+  local loop_end = option("music", options, "loop_end", "number")
+  require_label("music")
+  local problem = engine.music(name, channel, fade, loop_start, loop_end)
+  if problem then
+    error(problem, 2)
+  end
+  local command = "music " .. name
+  if channel then
+    command = command .. " channel " .. channel
+  end
+  if fade then
+    command = command .. format(" fade %.14g", fade)
+  end
+  if loop_start then
+    command = command .. format(" loop_start %.14g", loop_start)
+  end
+  if loop_end then
+    command = command .. format(" loop_end %.14g", loop_end)
+  end
+  engine.audio_command(command)
+end
+
+function sound(name, options)
+  if type(name) ~= "string" then
+    bad_argument("sound", 1, "string", name)
+  end
+  options = options_argument("sound", options)
+  local channel = option("sound", options, "channel", "string")
+  require_label("sound")
+  local problem = engine.sound(name, channel)
+  if problem then
+    error(problem, 2)
+  end
+  local command = "sound " .. name
+  if channel then
+    command = command .. " channel " .. channel
+  end
+  engine.audio_command(command)
+end
+
+function voice(name)
+  if type(name) ~= "string" then
+    bad_argument("voice", 1, "string", name)
+  end
+  require_label("voice")
+  local problem = engine.voice(name)
+  if problem then
+    error(problem, 2)
+  end
+  engine.audio_command("voice " .. name)
+end
+
+function stop(channel, options)
+  if type(channel) ~= "string" then
+    bad_argument("stop", 1, "string", channel)
+  end
+  options = options_argument("stop", options)
+  local fade = option("stop", options, "fade", "number")
+  require_label("stop")
+  local problem = engine.stop(channel, fade)
+  if problem then
+    error(problem, 2)
+  end
+  local command = "stop " .. channel
+  if fade then
+    command = command .. format(" fade %.14g", fade)
+  end
+  engine.audio_command(command)
+end
+
+function volume(channel, value)
+  if type(channel) ~= "string" then
+    bad_argument("volume", 1, "string", channel)
+  end
+  if type(value) ~= "number" then
+    bad_argument("volume", 2, "number", value)
+  end
+  require_label("volume")
+  local problem = engine.volume(channel, value)
+  if problem then
+    error(problem, 2)
+  end
+  engine.audio_command(format("volume %s %.14g", channel, value))
 end
 
 -- The minimal menu: a list of option texts. Returns the number of the
@@ -853,6 +948,68 @@ void ScriptRuntime::Impl::bind_engine() {
       observer_->on_scene_command(command);
     }
   };
+  // Music, stops and volumes are state, so they also run during a replay. Sounds and voices
+  // are one-shots: a replay must not play them.
+  engine_["music"] = [this, problem_or_nil](
+                         sol::this_state state, const std::string& name,
+                         const sol::optional<std::string>& channel, sol::optional<double> fade,
+                         sol::optional<double> loop_start, sol::optional<double> loop_end) {
+    if (options_.audio == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    MusicRequest request;
+    request.name = name;
+    if (channel) {
+      request.channel = *channel;
+    }
+    if (fade) {
+      request.fade = *fade;
+    }
+    if (loop_start) {
+      request.loop_start = *loop_start;
+    }
+    if (loop_end) {
+      request.loop_end = *loop_end;
+    }
+    return problem_or_nil(state, options_.audio->music(request));
+  };
+  engine_["sound"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
+                                            const sol::optional<std::string>& channel) {
+    if (options_.audio == nullptr || replaying_) {
+      return problem_or_nil(state, {});
+    }
+    SoundRequest request;
+    request.name = name;
+    if (channel) {
+      request.channel = *channel;
+    }
+    return problem_or_nil(state, options_.audio->sound(request));
+  };
+  engine_["voice"] = [this, problem_or_nil](sol::this_state state, const std::string& name) {
+    if (options_.audio == nullptr || replaying_) {
+      return problem_or_nil(state, {});
+    }
+    return problem_or_nil(state, options_.audio->voice(name));
+  };
+  engine_["stop"] = [this, problem_or_nil](sol::this_state state, const std::string& channel,
+                                           sol::optional<double> fade) {
+    if (options_.audio == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    return problem_or_nil(state, options_.audio->stop(channel, fade ? *fade : 0));
+  };
+  engine_["volume"] = [this, problem_or_nil](sol::this_state state, const std::string& channel,
+                                             double value) {
+    if (options_.audio == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    return problem_or_nil(state, options_.audio->volume(channel, value));
+  };
+  engine_["audio_command"] = [this](const std::string& command) {
+    if (!replaying_) {
+      observer_->on_audio_command(command);
+    }
+  };
   engine_["transfer"] =
       sol::yielding([this](sol::this_state state, const std::string& kind,
                            const std::string& label) { transfer(state, kind, label); });
@@ -1339,6 +1496,48 @@ void ScriptRuntime::Impl::fail(std::string message) {
 void ScriptRuntime::Impl::reset_instruction_budget() {
   if (hook_period_ != 0) {
     limits_reset_(options_.instruction_limit / hook_period_);
+  }
+}
+
+CompositeSceneState::CompositeSceneState(std::vector<SceneState*> parts)
+    : parts_(std::move(parts)) {}
+
+// A u32 count of parts, then each part's capture() as a u32 length and the bytes.
+std::vector<std::byte> CompositeSceneState::capture() const {
+  ByteWriter writer;
+  writer.u32(static_cast<std::uint32_t>(parts_.size()));
+  for (const SceneState* part : parts_) {
+    writer.block(part->capture());
+  }
+  return writer.take();
+}
+
+void CompositeSceneState::restore(std::span<const std::byte> state) {
+  std::vector<std::span<const std::byte>> blocks(parts_.size());
+  if (!state.empty()) {
+    ByteReader reader{state, "scene state"};
+    if (reader.u32() != parts_.size()) {
+      throw std::invalid_argument{"scene state: made by another set of subsystems"};
+    }
+    for (std::span<const std::byte>& block : blocks) {
+      block = reader.block();
+    }
+    if (!reader.at_end()) {
+      throw std::invalid_argument{"scene state: unexpected data after the last part"};
+    }
+  }
+  std::vector<std::vector<std::byte>> before;
+  before.reserve(parts_.size());
+  for (std::size_t i = 0; i < parts_.size(); ++i) {
+    before.push_back(parts_[i]->capture());
+    try {
+      parts_[i]->restore(blocks[i]);
+    } catch (const std::invalid_argument&) {
+      for (std::size_t restored = 0; restored < i; ++restored) {
+        parts_[restored]->restore(before[restored]);
+      }
+      throw;
+    }
   }
 }
 

@@ -45,6 +45,12 @@ enum class HeadlessOutcome : std::uint8_t {
 ///   show <tag> ...        show(tag, options), then the options given (see
 ///                         ScriptObserver::on_scene_command)
 ///   hide <tag>            hide(tag)
+///   music <name> ...      music(name, options), then the options given (see
+///                         ScriptObserver::on_audio_command, also for the next four)
+///   sound <name> ...      sound(name, options)
+///   voice <name>          voice(name)
+///   stop <channel> ...    stop(channel, options)
+///   volume <channel> <n>  volume(channel, n)
 ///   print <text>          print(...), arguments joined by tabs
 ///   warning <message>     a dev-mode warning
 struct HeadlessResult {

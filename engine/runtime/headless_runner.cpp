@@ -20,6 +20,7 @@ class TranscriptRecorder final : public ScriptObserver {
   void on_label_entered(std::string_view label) override { add("label ", label); }
   void on_label_resumed(std::string_view label) override { add("resume ", label); }
   void on_scene_command(std::string_view command) override { add("", command); }
+  void on_audio_command(std::string_view command) override { add("", command); }
   void on_print(std::string_view text) override { add("print ", text); }
   void on_warning(std::string_view message) override { add("warning ", message); }
 
