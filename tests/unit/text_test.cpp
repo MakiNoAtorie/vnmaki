@@ -195,14 +195,21 @@ TEST_CASE("text: layout rejects a pixel size outside the limits") {
 
 TEST_CASE("text: a typewriter reveal shows glyphs at its speed in characters per second") {
   using vnmaki::revealed_glyphs;
-  CHECK(revealed_glyphs(10, 20.0, 0.0) == 0);
-  CHECK(revealed_glyphs(10, 20.0, 0.25) == 5);
-  CHECK(revealed_glyphs(10, 20.0, 0.29) == 5);
-  CHECK(revealed_glyphs(10, 20.0, 0.5) == 10);
-  CHECK(revealed_glyphs(10, 20.0, 60.0) == 10);
-  CHECK(revealed_glyphs(10, 20.0, -1.0) == 0);
+  constexpr std::size_t kCount = 10;
+  constexpr double kSpeed = 20.0;
+  constexpr double kQuarterSecond = 0.25;
+  constexpr double kJustAfterQuarter = 0.29;
+  constexpr double kHalfSecond = 0.5;
+  constexpr double kMinute = 60.0;
+  constexpr double kBeforeStart = -1.0;
+  CHECK(revealed_glyphs(kCount, kSpeed, 0.0) == 0);
+  CHECK(revealed_glyphs(kCount, kSpeed, kQuarterSecond) == 5);
+  CHECK(revealed_glyphs(kCount, kSpeed, kJustAfterQuarter) == 5);
+  CHECK(revealed_glyphs(kCount, kSpeed, kHalfSecond) == 10);
+  CHECK(revealed_glyphs(kCount, kSpeed, kMinute) == 10);
+  CHECK(revealed_glyphs(kCount, kSpeed, kBeforeStart) == 0);
   // No speed means no typewriter: everything shows at once.
-  CHECK(revealed_glyphs(10, 0.0, 0.0) == 10);
+  CHECK(revealed_glyphs(kCount, 0.0, 0.0) == 10);
 }
 
 TEST_CASE("text: the glyph atlas holds each glyph's bitmap at the layout's pixel size") {
