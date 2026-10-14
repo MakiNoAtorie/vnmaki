@@ -23,6 +23,7 @@ vnmaki_add_shaders(
   NAMESPACE vnmaki::shaders
   SHADERS "${PROJECT_SOURCE_DIR}/shaders/sprite.vert.hlsl"
           "${PROJECT_SOURCE_DIR}/shaders/sprite.frag.hlsl"
+          "${PROJECT_SOURCE_DIR}/shaders/sdf_text.frag.hlsl"
   INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/shaders")
 
 # stb_image decodes PNG and JPEG. vcpkg's stb installs stb_image.h at the top of its include

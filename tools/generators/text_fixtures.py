@@ -6,15 +6,19 @@ Usage: text_fixtures.py OUT_DIR
 OUT_DIR is deleted and recreated, so the output depends only on this script.
 Layout:
 
-  OUT_DIR/fonts/boxes.ttf   a TrueType font whose glyphs are plain rectangles
-  OUT_DIR/fonts/*.ttf       broken fonts the loader must reject
+  OUT_DIR/fonts/boxes.ttf          a TrueType font whose glyphs are plain rectangles
+  OUT_DIR/fonts/boxes_bold.ttf     the same, with Latin letters 600 units wide (bold stand-in)
+  OUT_DIR/fonts/boxes_italic.ttf   the same, with Latin letters 400 units wide (italic stand-in)
+  OUT_DIR/fonts/fallback.ttf       only the Greek letters, which boxes.ttf lacks, 750 units wide
+  OUT_DIR/fonts/*.ttf              broken fonts the loader must reject
 
 Every glyph of boxes.ttf is one axis-aligned box, so tests can state glyph
 positions and pixels as literals. 1000 units per em, ascent 800, descent 200,
 no line gap: at 20 pixels per em a line is 20 pixels high with its baseline 16
 pixels down, and 50 font units are one pixel. Glyph 0 is .notdef; the mapped
 characters follow in code point order, so the glyph of the n-th lowest code
-point is n (space is glyph 1).
+point is n (space is glyph 1). The Hebrew letters are there for right-to-left
+text.
 
 tools/generators/render_fixtures.py imports glyph_box() to draw the golden
 image of the text scene.
@@ -37,11 +41,15 @@ UPPER = (500, (50, 0, 450, 700))
 DOT = (500, (150, 0, 350, 200))
 WIDE = (1000, (50, -100, 950, 800))
 WIDE_DOT = (1000, (100, 0, 400, 300))
+BOLD = (600, (50, 0, 550, 700))
+ITALIC = (400, (50, 0, 350, 700))
+GREEK = (750, (50, 0, 700, 600))
 
 
 def character_shapes() -> dict:
     shapes = {" ": BLANK}
     for first, last, shape in (("a", "z", LOWER), ("A", "Z", UPPER), ("0", "9", UPPER),
+                               ("\u05d0", "\u05ea", LOWER),  # Hebrew, right to left
                                ("ぁ", "ゖ", WIDE),    # hiragana
                                ("ァ", "ヺ", WIDE)):   # katakana
         for code in range(ord(first), ord(last) + 1):
@@ -57,9 +65,19 @@ def character_shapes() -> dict:
     return shapes
 
 
+def restyled(shapes: dict, latin: tuple) -> dict:
+    """`shapes` with every ASCII letter and number drawn as `latin`."""
+    return {char: latin if char.isascii() and char.isalnum() else shape
+            for char, shape in shapes.items()}
+
+
 SHAPES = character_shapes()
-# Glyph order: .notdef, then the characters by code point.
-GLYPHS = [UPPER] + [SHAPES[char] for char in sorted(SHAPES)]
+FALLBACK_SHAPES = {chr(code): GREEK for code in range(ord("\u03b1"), ord("\u03c9") + 1)}
+
+
+def glyph_list(shapes: dict) -> list:
+    # Glyph order: .notdef, then the characters by code point.
+    return [UPPER] + [shapes[char] for char in sorted(shapes)]
 
 
 def glyph_box(char: str) -> tuple:
@@ -78,10 +96,10 @@ def checksum(data: bytes) -> int:
     return sum(struct.unpack(f">{len(data) // 4}I", data)) & 0xFFFFFFFF
 
 
-def glyf_and_loca() -> tuple:
+def glyf_and_loca(glyphs: list) -> tuple:
     glyf = b""
     offsets = [0]
-    for _, box in GLYPHS:
+    for _, box in glyphs:
         if box:
             x0, y0, x1, y1 = box
             # One contour of four on-curve points, clockwise from the bottom-left corner, as
@@ -95,32 +113,33 @@ def glyf_and_loca() -> tuple:
     return glyf, struct.pack(f">{len(offsets)}I", *offsets)
 
 
-def cmap() -> bytes:
+def cmap(shapes: dict) -> bytes:
     # One format 12 subtable (Windows, full Unicode) with one group per character.
     groups = b"".join(struct.pack(">III", ord(char), ord(char), index + 1)
-                      for index, char in enumerate(sorted(SHAPES)))
-    subtable = struct.pack(">HHIII", 12, 0, 16 + len(groups), 0, len(SHAPES)) + groups
+                      for index, char in enumerate(sorted(shapes)))
+    subtable = struct.pack(">HHIII", 12, 0, 16 + len(groups), 0, len(shapes)) + groups
     return struct.pack(">HHHHI", 0, 1, 3, 10, 12) + subtable
 
 
-def build_font() -> bytes:
-    boxes = [box for _, box in GLYPHS if box]
+def build_font(shapes: dict) -> bytes:
+    glyphs = glyph_list(shapes)
+    boxes = [box for _, box in glyphs if box]
     x_min, y_min = min(b[0] for b in boxes), min(b[1] for b in boxes)
     x_max, y_max = max(b[2] for b in boxes), max(b[3] for b in boxes)
-    advance_max = max(advance for advance, _ in GLYPHS)
-    glyf, loca = glyf_and_loca()
+    advance_max = max(advance for advance, _ in glyphs)
+    glyf, loca = glyf_and_loca(glyphs)
     tables = {
-        b"cmap": cmap(),
+        b"cmap": cmap(shapes),
         b"glyf": glyf,
         # checkSumAdjustment (offset 8) is filled in below; long loca offsets.
         b"head": struct.pack(">IIIIHHqqhhhhHHhhh", 0x00010000, 0x00010000, 0, 0x5F0F3CF5, 0,
                              UNITS_PER_EM, 0, 0, x_min, y_min, x_max, y_max, 0, 8, 2, 1, 0),
         b"hhea": struct.pack(">IhhhHhhhhhh4hhH", 0x00010000, ASCENT, DESCENT, 0, advance_max,
-                             x_min, 0, x_max, 1, 0, 0, 0, 0, 0, 0, 0, len(GLYPHS)),
+                             x_min, 0, x_max, 1, 0, 0, 0, 0, 0, 0, 0, len(glyphs)),
         b"hmtx": b"".join(struct.pack(">Hh", advance, box[0] if box else 0)
-                          for advance, box in GLYPHS),
+                          for advance, box in glyphs),
         b"loca": loca,
-        b"maxp": struct.pack(">IH13H", 0x00010000, len(GLYPHS), 4, 1, 0, 0, 2, 0, 0, 0, 0, 0, 0,
+        b"maxp": struct.pack(">IH13H", 0x00010000, len(glyphs), 4, 1, 0, 0, 2, 0, 0, 0, 0, 0, 0,
                              0, 0),
         b"post": struct.pack(">IIhhIIIII", 0x00030000, 0, -100, 50, 0, 0, 0, 0, 0),
     }
@@ -147,9 +166,12 @@ def build_font() -> bytes:
 
 
 def font_fixtures() -> dict:
-    font = build_font()
+    font = build_font(SHAPES)
     return {
         "boxes.ttf": font,
+        "boxes_bold.ttf": build_font(restyled(SHAPES, BOLD)),
+        "boxes_italic.ttf": build_font(restyled(SHAPES, ITALIC)),
+        "fallback.ttf": build_font(FALLBACK_SHAPES),
         "not_a_font.ttf": b"this is plain text, not a font\n",
         "truncated.ttf": font[:len(font) // 2],
         "empty.ttf": b"",
