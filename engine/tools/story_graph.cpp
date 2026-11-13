@@ -112,7 +112,7 @@ std::vector<ScriptSource> read_scripts(const Vfs& vfs) {
       }
     }
   }
-  std::sort(paths.begin(), paths.end());
+  std::ranges::sort(paths);
   scripts.reserve(paths.size());
   for (std::string& path : paths) {
     const std::optional<std::vector<std::byte>> bytes = vfs.read(path);
@@ -159,13 +159,13 @@ StoryGraph build_story_graph(std::span<const ScriptSource> scripts) {
             called.insert(*target);
           }
           const bool in_menu = menu_depth && call.depth > *menu_depth;
-          graph.edges.push_back({.from = *scanned.name,
-                                 .to = target.value_or(""),
-                                 .kind = in_menu ? EdgeKind::kMenu
-                                                 : (is_jump ? EdgeKind::kJump : EdgeKind::kCall),
-                                 .dynamic = !target,
-                                 .script = script.path,
-                                 .line = call.line});
+          graph.edges.push_back(
+              {.from = *scanned.name,
+               .to = target.value_or(""),
+               .kind = in_menu ? EdgeKind::kMenu : (is_jump ? EdgeKind::kJump : EdgeKind::kCall),
+               .dynamic = !target,
+               .script = script.path,
+               .line = call.line});
         }
       }
     }
@@ -179,12 +179,12 @@ StoryGraph build_story_graph(std::span<const ScriptSource> scripts) {
 
 void TraceRecorder::on_label_entered(std::string_view label) {
   const std::string name{label};
-  if (std::find(labels_.begin(), labels_.end(), name) == labels_.end()) {
+  if (std::ranges::find(labels_, name) == labels_.end()) {
     labels_.push_back(name);
   }
   if (!current_.empty()) {
     TraceEdge edge{.from = current_, .to = name};
-    if (std::find(edges_.begin(), edges_.end(), edge) == edges_.end()) {
+    if (std::ranges::find(edges_, edge) == edges_.end()) {
       edges_.push_back(std::move(edge));
     }
   }
@@ -206,7 +206,7 @@ void apply_trace(StoryGraph& graph, const TraceRecorder& trace) {
   }
   for (GraphLabel& label : graph.labels) {
     const std::vector<std::string>& entered = trace.labels();
-    label.seen = std::find(entered.begin(), entered.end(), label.name) != entered.end();
+    label.seen = std::ranges::find(entered, label.name) != entered.end();
   }
   for (const TraceEdge& traced : trace.edges()) {
     bool found = false;

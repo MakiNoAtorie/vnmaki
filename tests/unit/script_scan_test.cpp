@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <random>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -55,9 +54,9 @@ std::vector<std::string> strings_of(std::string_view source) {
 
 TEST_CASE("script_scan tokenizer: names, numbers, symbols and lines") {
   const std::vector<LuaToken> expected{
-      token(kName, "local"),     token(kName, "x"),         token(kSymbol, "="),
-      token(kNumber, "1.5e+3"),  token(kName, "jump", 2),   token(kSymbol, "(", 2),
-      token(kString, "a", 2),    token(kSymbol, ")", 2),    token(kNumber, ".5", 3),
+      token(kName, "local"),       token(kName, "x"),        token(kSymbol, "="),
+      token(kNumber, "1.5e+3"),    token(kName, "jump", 2),  token(kSymbol, "(", 2),
+      token(kString, "a", 2),      token(kSymbol, ")", 2),   token(kNumber, ".5", 3),
       token(kNumber, "0x1p-3", 3), token(kNumber, "0xe", 3), token(kSymbol, "+", 3),
       token(kNumber, "1", 3)};
   CHECK(vnmaki::tokenize_lua("local x = 1.5e+3\njump(\"a\")\n.5 0x1p-3 0xe+1") == expected);
@@ -125,15 +124,15 @@ TEST_CASE("script_scan tokenizer: a script that is cut off still gives tokens") 
 
 TEST_CASE("script_scan: finds labels and the story calls in them") {
   const std::string source =
-      "local eileen = 1\n"                           // 1
-      "label(\"start\", function()\n"                // 2
-      "  say(eileen, \"Hello\")\n"                   // 3
-      "  show \"eileen\"\n"                          // 4
-      "  call(\"aside\")\n"                          // 5
-      "  jump('next')\n"                             // 6
-      "end)\n"                                       // 7
-      "label(\"next\", function() ret() end,\n"      // 8
-      "  { ending = true })\n";                      // 9
+      "local eileen = 1\n"                       // 1
+      "label(\"start\", function()\n"            // 2
+      "  say(eileen, \"Hello\")\n"               // 3
+      "  show \"eileen\"\n"                      // 4
+      "  call(\"aside\")\n"                      // 5
+      "  jump('next')\n"                         // 6
+      "end)\n"                                   // 7
+      "label(\"next\", function() ret() end,\n"  // 8
+      "  { ending = true })\n";                  // 9
   const std::vector<ScanLabel> labels = vnmaki::scan_labels(source);
   REQUIRE(labels.size() == 2);
 
@@ -141,11 +140,10 @@ TEST_CASE("script_scan: finds labels and the story calls in them") {
   CHECK(labels[0].line == 2);
   CHECK(labels[0].end_line == 7);
   CHECK_FALSE(labels[0].ending);
-  const std::vector<ScanCall> expected{
-      call(ScanCallKind::kSay, 3, 0, {std::nullopt, "Hello"}),
-      call(ScanCallKind::kShow, 4, 0, {"eileen"}),
-      call(ScanCallKind::kCall, 5, 0, {"aside"}),
-      call(ScanCallKind::kJump, 6, 0, {"next"})};
+  const std::vector<ScanCall> expected{call(ScanCallKind::kSay, 3, 0, {std::nullopt, "Hello"}),
+                                       call(ScanCallKind::kShow, 4, 0, {"eileen"}),
+                                       call(ScanCallKind::kCall, 5, 0, {"aside"}),
+                                       call(ScanCallKind::kJump, 6, 0, {"next"})};
   CHECK(labels[0].calls == expected);
 
   CHECK(labels[1].name == "next");
@@ -157,15 +155,15 @@ TEST_CASE("script_scan: finds labels and the story calls in them") {
 
 TEST_CASE("script_scan: a computed target or name is not a string literal") {
   const std::string source =
-      "label(name, function()\n"                      // 1
-      "  jump(target)\n"                              // 2
-      "end)\n"                                        // 3
-      "label(\"a\", function()\n"                     // 4
-      "  jump(\"x\" .. suffix)\n"                     // 5
-      "  call(table[\"k\"])\n"                        // 6
-      "  jump(\"f\" .. g(\"h\", \"i\"))\n"            // 7
-      "  menu { \"one\", \"two\" }\n"                 // 8
-      "end)\n";                                       // 9
+      "label(name, function()\n"            // 1
+      "  jump(target)\n"                    // 2
+      "end)\n"                              // 3
+      "label(\"a\", function()\n"           // 4
+      "  jump(\"x\" .. suffix)\n"           // 5
+      "  call(table[\"k\"])\n"              // 6
+      "  jump(\"f\" .. g(\"h\", \"i\"))\n"  // 7
+      "  menu { \"one\", \"two\" }\n"       // 8
+      "end)\n";                             // 9
   const std::vector<ScanLabel> labels = vnmaki::scan_labels(source);
   REQUIRE(labels.size() == 2);
   CHECK_FALSE(labels[0].name.has_value());
@@ -209,23 +207,23 @@ TEST_CASE("script_scan: a method, a field or a definition is not a call") {
 
 TEST_CASE("script_scan: depth counts the blocks inside the label function") {
   const std::string source =
-      "label(\"a\", function()\n"                  // 1
-      "  menu { \"x\", \"y\" }\n"                  // 2
-      "  if c == 1 then\n"                         // 3
-      "    jump(\"b\")\n"                          // 4
-      "  elseif c == 2 then\n"                     // 5
-      "    for i = 1, 2 do\n"                      // 6
-      "      call(\"c\")\n"                        // 7
-      "    end\n"                                  // 8
-      "  else\n"                                   // 9
-      "    repeat\n"                               // 10
-      "      jump(\"d\")\n"                        // 11
-      "    until true\n"                           // 12
-      "  end\n"                                    // 13
-      "  local f = function() ret() end\n"         // 14
-      "  jump(\"e\")\n"                            // 15
-      "end)\n"                                     // 16
-      "label(\"after\", function() end)\n";        // 17
+      "label(\"a\", function()\n"            // 1
+      "  menu { \"x\", \"y\" }\n"            // 2
+      "  if c == 1 then\n"                   // 3
+      "    jump(\"b\")\n"                    // 4
+      "  elseif c == 2 then\n"               // 5
+      "    for i = 1, 2 do\n"                // 6
+      "      call(\"c\")\n"                  // 7
+      "    end\n"                            // 8
+      "  else\n"                             // 9
+      "    repeat\n"                         // 10
+      "      jump(\"d\")\n"                  // 11
+      "    until true\n"                     // 12
+      "  end\n"                              // 13
+      "  local f = function() ret() end\n"   // 14
+      "  jump(\"e\")\n"                      // 15
+      "end)\n"                               // 16
+      "label(\"after\", function() end)\n";  // 17
   const std::vector<ScanLabel> labels = vnmaki::scan_labels(source);
   REQUIRE(labels.size() == 2);
   const std::vector<ScanCall> expected{call(ScanCallKind::kMenu, 2, 0, {std::nullopt}),
@@ -268,7 +266,7 @@ TEST_CASE("script_scan: a label that is never closed ends at the last token") {
 }
 
 TEST_CASE("script_scan: the scan of tokens is the scan of the source") {
-  const std::string source = "label(\"a\", function() jump(\"b\") end, { ending = true })";
+  const std::string source = R"(label("a", function() jump("b") end, { ending = true }))";
   const std::vector<LuaToken> tokens = vnmaki::tokenize_lua(source);
   CHECK(vnmaki::scan_tokens(tokens) == vnmaki::scan_labels(source));
   CHECK(vnmaki::scan_tokens({}).empty());
@@ -282,11 +280,11 @@ using namespace std::string_view_literals;
 
 constexpr std::array<std::string_view, 12> kPropertySamples{
     "",
-    "label(\"a\", function() jump(\"b\") end)",
+    R"(label("a", function() jump("b") end))",
     "label('a', function()\r\n  say(\"x\\\n y\")\r\nend, { ending = true })",
     "[==[ ]] ]==] --[[ x ]] 'y' \"z\\065\\x41\\u{41}\\z   \n w\"",
     "x = 0x1p-3 + 1e+5 - .5 .. 3.. 7",
-    "label(\"a\", function() if x then menu {\"a\"} jump(\"b\") end",
+    R"(label("a", function() if x then menu {"a"} jump("b") end)",
     "label(label(\"x\", function() end), function() end)",
     "\xFF\xFE\x00\x01 [ [ ] ] [=[ ]=] -- \n"sv,
     "\"unterminated\nstring 'also\nand [[ long",
@@ -294,15 +292,68 @@ constexpr std::array<std::string_view, 12> kPropertySamples{
     "label(\"a\", function() jump(",
     "end end until until label(\"z\", function() end) end"};
 
-constexpr std::array<std::string_view, 40> kFragments{
-    "label(\"a\", ", "function()", " end", " end)", "jump(", "call(", "\"b\"", "'c'", ")", "(",
-    "menu {", "}", " if x then ", " else ", "[[", "]]", "[==[", "]==]", "--", "--[[", "\n", "\r\n",
-    "\\", "\"", ",", "{ ending = true }", "1e+", "0x1p", "\x80", "ret()", "a.b", ".", ":", "x", "=",
-    "7", "-", "+", " ", "show \"t\""};
+constexpr std::array<std::string_view, 40> kFragments{"label(\"a\", ",
+                                                      "function()",
+                                                      " end",
+                                                      " end)",
+                                                      "jump(",
+                                                      "call(",
+                                                      "\"b\"",
+                                                      "'c'",
+                                                      ")",
+                                                      "(",
+                                                      "menu {",
+                                                      "}",
+                                                      " if x then ",
+                                                      " else ",
+                                                      "[[",
+                                                      "]]",
+                                                      "[==[",
+                                                      "]==]",
+                                                      "--",
+                                                      "--[[",
+                                                      "\n",
+                                                      "\r\n",
+                                                      "\\",
+                                                      "\"",
+                                                      ",",
+                                                      "{ ending = true }",
+                                                      "1e+",
+                                                      "0x1p",
+                                                      "\x80",
+                                                      "ret()",
+                                                      "a.b",
+                                                      ".",
+                                                      ":",
+                                                      "x",
+                                                      "=",
+                                                      "7",
+                                                      "-",
+                                                      "+",
+                                                      " ",
+                                                      "show \"t\""};
 
 constexpr std::uint64_t kSeed = 0x5CA7;
 constexpr std::size_t kRandomCases = 3000;
 constexpr std::size_t kMaxFragments = 40;
+
+// A fixed generator (Knuth's MMIX constants), so a failure repeats on every platform; the
+// standard distributions differ between libraries.
+class Generator {
+ public:
+  explicit Generator(std::uint64_t seed) : state_(seed) {}
+
+  std::size_t below(std::size_t limit) {
+    constexpr std::uint64_t kMultiplier = 6364136223846793005ULL;
+    constexpr std::uint64_t kIncrement = 1442695040888963407ULL;
+    constexpr unsigned kDiscardedLowBits = 33;  // the low bits of an LCG repeat quickly
+    state_ = state_ * kMultiplier + kIncrement;
+    return static_cast<std::size_t>((state_ >> kDiscardedLowBits) % limit);
+  }
+
+ private:
+  std::uint64_t state_;
+};
 
 }  // namespace
 
@@ -313,12 +364,12 @@ TEST_CASE("script_scan: the properties of the fuzz target hold") {
 }
 
 TEST_CASE("script_scan: the properties hold on random scripts") {
-  std::mt19937_64 random{kSeed};
+  Generator random{kSeed};
   for (std::size_t i = 0; i < kRandomCases; ++i) {
     std::string source;
-    const std::size_t count = random() % kMaxFragments;
+    const std::size_t count = random.below(kMaxFragments);
     for (std::size_t j = 0; j < count; ++j) {
-      source += kFragments[random() % kFragments.size()];
+      source += kFragments.at(random.below(kFragments.size()));
     }
     vnmaki::fuzz::check_script_scan_properties(source);
   }

@@ -266,8 +266,8 @@ class Lexer {
     const char exponent = hex ? 'p' : 'e';
     while (pos_ < source_.size()) {
       const char c = source_[pos_];
-      const bool sign_after_exponent = (c == '+' || c == '-') && pos_ > begin &&
-                                       lower(source_[pos_ - 1]) == exponent;
+      const bool sign_after_exponent =
+          (c == '+' || c == '-') && pos_ > begin && lower(source_[pos_ - 1]) == exponent;
       if (!is_name_char(c) && c != '.' && !sign_after_exponent) {
         break;
       }
@@ -292,16 +292,16 @@ bool is_name(const LuaToken& token, std::string_view name) {
 
 std::optional<ScanCallKind> call_kind(std::string_view name) {
   struct Entry {
-    std::string_view name;
-    ScanCallKind kind;
+    std::string_view name{};
+    ScanCallKind kind = ScanCallKind::kLabel;
   };
-  static constexpr std::array<Entry, 7> kEntries{{{"label", ScanCallKind::kLabel},
-                                                  {"jump", ScanCallKind::kJump},
-                                                  {"call", ScanCallKind::kCall},
-                                                  {"ret", ScanCallKind::kRet},
-                                                  {"menu", ScanCallKind::kMenu},
-                                                  {"say", ScanCallKind::kSay},
-                                                  {"show", ScanCallKind::kShow}}};
+  static constexpr std::array<Entry, 7> kEntries{{{.name = "label", .kind = ScanCallKind::kLabel},
+                                                  {.name = "jump", .kind = ScanCallKind::kJump},
+                                                  {.name = "call", .kind = ScanCallKind::kCall},
+                                                  {.name = "ret", .kind = ScanCallKind::kRet},
+                                                  {.name = "menu", .kind = ScanCallKind::kMenu},
+                                                  {.name = "say", .kind = ScanCallKind::kSay},
+                                                  {.name = "show", .kind = ScanCallKind::kShow}}};
   for (const Entry& entry : kEntries) {
     if (entry.name == name) {
       return entry.kind;
@@ -379,9 +379,9 @@ std::vector<ScanLabel> scan_tokens(std::span<const LuaToken> tokens) {
   std::vector<ScanLabel> labels;
   std::optional<ScanLabel> open;  // the label whose function is being read
   std::uint32_t depth = 0;
-  std::uint32_t body_depth = 0;  // `depth` outside the function of `open`
+  std::uint32_t body_depth = 0;               // `depth` outside the function of `open`
   std::optional<std::size_t> function_token;  // where the function of `pending` starts
-  ScanLabel pending;
+  std::optional<ScanLabel> pending;
 
   for (std::size_t i = 0; i < tokens.size(); ++i) {
     const LuaToken& token = tokens[i];
@@ -391,6 +391,7 @@ std::vector<ScanLabel> scan_tokens(std::span<const LuaToken> tokens) {
     if (starts_block(token.text)) {
       if (function_token == i) {
         open = std::move(pending);
+        pending.reset();
         body_depth = depth;
         function_token.reset();
       }
@@ -409,8 +410,9 @@ std::vector<ScanLabel> scan_tokens(std::span<const LuaToken> tokens) {
       continue;
     }
     const std::optional<ScanCallKind> kind = call_kind(token.text);
-    const bool is_member = i > 0 && (is_symbol(tokens[i - 1], '.') || is_symbol(tokens[i - 1], ':') ||
-                                     is_name(tokens[i - 1], "function"));
+    const bool is_member =
+        i > 0 && (is_symbol(tokens[i - 1], '.') || is_symbol(tokens[i - 1], ':') ||
+                  is_name(tokens[i - 1], "function"));
     if (!kind || is_member || i + 1 >= tokens.size()) {
       continue;
     }
@@ -423,11 +425,9 @@ std::vector<ScanLabel> scan_tokens(std::span<const LuaToken> tokens) {
       for (const Range& range : ranges) {
         call.arguments.push_back(literal(tokens, range));
       }
-    } else if (is_label) {
-      continue;
-    } else if (next.kind == LuaTokenKind::kString) {
-      call.arguments.push_back(next.text);
-    } else if (is_symbol(next, '{')) {
+    } else if (!is_label && next.kind == LuaTokenKind::kString) {
+      call.arguments.emplace_back(next.text);
+    } else if (!is_label && is_symbol(next, '{')) {
       call.arguments.emplace_back();
     } else {
       continue;

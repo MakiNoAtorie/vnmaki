@@ -40,7 +40,7 @@ const GraphLabel& label_of(const StoryGraph& graph, std::string_view name) {
   return graph.labels.front();
 }
 
-std::vector<std::string> names_where(const StoryGraph& graph, bool GraphLabel::*flag,
+std::vector<std::string> names_where(const StoryGraph& graph, bool GraphLabel::* flag,
                                      bool wanted) {
   std::vector<std::string> names;
   for (const GraphLabel& label : graph.labels) {
@@ -56,28 +56,28 @@ using Names = std::vector<std::string>;
 // Two scripts: a menu with a jump and a call in its branches, a computed jump, a label that ends
 // on purpose, one that ends by accident, one that nobody reaches and a second `start`.
 std::vector<ScriptSource> sample_scripts() {
-  return {{"scripts/a.lua",
-           "label(\"start\", function()\n"                   // 1
-           "  menu { \"x\", \"y\" }\n"                        // 2
-           "  if c == 1 then\n"                              // 3
-           "    jump(\"shop\")\n"                            // 4
-           "  else\n"                                        // 5
-           "    call(\"sub\")\n"                             // 6
-           "  end\n"                                         // 7
-           "  jump(\"end_ok\")\n"                            // 8
-           "end)\n"                                          // 9
-           "\n"                                              // 10
-           "label(\"sub\", function()\n"                     // 11
-           "  say(\"A\", \"hi\")\n"                          // 12
-           "end)\n"},                                        // 13
-          {"scripts/b.lua",
-           "label(\"shop\", function()\n"                    // 1
-           "  jump(where)\n"                                 // 2
-           "end)\n"                                          // 3
-           "label(\"end_ok\", function() narrate(\"bye\") end, { ending = true })\n"  // 4
-           "label(\"stuck\", function() narrate(\"oops\") end)\n"                     // 5
-           "label(\"orphan\", function() ret() end)\n"                                // 6
-           "label(\"start\", function() jump(\"stuck\") end)\n"}};                    // 7
+  return {{.path = "scripts/a.lua",
+           .text = "label(\"start\", function()\n"  // 1
+                   "  menu { \"x\", \"y\" }\n"      // 2
+                   "  if c == 1 then\n"             // 3
+                   "    jump(\"shop\")\n"           // 4
+                   "  else\n"                       // 5
+                   "    call(\"sub\")\n"            // 6
+                   "  end\n"                        // 7
+                   "  jump(\"end_ok\")\n"           // 8
+                   "end)\n"                         // 9
+                   "\n"                             // 10
+                   "label(\"sub\", function()\n"    // 11
+                   "  say(\"A\", \"hi\")\n"         // 12
+                   "end)\n"},                       // 13
+          {.path = "scripts/b.lua",
+           .text = "label(\"shop\", function()\n"                                             // 1
+                   "  jump(where)\n"                                                          // 2
+                   "end)\n"                                                                   // 3
+                   "label(\"end_ok\", function() narrate(\"bye\") end, { ending = true })\n"  // 4
+                   "label(\"stuck\", function() narrate(\"oops\") end)\n"                     // 5
+                   "label(\"orphan\", function() ret() end)\n"                                // 6
+                   "label(\"start\", function() jump(\"stuck\") end)\n"}};                    // 7
 }
 
 }  // namespace
@@ -91,9 +91,17 @@ TEST_CASE("story_graph: labels and edges from the scripts") {
   CHECK(label_of(graph, "end_ok").ending);
 
   const std::vector<GraphEdge> expected{
-      {.from = "start", .to = "shop", .kind = EdgeKind::kMenu, .script = "scripts/a.lua", .line = 4},
+      {.from = "start",
+       .to = "shop",
+       .kind = EdgeKind::kMenu,
+       .script = "scripts/a.lua",
+       .line = 4},
       {.from = "start", .to = "sub", .kind = EdgeKind::kMenu, .script = "scripts/a.lua", .line = 6},
-      {.from = "start", .to = "end_ok", .kind = EdgeKind::kJump, .script = "scripts/a.lua", .line = 8},
+      {.from = "start",
+       .to = "end_ok",
+       .kind = EdgeKind::kJump,
+       .script = "scripts/a.lua",
+       .line = 8},
       {.from = "shop",
        .kind = EdgeKind::kJump,
        .dynamic = true,
@@ -112,7 +120,8 @@ TEST_CASE("story_graph: unreachable labels and dead ends") {
 
 TEST_CASE("story_graph: a story with no start label reaches nothing") {
   const StoryGraph graph = vnmaki::build_story_graph(std::vector<ScriptSource>{
-      {"scripts/a.lua", "label(\"a\", function() jump(\"b\") end)\nlabel(\"b\", function() end)"}});
+      {.path = "scripts/a.lua",
+       .text = "label(\"a\", function() jump(\"b\") end)\nlabel(\"b\", function() end)"}});
   CHECK(names_where(graph, &GraphLabel::reachable, false) == Names{"a", "b"});
 }
 
@@ -134,7 +143,8 @@ TEST_CASE("story_graph: CSV text") {
 
 TEST_CASE("story_graph: CSV quotes a field with a comma or a quote") {
   const StoryGraph graph = vnmaki::build_story_graph(std::vector<ScriptSource>{
-      {"scripts/a,b.lua", "label(\"start\", function() jump(\"say \\\"hi\\\", ok\") end)"}});
+      {.path = "scripts/a,b.lua",
+       .text = R"(label("start", function() jump("say \"hi\", ok") end))"}});
   CHECK(vnmaki::to_csv(graph) ==
         "type,from,to,script,line,flags\n"
         "label,start,,\"scripts/a,b.lua\",1,\n"
@@ -143,11 +153,12 @@ TEST_CASE("story_graph: CSV quotes a field with a comma or a quote") {
 
 TEST_CASE("story_graph: DOT text") {
   const StoryGraph graph = vnmaki::build_story_graph(std::vector<ScriptSource>{
-      {"scripts/a.lua",
-       "label(\"start\", function() menu {\"a\"} if c then call(\"x\") end jump(\"y\") end)\n"
-       "label(\"x\", function() end)\n"
-       "label(\"y\", function() jump(z) end, { ending = true })\n"
-       "label(\"lost\", function() end)\n"}});
+      {.path = "scripts/a.lua",
+       .text =
+           "label(\"start\", function() menu {\"a\"} if c then call(\"x\") end jump(\"y\") end)\n"
+           "label(\"x\", function() end)\n"
+           "label(\"y\", function() jump(z) end, { ending = true })\n"
+           "label(\"lost\", function() end)\n"}});
   CHECK(vnmaki::to_dot(graph) ==
         "digraph story {\n"
         "  rankdir=LR;\n"
@@ -208,9 +219,22 @@ TEST_CASE("story_graph: a run marks its edges and adds the one that a computed j
 
   vnmaki::apply_trace(graph, trace);
   const std::vector<GraphEdge> expected{
-      {.from = "start", .to = "helper", .kind = EdgeKind::kCall, .script = "scripts/main.lua", .line = 4, .seen = true},
-      {.from = "start", .kind = EdgeKind::kJump, .dynamic = true, .script = "scripts/main.lua", .line = 5},
-      {.from = "late", .to = "never", .kind = EdgeKind::kJump, .script = "scripts/main.lua", .line = 9},
+      {.from = "start",
+       .to = "helper",
+       .kind = EdgeKind::kCall,
+       .script = "scripts/main.lua",
+       .line = 4,
+       .seen = true},
+      {.from = "start",
+       .kind = EdgeKind::kJump,
+       .dynamic = true,
+       .script = "scripts/main.lua",
+       .line = 5},
+      {.from = "late",
+       .to = "never",
+       .kind = EdgeKind::kJump,
+       .script = "scripts/main.lua",
+       .line = 9},
       {.from = "start", .to = "hidden", .kind = EdgeKind::kTrace, .seen = true}};
   CHECK(graph.edges == expected);
   CHECK(names_where(graph, &GraphLabel::seen, true) == Names{"start", "helper", "hidden"});
@@ -239,18 +263,35 @@ TEST_CASE("story_graph: break_trace and clear forget the label that ran") {
   CHECK(trace.edges().empty());
 }
 
+namespace {
+
+const GraphEdge* find_edge(const StoryGraph& graph, std::string_view from, std::string_view to) {
+  for (const GraphEdge& edge : graph.edges) {
+    if (edge.from == from && edge.to == to) {
+      return &edge;
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
+
 TEST_CASE("story_graph template: every label of the sample game is reachable") {
   const std::filesystem::path directory = std::filesystem::path{VNMAKI_TEMPLATES_DIR} / "default";
   vnmaki::Vfs vfs;
   REQUIRE(vfs.mount(vnmaki::make_directory_mount(directory)));
   StoryGraph graph = vnmaki::build_story_graph(vnmaki::read_scripts(vfs));
   CHECK(names_where(graph, &GraphLabel::reachable, false).empty());
-  CHECK(graph.labels.size() == 4);
-  const std::vector<GraphEdge> expected{
-      {.from = "start", .to = "classroom", .kind = EdgeKind::kJump, .script = "scripts/main.lua", .line = 19},
-      {.from = "classroom", .to = "warm", .kind = EdgeKind::kMenu, .script = "scripts/main.lua", .line = 35},
-      {.from = "classroom", .to = "cold", .kind = EdgeKind::kMenu, .script = "scripts/main.lua", .line = 37}};
-  CHECK(graph.edges == expected);
+  // Not the lines: the template is a sample that people change.
+  const GraphEdge* opening = find_edge(graph, "start", "classroom");
+  const GraphEdge* warm = find_edge(graph, "classroom", "warm");
+  const GraphEdge* cold = find_edge(graph, "classroom", "cold");
+  REQUIRE(opening != nullptr);
+  REQUIRE(warm != nullptr);
+  REQUIRE(cold != nullptr);
+  CHECK(opening->kind == EdgeKind::kJump);
+  CHECK(warm->kind == EdgeKind::kMenu);
+  CHECK(cold->kind == EdgeKind::kMenu);
 
   // The first menu option takes the path through `warm`.
   vnmaki::TraceRecorder trace;
@@ -258,9 +299,10 @@ TEST_CASE("story_graph template: every label of the sample game is reachable") {
   runtime.load_scripts();
   play(runtime);
   vnmaki::apply_trace(graph, trace);
-  CHECK(names_where(graph, &GraphLabel::seen, true) == Names{"start", "classroom", "warm"});
-  CHECK(graph.edges.size() == expected.size());
-  CHECK(graph.edges[0].seen);
-  CHECK(graph.edges[1].seen);
-  CHECK_FALSE(graph.edges[2].seen);
+  CHECK(label_of(graph, "warm").seen);
+  CHECK_FALSE(label_of(graph, "cold").seen);
+  CHECK(find_edge(graph, "start", "classroom")->seen);
+  CHECK(find_edge(graph, "classroom", "warm")->seen);
+  CHECK_FALSE(find_edge(graph, "classroom", "cold")->seen);
+  CHECK(names_where(graph, &GraphLabel::reachable, false).empty());
 }

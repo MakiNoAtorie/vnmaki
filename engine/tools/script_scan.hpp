@@ -31,13 +31,15 @@ struct LuaToken {
 /// Splits Lua 5.4 source into tokens. Comments (`--` and `--[==[ ]==]`) and white space give no
 /// token. Strings are short (with escapes) or long (`[==[ ]==]`). A string or a long bracket that
 /// is not closed runs to the end of the line (short string) or of the source. A line ends at LF,
-/// CR, CRLF or LFCR. A byte that starts no other token is a one-byte symbol.
+/// CR, CRLF or LFCR. A byte that starts no other token is a one-byte symbol. A short string has its
+/// escapes decoded, except `\u{...}`, which stays as written.
 [[nodiscard]] std::vector<LuaToken> tokenize_lua(std::string_view source);
 
 enum class ScanCallKind : std::uint8_t { kLabel, kJump, kCall, kRet, kMenu, kSay, kShow };
 
-/// A call of `label`, `jump`, `call`, `ret`, `menu`, `say` or `show` in the body of a label, written
-/// as `name(...)`, `name "text"` or `name { ... }`. A call after `.` or `:` (a method) is not one.
+/// A call of `label`, `jump`, `call`, `ret`, `menu`, `say` or `show` in the body of a label,
+/// written as `name(...)`, `name "text"` or `name { ... }`. A call after `.` or `:` (a method) is
+/// not one.
 struct ScanCall {
   ScanCallKind kind = ScanCallKind::kJump;
   std::uint32_t line = 0;
