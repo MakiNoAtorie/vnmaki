@@ -95,6 +95,9 @@ std::vector<TranslationRow> TranslationEditor::rows() {
 }
 
 std::string TranslationEditor::edit(const std::string& key, const std::string& text) {
+  // Read the file again: Poedit or extract-strings may have changed it since rows(), and writing
+  // the cached copy would undo that.
+  loaded_language_.clear();
   if (!load()) {
     return problem_.empty() ? "the source language has no translations" : problem_;
   }

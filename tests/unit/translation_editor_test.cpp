@@ -157,3 +157,36 @@ TEST_CASE("translation editor: a language with no .po file says why") {
   CHECK(editor.rows().empty());
   CHECK(editor.problem().find("translations/ja.po does not exist") != std::string::npos);
 }
+
+TEST_CASE("translation editor: an edit keeps a change made to the file after it was read") {
+  Project project;
+  vnmaki::Translator translator{project.vfs, vnmaki::load_project_config(project.vfs)};
+  vnmaki::ScriptRuntime runtime{project.vfs};
+  runtime.load_scripts();
+  runtime.start("start");
+  vnmaki::TranslationEditor editor{translator, runtime, project.dir};
+  REQUIRE(translator.set_language("ja").empty());
+  const std::vector<TranslationRow> rows = editor.rows();
+  REQUIRE(rows.size() == 2);
+
+  // Another program (Poedit, extract-strings) changes another entry of the file.
+  vnmaki::PoFile outside = vnmaki::parse_po(project.read("translations/ja.po"));
+  for (vnmaki::PoEntry& entry : outside.entries) {
+    if (entry.context == rows[1].key) {
+      entry.str = "Outside.";
+    }
+  }
+  project.write("translations/ja.po", vnmaki::write_po(outside));
+
+  CHECK(editor.edit(rows[0].key, "Yaa.").empty());
+  const vnmaki::PoFile saved = vnmaki::parse_po(project.read("translations/ja.po"));
+  for (const vnmaki::PoEntry& entry : saved.entries) {
+    if (entry.context == rows[0].key) {
+      CHECK(entry.str == "Yaa.");
+    }
+    if (entry.context == rows[1].key) {
+      CHECK(entry.str == "Outside.");
+    }
+  }
+  CHECK(editor.rows()[1].translation == "Outside.");
+}

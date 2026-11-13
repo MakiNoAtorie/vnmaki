@@ -47,7 +47,8 @@ class TranslationEditor {
   [[nodiscard]] const std::string& problem() const { return problem_; }
 
   /// Sets the translation of entry `key` (an empty text removes it, so the source text shows),
-  /// takes its fuzzy flag off, writes the `.po` file and gives the translator the new
+  /// takes its fuzzy flag off, reads the `.po` file again (so a change that another program made
+  /// since rows() stays), writes the `.po` file and gives the translator the new
   /// translations, so the say box, the backlog and the screens change at once. A text of a line
   /// whose tags do not parse is refused (as `vnmaki check` would). Returns why it cannot, or an
   /// empty string; then nothing changed.
