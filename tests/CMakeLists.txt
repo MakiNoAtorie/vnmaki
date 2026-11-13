@@ -228,3 +228,12 @@ endif()
 # Profiler: frame phases with a fake clock, the CSV text and the load timing (ticket 33). It needs
 # no ImGui, so it is in every build.
 target_sources(vnmaki_unit_tests PRIVATE unit/profiler_test.cpp)
+
+# 3D scenes (ticket 46): the glTF loader, the maths, the script calls, tweens, the snapshot, and
+# the GPU cases (unlit golden, toon and PBR probes, a custom shader) of the generated cubes.
+target_sources(vnmaki_unit_tests PRIVATE unit/model3d_test.cpp)
+vnmaki_add_fixture_generator(
+  model3d SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
