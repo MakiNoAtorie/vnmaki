@@ -69,6 +69,12 @@ target_sources(vnmaki_unit_tests PRIVATE unit/anim_test.cpp)
 
 # Game shaders: the run-time compiler, the script API and uniform tweens (ticket 24).
 target_sources(vnmaki_unit_tests PRIVATE unit/shader_test.cpp)
+vnmaki_add_fixture_generator(
+  shader SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/shader_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
 # Layered sprites: attributes, crossfade, snapshot, drawing order (ticket 22).
 target_sources(vnmaki_unit_tests PRIVATE unit/layered_test.cpp)
 vnmaki_add_fixture_generator(
