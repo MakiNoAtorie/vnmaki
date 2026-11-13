@@ -586,6 +586,9 @@ class ScriptObserver {
   virtual void on_label_entered(std::string_view /*label*/) {}
   /// A called label returned, so `label` (its caller) runs again.
   virtual void on_label_resumed(std::string_view /*label*/) {}
+  /// A replay (a load, a rollback) starts, before any label of it is reported. The label that
+  /// runs next was not reached by a `jump` or `call` from the label that ran before.
+  virtual void on_replay() {}
   /// The running label reached a yield point and waits at `position`.
   virtual void on_blocked(const BlockingRequest& /*request*/, const ScriptPosition& /*position*/) {}
   /// A `scene`, `show`, `hide`, `tween`, `sequence` or `parallel` call was done. `command` is its
@@ -917,6 +920,20 @@ class ScriptRuntime {
   [[nodiscard]] EvalResult eval(std::string_view code);
   /// Replaces the observer (null: none). Pass one that outlives the runtime or reset it first.
   void set_observer(ScriptObserver* observer);
+
+  /// Dev tools (hot reload): loads every script again, the default screens and styles with them,
+  /// and replays to the position the story waits at. The new scripts run in a fresh Lua VM, so a
+  /// script error (also in a `shader` call) leaves the old VM, scripts and story as they were and
+  /// is the return value (`script:line: message`); the scene state is put back too. `persistent`
+  /// is copied over unchanged. The story comes back through the replay of the outermost label
+  /// (as roll_back() does, so `call` stacks stay) to the same yield point. If the label is gone, it
+  /// goes to `start` with an empty scene and the store of a new game. If the replay cannot reach
+  /// that yield point (the label got shorter, a menu is new, the code now fails), it stops at the
+  /// last yield point it reached. The observer hears the request it stops at, as for a load.
+  /// The rollback history stays, but the position the story waits at is not added twice; the
+  /// queued save and playback requests stay. Do not call it from inside the runtime (a script,
+  /// an observer) or while replaying. Invalidates label_snapshot(), input_log() and request().
+  [[nodiscard]] std::string reload_scripts();
 
  private:
   class Impl;

@@ -26,6 +26,11 @@ class ObserverChain final : public ScriptObserver {
       observer->on_label_resumed(label);
     }
   }
+  void on_replay() override {
+    for (ScriptObserver* observer : observers_) {
+      observer->on_replay();
+    }
+  }
   void on_blocked(const BlockingRequest& request, const ScriptPosition& position) override {
     for (ScriptObserver* observer : observers_) {
       observer->on_blocked(request, position);

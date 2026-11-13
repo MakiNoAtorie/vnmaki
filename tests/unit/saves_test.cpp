@@ -27,6 +27,7 @@
 #include "engine/saves/thumbnail.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/support/memory_vfs.hpp"
+#include "tests/support/temp_dir.hpp"
 
 namespace {
 
@@ -65,7 +66,7 @@ constexpr std::uint8_t kFixMap14 = 0x8E;
 class TempDir {
  public:
   explicit TempDir(const std::string& name)
-      : path_(std::filesystem::temp_directory_path() / ("vnmaki_saves_test_" + name)) {
+      : path_(vnmaki::test::unique_temp_path("vnmaki_saves_test_", name)) {
     std::filesystem::remove_all(path_);
   }
   TempDir(const TempDir&) = delete;

@@ -28,6 +28,7 @@
 #include "engine/ui/ui_host.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/support/memory_vfs.hpp"
+#include "tests/support/temp_dir.hpp"
 
 namespace {
 
@@ -66,7 +67,7 @@ constexpr std::size_t kThreeLines = 3;
 class TempDir {
  public:
   explicit TempDir(const std::string& name)
-      : path_(std::filesystem::temp_directory_path() / ("vnmaki_playback_test_" + name)) {
+      : path_(vnmaki::test::unique_temp_path("vnmaki_playback_test_", name)) {
     std::filesystem::remove_all(path_);
   }
   TempDir(const TempDir&) = delete;

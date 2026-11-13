@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -37,6 +38,8 @@
 #include "engine/scene/scene.hpp"
 #include "engine/text/text.hpp"
 #if VNMAKI_DEV_TOOLS
+#include "engine/tools/file_watcher.hpp"
+#include "engine/tools/hot_reload.hpp"
 #include "engine/tools/log_buffer.hpp"
 #include "engine/tools/observer_chain.hpp"
 #include "engine/tools/overlay.hpp"
@@ -85,8 +88,8 @@ std::unique_ptr<Audio> make_audio(const Vfs& vfs, std::ostream& err) {
 
 }  // namespace
 
-int run_story_window(const Vfs& vfs, const ProjectConfig& config,
-                     std::optional<std::uint64_t> max_frames,
+int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::path& project_dir,
+                     const ProjectConfig& config, std::optional<std::uint64_t> max_frames,
                      const std::optional<std::filesystem::path>& data_directory_override,
                      std::ostream& err) {
   const Size virtual_size{.width = config.resolution.width, .height = config.resolution.height};
@@ -225,6 +228,18 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     ui_renderer.set_generated_images(
         [&](const std::string& name) { return actions.thumbnail(name); });
     static_cast<void>(actions.open("quick_menu", {}, false));
+#if VNMAKI_DEV_TOOLS
+    // Hot reload: the watcher batches the changed files, and update() applies them.
+    HotReload hot_reload{runtime, scene, jobs, ui, dev_log};
+    hot_reload.set_on_scripts_reloaded(
+        [&] { static_cast<void>(actions.open("quick_menu", {}, false)); });
+    std::optional<FileWatcher> watcher;
+    try {
+      watcher.emplace(project_dir);
+    } catch (const std::runtime_error& error) {
+      warn(std::string{"hot reload is off: "} + error.what());
+    }
+#endif
 
     const auto viewport = [&] {
       return compute_viewport(virtual_size, platform.window_metrics().pixels, ScaleMode::kFit);
@@ -288,6 +303,13 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       }
     };
     hooks.update = [&](Duration step) {
+#if VNMAKI_DEV_TOOLS
+      if (watcher) {
+        if (const std::vector<std::string> changed = watcher->poll(); !changed.empty()) {
+          hot_reload.apply(changed);
+        }
+      }
+#endif
       const double seconds = std::chrono::duration<double>(step).count();
       saves.poll();  // a script's save or load, or a load in the middle of a line
       presenter.update(seconds);

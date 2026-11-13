@@ -179,6 +179,13 @@ vnmaki_add_fixture_generator(
   graph SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/graph_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
 
+# `vnmaki check` (ticket 35): the findings of a project, with the template as one input. The
+# projects and expected CSV text of the CLI tests.
+target_sources(vnmaki_unit_tests PRIVATE unit/check_test.cpp)
+vnmaki_add_fixture_generator(
+  check SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/check_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
 # Video: WebM, AV1 and Opus, the player and its clocks, `movie` and the movie displayable (ticket
 # 25). clip.webm is the one committed binary fixture; its README has the ffmpeg command.
 target_sources(vnmaki_unit_tests PRIVATE unit/video_test.cpp)
@@ -188,9 +195,10 @@ target_compile_definitions(
 # pause, NVL mode and the gallery (ticket 29).
 target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)
 
-# Dev tools: the REPL and the log buffer (ticket 30). They exist only in builds with the tools.
+# Dev tools: the REPL and the log buffer (ticket 30), hot reload (ticket 32). They exist only in
+# builds with the tools.
 if(VNMAKI_DEV_TOOLS)
-  target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp)
+  target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp unit/hot_reload_test.cpp)
 endif()
 
 # Dev tools: the row functions of the inspectors, on the default template (ticket 31).

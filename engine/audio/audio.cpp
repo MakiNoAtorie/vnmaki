@@ -31,7 +31,6 @@ namespace {
 // hold "/": "bgm/theme" is "audio/bgm/theme.opus".
 constexpr std::string_view kAudioDirectory = "audio/";
 constexpr std::array<std::string_view, 4> kAudioExtensions{".opus", ".ogg", ".flac", ".wav"};
-constexpr std::string_view kVoicePrefix = "voice/";
 
 constexpr std::array kDefaultChannels{
     kMusicChannel, kSoundChannel, kVoiceChannel, kAmbientChannel, kUiChannel,
@@ -54,6 +53,20 @@ std::string audio_path(std::string_view name, std::string_view extension) {
   path += extension;
   return path;
 }
+
+}  // namespace
+
+std::optional<std::string> resolve_audio(const Vfs& vfs, std::string_view name) {
+  for (const std::string_view extension : kAudioExtensions) {
+    std::string path = audio_path(name, extension);
+    if (vfs.exists(path)) {
+      return path;
+    }
+  }
+  return std::nullopt;
+}
+
+namespace {
 
 std::string quoted_audio(std::string_view name) {
   std::string message = "audio '";
@@ -392,11 +405,7 @@ std::string Audio::Impl::set_music(std::string_view channel_name, MusicSpec musi
   }
   if (pending) {
     // A replay is running: only the state changes. reconcile() starts the track.
-    const bool exists = std::any_of(kAudioExtensions.begin(), kAudioExtensions.end(),
-                                    [this, &music](std::string_view extension) {
-                                      return vfs->exists(audio_path(music.name, extension));
-                                    });
-    if (!exists) {
+    if (!resolve_audio(*vfs, music.name)) {
       return missing_audio(music.name);
     }
     const std::scoped_lock lock{mutex};

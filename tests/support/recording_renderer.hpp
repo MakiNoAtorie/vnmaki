@@ -12,7 +12,7 @@
 namespace vnmaki::test {
 
 // Draws as a renderer that only records the quads.
-class RecordingRenderer final : public IRenderer {
+class RecordingRenderer : public IRenderer {
  public:
   struct Draw {
     Quad quad;

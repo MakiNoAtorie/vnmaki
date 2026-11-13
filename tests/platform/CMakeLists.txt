@@ -8,6 +8,11 @@ add_executable(
   sdl_platform_test.cpp viewport_test.cpp)
 target_link_libraries(vnmaki_platform_tests PRIVATE vnmaki::engine vnmaki::options
                                                     doctest::doctest SDL3::SDL3)
+# Hot reload watches a real folder (ticket 32). Only Windows is tested: it is the platform the
+# dev tools are checked on.
+if(VNMAKI_DEV_TOOLS AND WIN32)
+  target_sources(vnmaki_platform_tests PRIVATE file_watcher_test.cpp)
+endif()
 target_compile_definitions(vnmaki_platform_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
 
 # Windows and macOS runners have a desktop, so the window tests open real

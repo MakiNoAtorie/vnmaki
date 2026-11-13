@@ -375,3 +375,28 @@ TEST_CASE("script_scan: the properties hold on random scripts") {
   }
   CHECK(true);  // an abort in the loop fails the run
 }
+
+TEST_CASE("script_scan: asset calls and the keys of an option table") {
+  const std::string source =
+      "label('start', function()\n"                                                 // 1
+      "  scene('bg/a', { with = 'dissolve' })\n"                                    // 2
+      "  show('x', { at = 'left', image = 'y', f = { a = 1 }, g = (b == 2) })\n"    // 3
+      "  music 'm'\n"                                                               // 4
+      "  sound('s') voice('v') movie('movies/m.webm') narrate('n')\n"               // 5
+      "end)\n";
+  const std::vector<ScanLabel> labels = vnmaki::scan_labels(source);
+  REQUIRE(labels.size() == 1);
+  const std::vector<ScanCall>& calls = labels[0].calls;
+  REQUIRE(calls.size() == 7);
+  CHECK(calls[0] == ScanCall{.kind = ScanCallKind::kScene,
+                             .line = 2,
+                             .arguments = {"bg/a", std::nullopt},
+                             .option_keys = {"with"}});
+  CHECK(calls[1].kind == ScanCallKind::kShow);
+  CHECK(calls[1].option_keys == std::vector<std::string>{"at", "image", "f", "g"});
+  CHECK(calls[2] == call(ScanCallKind::kMusic, 4, 0, {"m"}));
+  CHECK(calls[3] == call(ScanCallKind::kSound, 5, 0, {"s"}));
+  CHECK(calls[4] == call(ScanCallKind::kVoice, 5, 0, {"v"}));
+  CHECK(calls[5] == call(ScanCallKind::kMovie, 5, 0, {"movies/m.webm"}));
+  CHECK(calls[6] == call(ScanCallKind::kNarrate, 5, 0, {"n"}));
+}
