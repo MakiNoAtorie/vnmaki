@@ -23,6 +23,8 @@ if(MSVC)
   # C4996 rejects standard functions such as std::getenv.
   target_compile_definitions(vnmaki_options INTERFACE _CRT_SECURE_NO_WARNINGS)
   # Debug builds already use the checked STL (_ITERATOR_DEBUG_LEVEL=2).
+  # Incremental links of the large test executables fail with LNK1235.
+  target_link_options(vnmaki_options INTERFACE /INCREMENTAL:NO)
 else()
   target_compile_options(
     vnmaki_options
