@@ -6,6 +6,7 @@
 // story by accident. Nothing here runs a script, and nothing needs ImGui: the overlay panel and
 // `vnmaki graph` both read a StoryGraph.
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -102,11 +103,15 @@ class TraceRecorder final : public ScriptObserver {
   [[nodiscard]] const std::vector<TraceEdge>& edges() const { return edges_; }
   /// The labels entered, in the order of the first time. Each label once.
   [[nodiscard]] const std::vector<std::string>& labels() const { return labels_; }
+  /// Changes each time a label or an edge is added and when `clear()` runs: a panel that shows
+  /// the trace applies it again when this number is not the one it saw.
+  [[nodiscard]] std::size_t revision() const { return revision_; }
 
  private:
   std::vector<TraceEdge> edges_;
   std::vector<std::string> labels_;
   std::string current_;  ///< The label that runs now ("" before the first).
+  std::size_t revision_ = 0;
 };
 
 /// Marks the labels and edges that the run saw. An edge of the trace that no edge of the scripts

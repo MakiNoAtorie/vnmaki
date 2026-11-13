@@ -38,7 +38,9 @@
 #include "engine/text/text.hpp"
 #if VNMAKI_DEV_TOOLS
 #include "engine/tools/log_buffer.hpp"
+#include "engine/tools/observer_chain.hpp"
 #include "engine/tools/overlay.hpp"
+#include "engine/tools/story_graph.hpp"
 #endif
 #include "engine/ui/backlog_screen.hpp"
 #include "engine/ui/playback_indicator.hpp"
@@ -124,8 +126,10 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
                            .canvas_height = virtual_size.height}};
     ui.set_bindings(&runtime);
 #if VNMAKI_DEV_TOOLS
-    LogBuffer dev_log;  // hears `print` and the warnings
-    runtime.set_observer(&dev_log);
+    LogBuffer dev_log;        // hears `print` and the warnings
+    TraceRecorder dev_trace;  // hears the labels entered, for the story graph
+    ObserverChain dev_observers{&dev_log, &dev_trace};
+    runtime.set_observer(&dev_observers);
 #endif
     const auto warn = [&](std::string_view message) {
       err << "vnmaki: " << message << '\n';
@@ -145,6 +149,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     const std::unique_ptr<SdlGpuRenderer> renderer = SdlGpuRenderer::create_for_window(platform);
 #if VNMAKI_DEV_TOOLS
     DevOverlay dev_overlay{*renderer, platform, runtime, dev_log};  // F12; dies before the renderer
+    dev_overlay.set_story(vfs, dev_trace);
 #endif
     JobSystem jobs;
     const TextureId canvas = renderer->create_render_target(virtual_size, TextureFilter::kLinear);

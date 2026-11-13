@@ -16,6 +16,7 @@
 #include <doctest/doctest.h>
 
 #include "engine/runtime/script_runtime.hpp"
+#include "engine/tools/observer_chain.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/support/memory_vfs.hpp"
 
@@ -305,4 +306,33 @@ TEST_CASE("story_graph template: every label of the sample game is reachable") {
   CHECK(find_edge(graph, "classroom", "warm")->seen);
   CHECK_FALSE(find_edge(graph, "classroom", "cold")->seen);
   CHECK(names_where(graph, &GraphLabel::reachable, false).empty());
+}
+
+namespace {
+
+class PrintCounter final : public vnmaki::ScriptObserver {
+ public:
+  void on_print(std::string_view /*text*/) override { ++prints; }
+
+  std::size_t prints = 0;
+};
+
+}  // namespace
+
+TEST_CASE("story_graph: an observer chain gives every call to every observer") {
+  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
+      {{"scripts/main.lua",
+        "label('start', function() print('x') call('a') end)\nlabel('a', function() end)"}});
+  vnmaki::TraceRecorder trace;
+  PrintCounter prints;
+  vnmaki::ObserverChain chain{&prints, &trace};
+  vnmaki::ScriptRuntime runtime{vfs, {.observer = &chain}};
+  runtime.load_scripts();
+  runtime.start("start");
+  CHECK(runtime.state() == RunState::kFinished);
+  CHECK(prints.prints == 1);
+  CHECK(trace.edges() == std::vector<vnmaki::TraceEdge>{{"start", "a"}});
+  const std::size_t revision = trace.revision();
+  trace.clear();
+  CHECK(trace.revision() != revision);
 }

@@ -27,6 +27,7 @@
 #include "engine/scene/scene.hpp"
 #include "engine/text/text.hpp"
 #include "engine/vfs/vfs.hpp"
+#include "tests/support/temp_dir.hpp"
 
 namespace {
 
@@ -47,7 +48,7 @@ constexpr std::size_t kAssetCount = 7;
 class TempDir {
  public:
   explicit TempDir(const std::string& name)
-      : path_(fs::temp_directory_path() / ("vnmaki_new_test_" + name)) {
+      : path_(vnmaki::test::unique_temp_path("vnmaki_new_test_", name)) {
     fs::remove_all(path_);
   }
   TempDir(const TempDir&) = delete;
@@ -174,11 +175,10 @@ class SampleGame {
         scene_(vfs_, {.width = config_.resolution.width, .height = config_.resolution.height}),
         audio_(vfs_),
         state_({&scene_, &audio_}),
-        runtime_(vfs_,
-                 {.rollback_depth = config_.rollback_depth,
-                  .scene_state = &state_,
-                  .scene = &scene_,
-                  .audio = &audio_}),
+        runtime_(vfs_, {.rollback_depth = config_.rollback_depth,
+                        .scene_state = &state_,
+                        .scene = &scene_,
+                        .audio = &audio_}),
         saves_(runtime_, {.directory = temp_.path() / "data",
                           .game_version = config_.version,
                           .auto_save = config_.auto_save}) {
@@ -272,7 +272,8 @@ constexpr std::string_view kWarmLine = "Eileen: I'm glad. I kept your seat by th
 constexpr std::string_view kWarmLast = "Eileen: Let's walk home together.";
 constexpr std::string_view kColdLine = "Eileen: Oh. So that is the only reason.";
 constexpr std::string_view kColdLast = "Eileen: Your bag is on your desk.";
-constexpr std::string_view kEnd = "narrate: The end. Open scripts/main.lua to write your own story.";
+constexpr std::string_view kEnd =
+    "narrate: The end. Open scripts/main.lua to write your own story.";
 
 }  // namespace
 

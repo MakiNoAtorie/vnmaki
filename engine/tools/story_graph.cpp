@@ -181,11 +181,13 @@ void TraceRecorder::on_label_entered(std::string_view label) {
   const std::string name{label};
   if (std::ranges::find(labels_, name) == labels_.end()) {
     labels_.push_back(name);
+    ++revision_;
   }
   if (!current_.empty()) {
     TraceEdge edge{.from = current_, .to = name};
     if (std::ranges::find(edges_, edge) == edges_.end()) {
       edges_.push_back(std::move(edge));
+      ++revision_;
     }
   }
   current_ = name;
@@ -197,6 +199,7 @@ void TraceRecorder::clear() {
   edges_.clear();
   labels_.clear();
   current_.clear();
+  ++revision_;
 }
 
 void apply_trace(StoryGraph& graph, const TraceRecorder& trace) {

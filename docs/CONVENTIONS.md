@@ -75,6 +75,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - One binary fixture is committed: `tests/fixtures/video/clip.webm`. Python cannot write AV1, so the clip is not generated. It is a small CC0 clip of solid-color frames and a tone, and `tests/fixtures/video/README.md` has the exact ffmpeg command that made it. Do not commit another binary fixture without the owner's approval.
 - Script tests use `vnmaki::test::memory_vfs({{path, text}...})` from `tests/support/memory_vfs.hpp`.
 - `RecordingRenderer` (`tests/support/recording_renderer.hpp`) is an `IRenderer` that records the quads of each draw. Use it to test what a displayable draws, without a GPU.
+- A test that writes to the system temp directory takes its path from `vnmaki::test::unique_temp_path(prefix, name)` (`tests/support/temp_dir.hpp`). It has a random part for each process, because several ctest runs (other worktrees too) can run the same test at once. `new_project_test.cpp` uses it; the `TempDir` classes of `saves_test`, `playback_test` and `pause_nvl_gallery_test` still use a fixed name.
 - Threaded tests that wait for a job poll with a timeout (`settle` in `tests/unit/video_test.cpp`).
 - Fuzz targets use `vnmaki_add_fuzzer(<name> <sources>)`. ctest gives each target a smoke test of 10,000 runs.
   - A fuzz target checks properties of the output, for example idempotence or an independent oracle. If a property is false, it calls `std::abort()`.
@@ -535,10 +536,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - The first definition of a label wins. A label with a computed name is not in the graph.
 - Run-time traces: set `TraceRecorder` as the `ScriptRuntimeOptions::observer`, or call it from the observer. It records the labels entered and the edge from the label that ran to the one entered, once each. A `ret` goes back to the caller, so the next edge starts there. The runtime does not report a replay, so call `break_trace()` before a load, or the first label after it gets an edge from the label that ran before.
   - `apply_trace(graph, trace)` marks the labels and the edges seen. A traced edge that has no edge in the scripts is added as `kTrace`. It also makes the labels that traced edges reach reachable. It starts from the scripts each time, so call it again with a longer trace.
-  - The overlay panel (task 30) shows `seen` edges in a second color. It reads a `StoryGraph`; the story window must pass the `TraceRecorder` to its observer.
+  - The overlay window "Story graph" (`DevOverlay::set_story(vfs, trace)`) lists the labels (red: unreachable, yellow: dead end) and the edges, and shows what the run took (`seen`) in green. It applies the trace again when `TraceRecorder::revision()` changes; "Rescan" reads the scripts again.
+  - `ObserverChain` (`observer_chain.hpp`) gives every `ScriptObserver` call to each observer in a list. `ScriptRuntimeOptions` has one observer slot, so the story window sets a chain of the `LogBuffer` and the `TraceRecorder`.
+  - A load that replays to step 0 enters its label with no caller, so the trace gets an edge from the label that ran before it. The story window does not call `break_trace()` for a load yet.
 - `to_dot(graph)` and `to_csv(graph)` print the graph. CSV: `type,from,to,script,line,flags` (RFC 4180, LF), a row for each label and then for each edge. Flags join with `;`. The text of both is in `story_graph.hpp`.
 - `vnmaki graph <dir> [--format dot|csv]` (`cli/graph_command.*`) prints the graph of the scripts of the project folder (DOT by default). It runs no story, so it shows no traces. Exit 0, 1 if `<dir>` is not a folder, 2 for a usage error.
 - The tests: `tests/unit/script_scan_test.cpp` and `tests/unit/story_graph_test.cpp` (they also read `templates/default`: no unreachable label), and the CLI tests `cli.graph_*` on `tools/generators/graph_fixtures.py`. The generator writes the Lua and notes the line of each edge while it writes. A small model of the rules gives the expected CSV and DOT, so the tokenizer is not its own oracle. The `random` project comes from a fixed seed.
+
 ### Tools (`engine/tools/`)
 
 - Dev builds only. `engine/CMakeLists.txt` adds the module when `VNMAKI_DEV_TOOLS` is ON. A release build compiles none of it, links no ImGui, and `cli/story_window.cpp` guards its calls with `#if VNMAKI_DEV_TOOLS`.
@@ -546,7 +550,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - It draws through `SdlGpuRenderer::set_overlay`, so the ImGui frame goes over the last pass of the renderer frame (the screen pass in the game). Per frame: `begin_frame(pixels, seconds)`, the windows, `end_frame()`, then the renderer's `end_frame()` draws it.
   - ImGui does not read SDL events. `DevOverlay::handle_event` gives it the engine's `InputEvent`s. Text arrives as `TextInputEvent`, so the overlay turns `Platform::set_text_input` on while ImGui wants text.
   - There is no `imgui.ini`. Destroy it before the renderer. Only one can exist.
-- `DevOverlay` (`overlay.*`) is the set of windows. Panels are drawn in `draw()`. Add a panel as a `draw_<name>()` function and call it there.
+- `DevOverlay` (`overlay.*`) is the set of windows (Console, and Story graph after `set_story`). Panels are drawn in `draw()`. Add a panel as a `draw_<name>()` function and call it there.
   - F12 shows and hides it (`handle_event` returns true for F12, so the game never gets it). A hidden overlay does no ImGui work.
   - While it is visible, `handle_event` returns true for the pointer events over an overlay window and for the keys and text that a text field of the overlay wants. The game then gets no input. Clicks outside the windows go to the game. ImGui's wants flags are from the last frame.
   - In `story_window.cpp`: `DevOverlay` is made after the renderer, `handle_event` runs first in `on_event`, and `draw(window_pixels)` runs before `renderer->end_frame()`.

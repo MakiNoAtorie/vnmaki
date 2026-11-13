@@ -2,7 +2,8 @@
 # every preset, so `vnmaki graph` works in a release build.
 target_sources(
   vnmaki_engine
-  PRIVATE script_scan.cpp
+  PRIVATE observer_chain.hpp
+          script_scan.cpp
           script_scan.hpp
           story_graph.cpp
           story_graph.hpp)

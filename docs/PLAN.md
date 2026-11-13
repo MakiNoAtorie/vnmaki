@@ -339,7 +339,7 @@ Files: new `engine/tools/script_scan.*`, `engine/tools/story_graph.*`, `engine/t
 - [x] A small Lua tokenizer (strings, long brackets, comments) finds `label`, `jump`, `call`, `menu`, `say` and `show` calls with string-literal arguments, and their lines. It does not run the scripts.
 - [x] Edges: jump, call, and menu (a jump or call in the body of a menu branch). A computed target is a "dynamic" edge.
 - [x] Unreachable labels: no path from `start`. Dead ends: a label that ends with no transfer and is not marked `ending = true`.
-- [ ] Run-time traces add the edges seen in play through `ScriptObserver`. The overlay panel shows them in a second color. Done: `TraceRecorder` and `apply_trace` (`engine/tools/story_graph.hpp`), with the traced edges and labels marked `seen` in the graph, in DOT (green) and in CSV. Left: the overlay panel (it needs task 30). It reads a `StoryGraph`, and the story window must chain `TraceRecorder` into its `ScriptObserver`.
+- [x] Run-time traces add the edges seen in play through `ScriptObserver`. The overlay panel shows them in a second color. `TraceRecorder` and `apply_trace` (`engine/tools/story_graph.hpp`) mark the edges and labels `seen`; the "Story graph" window of `DevOverlay` shows them in green; the story window chains the recorder and the log with `ObserverChain`.
 - [x] `vnmaki graph <dir> [--format dot|csv]` prints the graph.
 - [x] Tests: tokenizer cases (strings in comments, long strings), graph CSV for a generated fixture project, and a fuzz target for the tokenizer.
 
