@@ -143,6 +143,7 @@ void add_asset_finding(std::vector<Finding>& findings, const Vfs& vfs, const Scr
       break;
     case ScanCallKind::kMusic:
     case ScanCallKind::kSound:
+    case ScanCallKind::kAmbient:
       if (!resolve_audio(vfs, name)) {
         missing("missing-audio", "audio");
       }

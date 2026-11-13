@@ -412,6 +412,24 @@ TEST_CASE("script_scan: asset calls and the keys of an option table") {
   CHECK(calls[6] == call(ScanCallKind::kNarrate, 5, 0, {"n"}));
 }
 
+TEST_CASE("script_scan: an ambient call is an asset call like music") {
+  const std::string source =
+      "label('start', function()\n"            // 1
+      "  ambient('amb/rain', { fade = 2 })\n"  // 2
+      "  ambient 'amb/wind'\n"                 // 3
+      "  x.ambient('not/a/call')\n"            // 4
+      "end)\n";
+  const std::vector<ScanLabel> labels = vnmaki::scan_labels(source);
+  REQUIRE(labels.size() == 1);
+  const std::vector<ScanCall>& calls = labels[0].calls;
+  REQUIRE(calls.size() == 2);
+  CHECK(calls[0] == ScanCall{.kind = ScanCallKind::kAmbient,
+                             .line = 2,
+                             .arguments = {"amb/rain", std::nullopt},
+                             .option_keys = {"fade"}});
+  CHECK(calls[1] == call(ScanCallKind::kAmbient, 3, 0, {"amb/wind"}));
+}
+
 TEST_CASE("script_scan: the speaker of say and the options of menu") {
   const std::string source =
       "label('start', function()\n"                                // 1

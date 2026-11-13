@@ -295,7 +295,7 @@ std::optional<ScanCallKind> call_kind(std::string_view name) {
     std::string_view name{};
     ScanCallKind kind = ScanCallKind::kLabel;
   };
-  static constexpr std::array<Entry, 13> kEntries{{
+  static constexpr std::array<Entry, 14> kEntries{{
       {.name = "label", .kind = ScanCallKind::kLabel},
       {.name = "jump", .kind = ScanCallKind::kJump},
       {.name = "call", .kind = ScanCallKind::kCall},
@@ -309,6 +309,7 @@ std::optional<ScanCallKind> call_kind(std::string_view name) {
       {.name = "sound", .kind = ScanCallKind::kSound},
       {.name = "voice", .kind = ScanCallKind::kVoice},
       {.name = "movie", .kind = ScanCallKind::kMovie},
+      {.name = "ambient", .kind = ScanCallKind::kAmbient},
   }};
   for (const Entry& entry : kEntries) {
     if (entry.name == name) {
