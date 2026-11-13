@@ -336,6 +336,23 @@ if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
                        PROPERTIES SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
 endif()
 
+# The Phase 4 demo (ticket 37): the profile CSV of 120 frames of the template.
+add_test(NAME cli.run_profile_of_the_template_has_120_frames
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+                 -DPROJECT=${PROJECT_SOURCE_DIR}/templates/default -DFRAMES=120
+                 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/profile/template.csv
+                 -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/run_profile_template -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_profile.cmake")
+set_tests_properties(cli.run_profile_of_the_template_has_120_frames PROPERTIES TIMEOUT 60)
+if(vnmaki_gpu_cli_env)
+  set_tests_properties(cli.run_profile_of_the_template_has_120_frames
+                       PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
+endif()
+if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+  set_tests_properties(cli.run_profile_of_the_template_has_120_frames
+                       PROPERTIES SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
+endif()
+
 vnmaki_add_cli_test(
   run_rejects_profile_with_headless
   ARGS run "${vnmaki_run_fixtures}/demo" --headless --profile out.csv
@@ -407,6 +424,12 @@ vnmaki_add_cli_stdout_file_test(
   ARGS graph --format dot "${vnmaki_graph_fixtures}/story"
   EXIT 0
   STDOUT_FILE "${vnmaki_graph_fixtures}/story.dot")
+# The template (the Phase 4 demo, ticket 37): the expected CSV comes from graph_fixtures.py.
+vnmaki_add_cli_stdout_file_test(
+  graph_prints_the_csv_of_the_template
+  ARGS graph "${PROJECT_SOURCE_DIR}/templates/default" --format csv
+  EXIT 0
+  STDOUT_FILE "${vnmaki_graph_fixtures}/template.csv")
 vnmaki_add_cli_stdout_file_test(
   graph_prints_the_csv_of_a_random_project
   ARGS graph "${vnmaki_graph_fixtures}/random" --format csv
@@ -454,6 +477,7 @@ set_tests_properties(
   cli.graph_prints_dot_by_default
   cli.graph_prints_dot_when_asked
   cli.graph_prints_the_csv_of_a_random_project
+  cli.graph_prints_the_csv_of_the_template
   cli.graph_of_a_folder_without_scripts_has_only_the_header
   cli.graph_reports_a_missing_folder
   cli.graph_needs_a_folder
@@ -538,6 +562,22 @@ if(VNMAKI_DEV_TOOLS AND WIN32)
         "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_dap.cmake")
     set_tests_properties(cli.debug_${session} PROPERTIES TIMEOUT 120)
   endforeach()
+endif()
+
+# The Phase 4 demo (ticket 37): the same on the template, in templates/default: a breakpoint in
+# `start`, a step, `store.affection` and a goto to `warm`.
+if(VNMAKI_DEV_TOOLS AND WIN32)
+  set(data_dir "${CMAKE_CURRENT_BINARY_DIR}/data/debug_template")
+  add_test(
+    NAME cli.debug_template
+    COMMAND
+      ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+      "-DARGS=debug;${PROJECT_SOURCE_DIR}/templates/default;--headless;--data-dir;${data_dir}"
+      -DEXPECTED_EXIT=0 -DDATA_DIR=${data_dir}
+      -DINPUT_FILE=${vnmaki_debug_fixtures}/template.in.dap
+      -DEXPECTED_STDOUT_FILE=${vnmaki_debug_fixtures}/template.out.dap -P
+      "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_dap.cmake")
+  set_tests_properties(cli.debug_template PROPERTIES TIMEOUT 120)
 endif()
 
 vnmaki_add_cli_test(

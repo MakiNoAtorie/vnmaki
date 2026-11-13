@@ -14,6 +14,8 @@ the expected CSV (and DOT) text. So the expectation does not come from the engin
   long comments, long strings that span lines. It has a label with a comma and a quote in its
   name (CSV and DOT quoting), a file that is not a script, and a script in a folder.
 - random/: labels, edges and menus drawn from a seed, in several scripts and folders.
+- template.csv: the graph of templates/default, from the table TEMPLATE_STORY below. The lines are
+  found by searching the template's scripts, so no number is written here.
 Output: <project>/ (a game folder), <project>.csv and, for story, <project>.dot.
 """
 
@@ -28,6 +30,18 @@ RANDOM_SEED = 34
 RANDOM_LABEL_COUNT = 40
 RANDOM_SCRIPTS = ["scripts/a.lua", "scripts/b.lua", "scripts/chapter1/c.lua", "scripts/chapter1/d.lua"]
 MAX_STATEMENTS = 5
+
+TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates" / "default"
+# (script, label, ending, edges as (kind, target, the text of the call)), in the order of the files.
+TEMPLATE_STORY = [
+    ("scripts/main.lua", "start", False, [("jump", "classroom", 'jump("classroom")')]),
+    ("scripts/main.lua", "classroom", False, [("menu", "warm", 'jump("warm")'),
+                                              ("menu", "cold", 'jump("cold")'),
+                                              ("menu", "presentation", 'jump("presentation")')]),
+    ("scripts/main.lua", "warm", True, []),
+    ("scripts/main.lua", "cold", True, []),
+    ("scripts/presentation.lua", "presentation", True, []),
+]
 
 
 def label(name, statements, ending=False):
@@ -186,6 +200,27 @@ def analyse(labels, edges):
         info["dead_end"] = not info["ending"] and not info["exit"] and info["name"] not in called
 
 
+def template_graph():
+    """The labels and edges of TEMPLATE_STORY, with the lines found in the template's scripts."""
+    labels, edges = [], []
+    for script, name, ending, calls in TEMPLATE_STORY:
+        lines = (TEMPLATE_DIR / script).read_text(encoding="utf-8").splitlines()
+
+        def find(text, start):
+            for number in range(start, len(lines) + 1):
+                if text in lines[number - 1]:
+                    return number
+            raise SystemExit(f"{script} has no {text!r} from line {start}")
+
+        line = find(f"label({lua_string(name)}", 1)
+        labels.append({"name": name, "script": script, "line": line, "ending": ending,
+                       "exit": any(text.startswith("jump") for _, _, text in calls), "calls": []})
+        for kind, target, text in calls:
+            edges.append({"kind": kind, "from": name, "to": target, "script": script,
+                          "line": find(text, line), "dynamic": False})
+    return labels, edges
+
+
 def make_csv(labels, edges):
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\n")
@@ -275,6 +310,10 @@ def main() -> int:
     labels, edges = write_project(out / "random", random_scripts(rng))
     analyse(labels, edges)
     (out / "random.csv").write_bytes(make_csv(labels, edges).encode("utf-8"))
+
+    labels, edges = template_graph()
+    analyse(labels, edges)
+    (out / "template.csv").write_bytes(make_csv(labels, edges).encode("utf-8"))
     return 0
 
 

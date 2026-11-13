@@ -181,6 +181,8 @@ target_sources(vnmaki_unit_tests PRIVATE unit/script_scan_test.cpp unit/story_gr
 # The projects and expected CSV and DOT text of the `vnmaki graph` CLI tests.
 vnmaki_add_fixture_generator(
   graph SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/graph_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/templates/default/scripts/main.lua"
+          "${PROJECT_SOURCE_DIR}/templates/default/scripts/presentation.lua"
   TEST_TARGETS vnmaki_unit_tests)
 
 # `vnmaki check` (ticket 35): the findings of a project, with the template as one input. The
@@ -226,7 +228,14 @@ if(VNMAKI_DEV_TOOLS)
   # The project and the DAP sessions of the `vnmaki debug --headless` CLI tests.
   vnmaki_add_fixture_generator(
     debug SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/debug_fixtures.py"
+    DEPENDS "${PROJECT_SOURCE_DIR}/templates/default/scripts/main.lua"
     TEST_TARGETS vnmaki_unit_tests)
+endif()
+
+# Dev tools demo (ticket 37): hot reload on the template. The DAP, check, graph and profile parts
+# are CLI tests.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/tools_demo_test.cpp)
 endif()
 
 # Profiler: frame phases with a fake clock, the CSV text and the load timing (ticket 33). It needs
