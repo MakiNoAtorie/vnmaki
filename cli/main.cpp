@@ -11,6 +11,7 @@
 #include "cli/extract_command.hpp"
 #include "cli/graph_command.hpp"
 #include "cli/import_command.hpp"
+#include "cli/launcher.hpp"
 #include "cli/new_command.hpp"
 #include "cli/run_command.hpp"
 #include "cli/window_command.hpp"
@@ -70,6 +71,17 @@ int main(int argc, char* argv[]) {
     return *code;
   }
 
+  // A packed game (above) has priority. Without arguments, a dev build opens the launcher; a
+  // release build prints the usage.
+  if (!args.empty() && args.front() == "launcher") {
+    return vnmaki::cli::launcher_command(std::span{args}.subspan(1), std::cerr);
+  }
+#if VNMAKI_DEV_TOOLS
+  if (args.empty()) {
+    return vnmaki::cli::launcher_command(args, std::cerr);
+  }
+#endif
+
   if (!args.empty() && args.front() == "window") {
     return vnmaki::cli::window_command(std::span{args}.subspan(1), std::cerr);
   }
@@ -80,6 +92,6 @@ int main(int argc, char* argv[]) {
   std::cerr << usage << vnmaki::cli::kNewUsage << vnmaki::cli::kRunUsage
             << vnmaki::cli::kWindowUsage << vnmaki::cli::kGraphUsage << vnmaki::cli::kCheckUsage
             << vnmaki::cli::kDebugUsage << vnmaki::cli::kExtractUsage << vnmaki::cli::kImportUsage
-            << vnmaki::cli::kBuildUsage;
+            << vnmaki::cli::kBuildUsage << vnmaki::cli::kLauncherUsage;
   return exit_usage_error;
 }

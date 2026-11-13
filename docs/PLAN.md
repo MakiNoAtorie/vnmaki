@@ -539,11 +539,11 @@ Files: new `engine/tools/screen_editor.*`, `engine/tools/script_scan.*`.
 
 Files: new `cli/launcher.*`, `cli/main.cpp`.
 
-- [ ] `vnmaki launcher`, or `vnmaki` with no arguments, opens an ImGui window.
-- [ ] It lists recent projects (saved in the user-data path). Buttons: New, Run, Check, Extract strings, Build windows, Open folder.
-- [ ] Each button calls the same function as the CLI command. Command output shows in a log panel.
-- [ ] A release runner next to `game.vnpak` does not open the launcher.
-- [ ] Tests: unit tests for the recent-project list and the action functions, without ImGui.
+- [x] `vnmaki launcher`, or `vnmaki` with no arguments, opens an ImGui window.
+- [x] It lists recent projects (saved in the user-data path). Buttons: New, Run, Check, Extract strings, Build windows, Open folder.
+- [x] Each button calls the same function as the CLI command. Command output shows in a log panel.
+- [x] A release runner next to `game.vnpak` does not open the launcher.
+- [x] Tests: unit tests for the recent-project list and the action functions, without ImGui.
 
 ### 52: Vertical text (SPEC §13, §16)
 

@@ -41,6 +41,11 @@ target_compile_definitions(vnmaki_unit_tests PRIVATE VNMAKI_PRECOMPILED_DIR="${V
 
 add_subdirectory(cli)
 
+# The launcher (task 51): the recent-project list and the action functions, without ImGui. They
+# call the CLI commands, so the test executable links the command library.
+target_sources(vnmaki_unit_tests PRIVATE unit/launcher_test.cpp)
+target_link_libraries(vnmaki_unit_tests PRIVATE vnmaki_cli)
+
 # Platform: window, input, main loop, virtual resolution (ticket 04).
 add_subdirectory(platform)
 
