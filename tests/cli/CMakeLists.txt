@@ -329,15 +329,23 @@ add_test(NAME cli.new_game_runs_in_a_window
                  -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/windowed -DFRAMES=3
                  -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/new_game_runs_in_a_window -P
                  "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
-set_tests_properties(cli.new_makes_a_game_and_stops_at_a_second_one cli.new_game_runs_in_a_window
+# The presentation demo (ticket 28) in a window: the story starts at its label, so the GPU draws the
+# dissolve, the layered sprite with the blink, the camera, the shake and the sepia layer shader.
+add_test(NAME cli.new_presentation_runs_in_a_window
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+                 -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/presentation -DFRAMES=300
+                 -DPRESENTATION=ON
+                 -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/new_presentation_runs_in_a_window -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
+set(vnmaki_new_window_tests cli.new_game_runs_in_a_window cli.new_presentation_runs_in_a_window)
+set_tests_properties(cli.new_makes_a_game_and_stops_at_a_second_one ${vnmaki_new_window_tests}
                      PROPERTIES TIMEOUT 60)
 if(vnmaki_gpu_cli_env)
-  set_tests_properties(cli.new_game_runs_in_a_window PROPERTIES ENVIRONMENT
-                                                                "${vnmaki_gpu_cli_env}")
+  set_tests_properties(${vnmaki_new_window_tests} PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
 endif()
 if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
-  set_tests_properties(cli.new_game_runs_in_a_window PROPERTIES SKIP_REGULAR_EXPRESSION
-                                                                "cannot create a GPU device")
+  set_tests_properties(${vnmaki_new_window_tests} PROPERTIES SKIP_REGULAR_EXPRESSION
+                                                             "cannot create a GPU device")
 endif()
 
 # Audio (ticket 16), on the projects tools/generators/audio_fixtures.py writes.
