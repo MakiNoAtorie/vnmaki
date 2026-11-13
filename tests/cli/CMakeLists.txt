@@ -465,9 +465,9 @@ set_tests_properties(
 # error exits 1; one with only warnings exits 0.
 set(vnmaki_check_fixtures "${VNMAKI_FIXTURES_DIR}/check")
 set(vnmaki_check_error_cases lua_syntax unknown_label bad_text_tag missing_image missing_audio
-                             missing_movie mixed)
-set(vnmaki_check_warning_cases unreachable_label dead_end dynamic_edge project_config
-                               project_config_line)
+                             missing_movie bad_translation_tag po_syntax mixed)
+set(vnmaki_check_warning_cases unreachable_label dead_end dynamic_edge non_literal_string
+                               project_config project_config_line)
 set(vnmaki_check_tests "")
 foreach(case IN LISTS vnmaki_check_error_cases vnmaki_check_warning_cases)
   set(exit_code 0)
@@ -517,3 +517,50 @@ set_tests_properties(
   cli.check_reports_a_missing_folder
   cli.check_needs_a_folder
   cli.check_rejects_a_second_folder PROPERTIES TIMEOUT 60)
+
+# vnmaki extract-strings (ticket 40), on the projects tools/generators/l10n_fixtures.py writes. The
+# run works on a copy in the build tree, then a second run and `vnmaki check` must accept it.
+set(vnmaki_l10n_fixtures "${VNMAKI_FIXTURES_DIR}/l10n")
+add_test(
+  NAME cli.extract_strings_writes_the_template_and_updates_the_po_files
+  COMMAND
+    ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> "-DPROJECT=${vnmaki_l10n_fixtures}/extract"
+    "-DEXPECTED=${vnmaki_l10n_fixtures}/extract.expected"
+    "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/work/extract" -P
+    "${CMAKE_CURRENT_SOURCE_DIR}/run_extract.cmake")
+
+vnmaki_add_cli_test(
+  extract_strings_stops_at_a_po_file_it_cannot_read
+  ARGS extract-strings "${vnmaki_l10n_fixtures}/broken"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: translations/ja.po:5: string is not closed")
+
+vnmaki_add_cli_test(
+  extract_strings_reports_a_missing_folder
+  ARGS extract-strings "${vnmaki_l10n_fixtures}/does_not_exist"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "is not a directory")
+
+vnmaki_add_cli_test(
+  extract_strings_needs_a_folder
+  ARGS extract-strings
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki extract-strings <dir>")
+
+vnmaki_add_cli_test(
+  extract_strings_rejects_a_second_folder
+  ARGS extract-strings "${vnmaki_l10n_fixtures}/extract" "${vnmaki_l10n_fixtures}/broken"
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki extract-strings")
+
+# vnmaki extract-strings never opens a window or waits for input, so a hang is a bug.
+set_tests_properties(
+  cli.extract_strings_writes_the_template_and_updates_the_po_files
+  cli.extract_strings_stops_at_a_po_file_it_cannot_read
+  cli.extract_strings_reports_a_missing_folder
+  cli.extract_strings_needs_a_folder
+  cli.extract_strings_rejects_a_second_folder PROPERTIES TIMEOUT 60)

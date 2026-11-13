@@ -15,6 +15,8 @@
 #include <sol/sol.hpp>
 
 #include "engine/audio/audio.hpp"
+#include "engine/l10n/extract.hpp"
+#include "engine/l10n/po.hpp"
 #include "engine/runtime/project_config.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/text/markup.hpp"
@@ -160,18 +162,94 @@ void add_asset_finding(std::vector<Finding>& findings, const Vfs& vfs, const Scr
   }
 }
 
+void add_not_literal(std::vector<Finding>& findings, const ScriptSource& script,
+                     std::uint32_t line, std::string_view what) {
+  findings.push_back(make_finding(script.path, line, Severity::kWarning, "non-literal-string",
+                                  std::string{what} + " is not a string literal, so it is not "
+                                                      "extracted for translation"));
+}
+
+// `say` and `narrate`: the text must be a literal (it is also checked for tags); `menu`: the
+// options must be literals in a table written in the call.
+void add_string_findings(std::vector<Finding>& findings, const ScriptSource& script,
+                         const ScanCall& call) {
+  const bool say = call.kind == ScanCallKind::kSay;
+  if (say || call.kind == ScanCallKind::kNarrate) {
+    const std::size_t index = say ? kSayTextArgument : 0;
+    if (call.arguments.size() <= index) {
+      return;
+    }
+    if (call.arguments[index]) {
+      add_text_finding(findings, script, call, *call.arguments[index]);
+    } else {
+      add_not_literal(findings, script, call.line,
+                      say ? "the text of say" : "the text of narrate");
+    }
+  } else if (!call.table) {
+    add_not_literal(findings, script, call.line, "the table of menu options");
+  } else {
+    for (const ScanElement& option : *call.table) {
+      if (!option.text) {
+        add_not_literal(findings, script, option.line, "a menu option");
+      }
+    }
+  }
+}
+
 void add_call_findings(std::vector<Finding>& findings, const Vfs& vfs, const ScriptSource& script,
                        const std::set<std::string>& defined) {
   for (const ScanLabel& label : scan_labels(script.text)) {
     for (const ScanCall& call : label.calls) {
-      if (call.kind == ScanCallKind::kSay && call.arguments.size() > kSayTextArgument &&
-          call.arguments[kSayTextArgument]) {
-        add_text_finding(findings, script, call, *call.arguments[kSayTextArgument]);
-      } else if (call.kind == ScanCallKind::kNarrate && !call.arguments.empty() &&
-                 call.arguments.front()) {
-        add_text_finding(findings, script, call, *call.arguments.front());
+      if (call.kind == ScanCallKind::kSay || call.kind == ScanCallKind::kNarrate ||
+          call.kind == ScanCallKind::kMenu) {
+        add_string_findings(findings, script, call);
       } else {
         add_asset_finding(findings, vfs, script, call, defined);
+      }
+    }
+  }
+  for (const ScanScreen& screen : scan_screens(script.text)) {
+    for (const ScanElement& value : screen.texts) {
+      if (!value.text) {
+        add_not_literal(findings, script, value.line,
+                        "a text of screen " + in_quotes(screen.name.value_or("?")));
+      }
+    }
+  }
+}
+
+// The translations that are in use (not fuzzy, not obsolete) must have tags that parse. A screen
+// string has no tags: only the say box reads them.
+void add_translation_findings(std::vector<Finding>& findings, const Vfs& vfs) {
+  for (const VfsEntry& file : vfs.list(kTranslationsDir)) {
+    if (!file.name.ends_with(".po") || file.is_directory) {
+      continue;
+    }
+    const std::string path = std::string{kTranslationsDir} + "/" + file.name;
+    const std::optional<std::vector<std::byte>> bytes = vfs.read(path);
+    if (!bytes) {
+      continue;
+    }
+    PoFile po;
+    try {
+      po = parse_po(std::string_view{reinterpret_cast<const char*>(bytes->data()), bytes->size()});
+    } catch (const PoError& error) {
+      findings.push_back(
+          make_finding(path, error.line(), Severity::kError, "po-syntax", error.what()));
+      continue;
+    }
+    for (const PoEntry& entry : po.entries) {
+      if (entry.obsolete || entry.fuzzy() || entry.str.empty() ||
+          entry.context.starts_with("screen/")) {
+        continue;
+      }
+      try {
+        static_cast<void>(parse_markup(entry.str));
+      } catch (const MarkupError& error) {
+        findings.push_back(make_finding(
+            path, entry.line, Severity::kError, "bad-translation-tag",
+            "translation of " + in_quotes(entry.context) + ": " + error.what() + " (byte " +
+                std::to_string(error.offset()) + " of the text)"));
       }
     }
   }
@@ -223,6 +301,7 @@ std::vector<Finding> check_project(const Vfs& vfs) {
     add_call_findings(findings, vfs, script, defined);
   }
   add_graph_findings(findings, build_story_graph(scripts));
+  add_translation_findings(findings, vfs);
   std::ranges::stable_sort(findings, [](const Finding& a, const Finding& b) {
     return std::pair{std::string_view{a.file}, a.line} <
            std::pair{std::string_view{b.file}, b.line};

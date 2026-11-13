@@ -403,11 +403,11 @@ Do not do these tasks in parallel, because they change the same files:
 
 Files: new `engine/l10n/po.*`, `engine/l10n/extract.*`, `engine/tools/script_scan.*`, `cli/`.
 
-- [ ] `vnmaki extract-strings <dir>` uses the task 34 scan to find literal strings in `say`, `narrate`, `menu` and screen text nodes. It writes `translations/template.pot` and updates `translations/<lang>.po` for each language in `project.toml`.
-- [ ] Key (`msgctxt`): `<label>/<hash>`, with a hash of the speaker and the source text. Screen strings use `screen/<name>/<hash>`. A comment gives the source file, line and speaker.
-- [ ] An update keeps translations. A removed key whose label has a new key at the same position moves to that key as `#, fuzzy`. Other removed keys become obsolete (`#~`).
-- [ ] A non-literal string gives a `check` warning. A translation whose text tags do not parse gives a `check` error.
-- [ ] Tests: `.po` round trip, fuzzy and obsolete cases, and a fuzz target for the `.po` reader.
+- [x] `vnmaki extract-strings <dir>` uses the task 34 scan to find literal strings in `say`, `narrate`, `menu` and screen text nodes. It writes `translations/template.pot` and updates `translations/<lang>.po` for each language in `project.toml` after the first (the source language).
+- [x] Key (`msgctxt`): `<label>/<hash>`, with a hash of the speaker and the source text. Screen strings use `screen/<name>/<hash>`. A comment gives the source file, line and speaker.
+- [x] An update keeps translations. A removed key whose label has a new key at the same position moves to that key as `#, fuzzy`. Other removed keys become obsolete (`#~`).
+- [x] A non-literal string gives a `check` warning. A translation whose text tags do not parse gives a `check` error.
+- [x] Tests: `.po` round trip, fuzzy and obsolete cases, and a fuzz target for the `.po` reader.
 
 ### 41: Runtime languages (SPEC §16, §13, §15)
 

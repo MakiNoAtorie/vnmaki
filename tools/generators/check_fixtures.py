@@ -30,9 +30,10 @@ def csv_field(text):
 
 
 class Case:
-    def __init__(self, name, scripts, project=OK_TITLE, assets=(), expected=()):
+    def __init__(self, name, scripts, project=OK_TITLE, assets=(), expected=(), files=None):
         self.name = name
         self.scripts = scripts  # {path: text}
+        self.files = files or {}  # {path: text} of other files, e.g. translations/ja.po
         self.project = project
         self.assets = assets  # paths of files that exist
         self.expected = list(expected)  # (file, marker or line, severity, code, message)
@@ -40,7 +41,7 @@ class Case:
     def line_of(self, path, marker):
         if isinstance(marker, int):
             return marker
-        for number, line in enumerate(self.scripts[path].split("\n"), 1):
+        for number, line in enumerate({**self.files, **self.scripts}[path].split("\n"), 1):
             if marker in line:
                 return number
         raise SystemExit(f"{self.name}: no line of {path} has {marker!r}")
@@ -60,6 +61,10 @@ class Case:
         (root / "scripts").mkdir(parents=True)
         (root / "project.toml").write_bytes(self.project.encode("utf-8"))
         for path, text in self.scripts.items():
+            target = root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(text.encode("utf-8"))
+        for path, text in self.files.items():
             target = root / path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(text.encode("utf-8"))
@@ -135,6 +140,23 @@ def cases():
                expected=[(MAIN, "nowhere", "error", "missing-movie",
                           "movie 'movies/nowhere.webm' not found")])
 
+    ja_po = script(
+        'msgid ""', 'msgstr ""', '"Language: ja\\n"', "",
+        'msgctxt "start/00000000"', 'msgid "Hi"', 'msgstr "{b}x{/b}"', "",
+        '#, fuzzy', 'msgctxt "start/22222222"', 'msgid "Fuzzy"', 'msgstr "{b}unfinished"', "",
+        'msgctxt "screen/title/33333333"', 'msgid "Screen"', 'msgstr "{{no tags here"', "",
+        'msgctxt "start/11111111"', 'msgid "Bye"', 'msgstr "Sayonara {wobble}"')
+    yield Case("bad_translation_tag", {MAIN: start('say("Eileen", "Hi")')},
+               files={"translations/ja.po": ja_po},
+               expected=[("translations/ja.po", 'msgid "Bye"', "error", "bad-translation-tag",
+                          "translation of 'start/11111111': unknown tag 'wobble' "
+                          "(byte 9 of the text)")])
+
+    yield Case("po_syntax", {MAIN: start('say("Eileen", "Hi")')},
+               files={"translations/ja.po": 'msgid "a"\nmsgstr "b\n'},
+               expected=[("translations/ja.po", 2, "error", "po-syntax",
+                          "string is not closed")])
+
     yield Case("unreachable_label", {MAIN: script(
         start('say("Eileen", "Hello.")'),
         'label("orphan", function() narrate("Nobody comes here.") end, { ending = true })')},
@@ -152,6 +174,25 @@ def cases():
         'label("start", function()', "  jump(store.next)", "end)")},
                expected=[(MAIN, "store.next", "warning", "dynamic-edge",
                           "jump from label 'start' has a computed target")])
+
+    not_literal = " is not a string literal, so it is not extracted for translation"
+    yield Case("non_literal_string", {MAIN: script(
+        'screen("hud", function() return text { store.mood } end)',
+        start('say("Eileen", store.line)',
+              'narrate("Fine " .. store.name)',
+              'menu { "Yes", store.no }',
+              'menu(store.options)',
+              'say("Eileen", "Fine.")'))},
+               expected=[(MAIN, "store.mood", "warning", "non-literal-string",
+                          "a text of screen 'hud'" + not_literal),
+                         (MAIN, "store.line", "warning", "non-literal-string",
+                          "the text of say" + not_literal),
+                         (MAIN, "store.name", "warning", "non-literal-string",
+                          "the text of narrate" + not_literal),
+                         (MAIN, "store.no }", "warning", "non-literal-string",
+                          "a menu option" + not_literal),
+                         (MAIN, "store.options", "warning", "non-literal-string",
+                          "the table of menu options" + not_literal)])
 
     yield Case("project_config", {MAIN: start('say("Eileen", "Hello.")')},
                project='version = "1.0.0"\n',
