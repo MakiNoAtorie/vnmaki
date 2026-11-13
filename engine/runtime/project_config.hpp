@@ -7,10 +7,13 @@
 //   resolution = [1920, 1080]     # width, height; default [1920, 1080]
 //   languages = ["en", "ja"]      # the first is the source language;
 //                                 # default ["en"]
+//   auto_save = ["label", "menu"] # when to auto save (engine/saves): at the first line of
+//                                 # each label, at each menu; default [] (never)
 //
 // Other keys (platforms, plugins, build options) belong to later features and
 // are ignored for now.
 
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -27,11 +30,18 @@ struct Resolution {
   friend bool operator==(const Resolution&, const Resolution&) = default;
 };
 
+/// An event of the story that writes the auto-save slot.
+enum class AutoSaveEvent : std::uint8_t {
+  kLabel,  ///< The story waits at the first yield point of a label.
+  kMenu,   ///< The story waits at a menu.
+};
+
 struct ProjectConfig {
   std::string title;
   std::string version;
   Resolution resolution;
   std::vector<std::string> languages;
+  std::vector<AutoSaveEvent> auto_save{};
 };
 
 /// project.toml is missing, is not valid TOML, or breaks the schema above.

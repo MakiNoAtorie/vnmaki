@@ -74,6 +74,32 @@ std::vector<std::string> read_languages(const toml::node& node) {
   return languages;
 }
 
+std::vector<AutoSaveEvent> read_auto_save(const toml::node& node) {
+  constexpr std::string_view kReason = R"('auto_save' must be a list of "label" and "menu")";
+  const toml::array* array = node.as_array();
+  if (array == nullptr) {
+    fail_at(node, kReason);
+  }
+  std::vector<AutoSaveEvent> events;
+  events.reserve(array->size());
+  for (const toml::node& element : *array) {
+    const std::optional<std::string> name = element.value_exact<std::string>();
+    AutoSaveEvent event{};
+    if (name == "label") {
+      event = AutoSaveEvent::kLabel;
+    } else if (name == "menu") {
+      event = AutoSaveEvent::kMenu;
+    } else {
+      fail_at(node, kReason);
+    }
+    if (std::ranges::find(events, event) != events.end()) {
+      fail_at(node, "'auto_save' lists '" + name.value_or("") + "' twice");
+    }
+    events.push_back(event);
+  }
+  return events;
+}
+
 }  // namespace
 
 ProjectConfig parse_project_config(std::string_view toml_text) {
@@ -103,6 +129,9 @@ ProjectConfig parse_project_config(std::string_view toml_text) {
   }
   if (const toml::node* languages = table.get("languages")) {
     config.languages = read_languages(*languages);
+  }
+  if (const toml::node* auto_save = table.get("auto_save")) {
+    config.auto_save = read_auto_save(*auto_save);
   }
   return config;
 }

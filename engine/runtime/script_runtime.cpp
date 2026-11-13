@@ -395,6 +395,38 @@ function menu(options)
   return engine.menu(texts)
 end
 
+-- Saves. A call only queues a request; the host carries it out when the story waits.
+local function slot_name(slot)
+  if type(slot) ~= "number" or slot ~= slot // 1 or slot < 1 or slot > 999999 then
+    error("bad argument #1 (a slot is an integer from 1 to 999999)", 3)
+  end
+  return format("%d", slot)
+end
+function save(slot)
+  local name = slot_name(slot)
+  require_label("save")
+  engine.save_request(false, name)
+end
+function quick_save()
+  require_label("quick_save")
+  engine.save_request(false, "quick")
+end
+function quick_load()
+  require_label("quick_load")
+  engine.save_request(true, "quick")
+end
+-- on_load(function(old_version, store) ... end): migrates the store of a save made by an older
+-- version of the game. Scripts register it while they load.
+function on_load(hook)
+  if type(hook) ~= "function" then
+    bad_argument("on_load", 1, "function", hook)
+  end
+  local problem = engine.set_on_load(hook)
+  if problem ~= nil then
+    error(problem, 2)
+  end
+end
+
 function print(...)
   local parts = {}
   for i = 1, select("#", ...) do
@@ -406,6 +438,12 @@ end
 -- Source text only: binary chunks can crash the VM.
 local raw_load = load
 function load(chunk, chunkname, _, ...)
+  if type(chunk) == "number" then
+    local name = slot_name(chunk)
+    require_label("load")
+    engine.save_request(true, name)
+    return
+  end
   if select("#", ...) > 0 then
     return raw_load(chunk, chunkname, "t", (...))
   end
@@ -686,6 +724,11 @@ class ScriptRuntime::Impl {
   void choose(std::size_t index);
   void replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
               std::uint32_t step);
+  void drop_callers();
+  [[nodiscard]] std::string run_on_load(LabelSnapshot& snapshot, std::string_view old_version);
+  [[nodiscard]] std::vector<SaveRequest> take_save_requests() {
+    return std::exchange(save_requests_, {});
+  }
 
   [[nodiscard]] bool replaying() const { return replaying_; }
   [[nodiscard]] const LabelSnapshot* label_snapshot() const {
@@ -809,6 +852,8 @@ class ScriptRuntime::Impl {
   // Script path -> source text, for the label source hashes; kept only while
   // scripts load.
   std::map<std::string, std::string, std::less<>> sources_;
+  sol::main_function on_load_;
+  std::vector<SaveRequest> save_requests_;
   std::vector<Frame> frames_;  // back() is the running label; the rest called it
   std::optional<std::variant<BlockingRequest, Transfer>> pending_;
   bool started_ = false;
@@ -1041,6 +1086,20 @@ void ScriptRuntime::Impl::bind_engine() {
     if (!replaying_) {
       observer_->on_audio_command(command);
     }
+  };
+  engine_["save_request"] = [this](bool load, const std::string& slot) {
+    if (!replaying_) {
+      save_requests_.push_back(SaveRequest{.load = load, .slot = slot});
+    }
+  };
+  engine_["set_on_load"] = [this, problem_or_nil](sol::this_state state,
+                                                  const sol::stack_object& hook) {
+    if (started_) {
+      return problem_or_nil(state, "on_load() can only be called while scripts load");
+    }
+    const MemoryLimitScope unlimited{allocator_, false};
+    on_load_ = hook.as<sol::main_function>();
+    return problem_or_nil(state, {});
   };
   engine_["transfer"] =
       sol::yielding([this](sol::this_state state, const std::string& kind,
@@ -1407,6 +1466,55 @@ void ScriptRuntime::Impl::replay(const LabelSnapshot& snapshot, std::span<const 
   run();
 }
 
+void ScriptRuntime::Impl::drop_callers() {
+  if (frames_.size() > 1) {
+    frames_.erase(frames_.begin(), frames_.end() - 1);
+  }
+}
+
+// Runs the hook on a scratch copy of the store: the snapshot's store is restored, migrated and
+// captured again, and the live store comes back at the end.
+std::string ScriptRuntime::Impl::run_on_load(LabelSnapshot& snapshot,
+                                             std::string_view old_version) {
+  if (!on_load_.valid()) {
+    return {};
+  }
+  if (!is_valid(snapshot.store)) {
+    return "on_load: the store snapshot is malformed";
+  }
+  StoreSnapshot current;
+  try {
+    current = capture_store();
+  } catch (const ScriptError& error) {
+    return std::string{"on_load: "} + error.what();
+  }
+  restore_store(snapshot.store);
+  const sol::object version = sol::make_object(lua_, std::string{old_version});
+  sol::thread thread = sol::thread::create(lua_.lua_state());
+  limits_watch_(thread);
+  sol::coroutine hook{thread.thread_state(), on_load_};
+  reset_instruction_budget();
+  std::string problem;
+  {
+    const MemoryLimitScope limited{allocator_, true};
+    const sol::protected_function_result result = hook(version, store_);
+    if (!result.valid()) {
+      problem = "on_load: " + error_text(result);
+    } else if (result.status() == sol::call_status::yielded) {
+      problem = "on_load: the hook cannot wait for the player";
+    }
+  }
+  if (problem.empty()) {
+    try {
+      snapshot.store = capture_store();
+    } catch (const ScriptError& error) {
+      problem = std::string{"on_load: "} + error.what();
+    }
+  }
+  restore_store(current);
+  return problem;
+}
+
 // Answers the request a replay just reached from the input log:
 // `resume_value` becomes what the blocking call returns. Returns false, with
 // the runtime failed, if the log has no answer for it.
@@ -1588,6 +1696,11 @@ void ScriptRuntime::replay(const LabelSnapshot& snapshot, std::span<const InputR
                            std::uint32_t step) {
   impl_->replay(snapshot, inputs, step);
 }
+void ScriptRuntime::drop_callers() { impl_->drop_callers(); }
+std::string ScriptRuntime::run_on_load(LabelSnapshot& snapshot, std::string_view old_version) {
+  return impl_->run_on_load(snapshot, old_version);
+}
+std::vector<SaveRequest> ScriptRuntime::take_save_requests() { return impl_->take_save_requests(); }
 bool ScriptRuntime::replaying() const { return impl_->replaying(); }
 const LabelSnapshot* ScriptRuntime::label_snapshot() const { return impl_->label_snapshot(); }
 std::span<const InputResult> ScriptRuntime::input_log() const { return impl_->input_log(); }
