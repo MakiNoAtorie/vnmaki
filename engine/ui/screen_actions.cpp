@@ -145,6 +145,8 @@ bool ScreenActions::handle(const ScreenActivation& activation) {
     static_cast<void>(open(argument, argument == "save" || argument == "load"
                                          ? slot_args(argument == "save")
                                          : ScreenNodeDef{}));
+  } else if (verb == "view") {
+    static_cast<void>(open("gallery_view", text_args({{"image", argument}}), true));
   } else if (verb == "close") {
     host_->hide(activation.screen);
     std::erase(opened_, activation.screen);

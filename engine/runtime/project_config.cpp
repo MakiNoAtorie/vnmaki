@@ -146,6 +146,27 @@ std::vector<AutoSaveEvent> read_auto_save(const toml::node& node) {
   return events;
 }
 
+std::vector<std::string> read_gallery(const toml::node& node) {
+  constexpr std::string_view kReason = "'gallery' must be a list of image names";
+  const toml::array* array = node.as_array();
+  if (array == nullptr) {
+    fail_at(node, kReason);
+  }
+  std::vector<std::string> images;
+  images.reserve(array->size());
+  for (const toml::node& element : *array) {
+    const std::optional<std::string> name = element.value_exact<std::string>();
+    if (!name || name->empty()) {
+      fail_at(node, kReason);
+    }
+    if (std::ranges::find(images, *name) != images.end()) {
+      fail_at(node, "'gallery' lists '" + *name + "' twice");
+    }
+    images.push_back(*name);
+  }
+  return images;
+}
+
 std::size_t read_count(const toml::node& node, std::string_view key) {
   const std::optional<std::int64_t> depth = node.value_exact<std::int64_t>();
   if (!depth || *depth < 0 || *depth > kMaxRollbackDepth) {
@@ -193,6 +214,9 @@ ProjectConfig parse_project_config(std::string_view toml_text) {
   }
   if (const toml::node* auto_save = table.get("auto_save")) {
     config.auto_save = read_auto_save(*auto_save);
+  }
+  if (const toml::node* gallery = table.get("gallery")) {
+    config.gallery = read_gallery(*gallery);
   }
   if (const toml::node* depth = table.get("rollback_depth")) {
     config.rollback_depth = read_count(*depth, "rollback_depth");

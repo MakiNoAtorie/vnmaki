@@ -50,6 +50,18 @@ style("pref_switch", { size = 32 * u, padding = 10 * u, width = 480 * u })
 style("quick_bar", { align = "end", padding = 12 * u })
 style("quick_row", { gap = 8 * u })
 style("quick_button", { size = 24 * u, padding = 8 * u, background = "#10102099" })
+style("nvl_screen", { background = "#101020e6", padding = 100 * u, gap = 12 * u })
+style("nvl_name", { size = 34 * u, color = "#ffffff" })
+style("nvl_text", { size = 34 * u, width = canvas.width - 200 * u })
+style("nvl_choice", { width = (canvas.width - 200 * u) // 2, size = 34 * u, padding = 12 * u })
+style("gallery_cell", { width = 300 * u, height = 180 * u, padding = 8 * u })
+style("gallery_image", { width = 284 * u, height = 160 * u })
+style("gallery_locked", { extends = "gallery_image", background = "#202038", align = "center",
+                          justify = "center" })
+style("gallery_empty", { size = 32 * u })
+style("gallery_view", { background = "#000000" })
+style("gallery_full", { width = canvas.width, height = canvas.height, padding = 0 })
+style("gallery_full_image", { width = canvas.width, height = canvas.height })
 
 -- A line of dialogue without its text tags, cut to `limit` characters, for a slot caption.
 local function shorten(line, limit)
@@ -64,13 +76,15 @@ screen("title", function(args)
   local function entry(caption, action)
     return button { caption, returns = action, style = "title_button" }
   end
+  local entries = { entry("Start", "start"), entry("Load", "@open:load"),
+                    entry("Preferences", "@open:preferences"), entry("Quit", "@quit") }
+  if #gallery_images() > 0 then  -- project.toml lists a gallery
+    table.insert(entries, 3, entry("Gallery", "@open:gallery"))
+  end
   return vbox {
     style = "title_screen",
     text { args.title or "", style = "title_heading" },
-    entry("Start", "start"),
-    entry("Load", "@open:load"),
-    entry("Preferences", "@open:preferences"),
-    entry("Quit", "@quit"),
+    table.unpack(entries),
   }
 end)
 
@@ -198,17 +212,55 @@ screen("quick_menu", function()
   }
 end)
 
--- Placeholders until NVL mode and the gallery exist.
-screen("nvl", function()
-  return box { text { "NVL mode is not available yet.", size = 32 * unit() } }
+-- The NVL screen: the page of lines over the whole canvas. `args` has `lines` (how many page
+-- lines come first), `typing` (the last line is on the typewriter: its text node has `reveal`),
+-- the lines (speaker, text, color) and then the options of a menu (text). An option returns its
+-- number, from 1.
+screen("nvl", function(args)
+  local nodes = {}
+  for i = 1, args.lines do
+    local line = args[i]
+    if line.speaker ~= "" then
+      nodes[#nodes + 1] = text { line.speaker, style = "nvl_name", color = line.color }
+    end
+    nodes[#nodes + 1] = text { line.text, style = "nvl_text", markup = true,
+                               reveal = args.typing and i == args.lines }
+  end
+  for i = args.lines + 1, #args do
+    nodes[#nodes + 1] = button { args[i].text, returns = i - args.lines, style = "nvl_choice" }
+  end
+  return vbox { style = "nvl_screen", table.unpack(nodes) }
 end)
+
+-- The gallery: a grid of the images of project.toml `gallery`. An unlocked image is a button that
+-- shows it full screen; any other is a locked placeholder.
 screen("gallery", function()
-  local u = unit()
+  local cells = {}
+  for i, name in ipairs(gallery_images()) do
+    if unlocked("cg", name) then
+      cells[i] = button { returns = "@view:" .. name, label = name, style = "gallery_cell",
+                          image { name, style = "gallery_image" } }
+    else
+      cells[i] = button { disabled = true, label = "Locked", style = "gallery_cell",
+                          box { style = "gallery_locked",
+                                text { "Locked", style = "slot_preview_caption" } } }
+    end
+  end
   return vbox {
-    modal = true, cancel = "@close", bg = "#101020f2", align = "center", justify = "center",
-    gap = 24 * u,
-    text { "The gallery is not available yet.", size = 40 * u },
-    button { "Back", returns = "@close", width = 300 * u, size = 34 * u, padding = 14 * u },
+    style = "panel", modal = true, cancel = "@close",
+    text { "Gallery", style = "panel_title" },
+    #cells > 0 and grid { columns = 5, style = "slot_grid", table.unpack(cells) }
+        or text { "This game has no gallery.", style = "gallery_empty" },
+    button { "Back", returns = "@close", style = "back_button" },
+  }
+end)
+
+-- One unlocked image, full screen. `args` has image. A click, Enter or Esc goes back.
+screen("gallery_view", function(args)
+  return vbox {
+    style = "gallery_view", modal = true, cancel = "@close",
+    button { returns = "@close", label = args.image, style = "gallery_full",
+             image { args.image, style = "gallery_full_image" } },
   }
 end)
 )lua";

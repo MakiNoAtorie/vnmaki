@@ -165,3 +165,6 @@ target_sources(vnmaki_unit_tests PRIVATE unit/backlog_test.cpp)
 target_sources(vnmaki_unit_tests PRIVATE unit/video_test.cpp)
 target_compile_definitions(
   vnmaki_unit_tests PRIVATE VNMAKI_VIDEO_FIXTURES_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/video")
+
+# pause, NVL mode and the gallery (ticket 29).
+target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)

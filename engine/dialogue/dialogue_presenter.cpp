@@ -68,9 +68,11 @@ void DialoguePresenter::sync() {
     next = DialogueLine{.speaker = say->speaker,
                         .color = say->color,
                         .text = say->text,
-                        .auto_multiplier = say->auto_multiplier};
+                        .auto_multiplier = say->auto_multiplier,
+                        .nvl = say->nvl};
   } else if (const auto* narrate = request ? std::get_if<NarrateRequest>(request) : nullptr) {
-    next = DialogueLine{.speaker = {}, .color = std::nullopt, .text = narrate->text};
+    next = DialogueLine{
+        .speaker = {}, .color = std::nullopt, .text = narrate->text, .nvl = narrate->nvl};
   }
   if (next == line_) {
     return;

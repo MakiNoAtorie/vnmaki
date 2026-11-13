@@ -155,6 +155,18 @@ TEST_CASE("project.toml: backlog_length defaults to 100 and takes a whole number
         "project.toml:2:18: 'backlog_length' must be a whole number from 0 to 10000");
 }
 
+TEST_CASE("project.toml: gallery lists image names, none by default") {
+  CHECK(vnmaki::parse_project_config("title = \"A\"\n").gallery.empty());
+  CHECK(vnmaki::parse_project_config("title = \"A\"\ngallery = [\"cg/a\", \"cg/b\"]\n").gallery ==
+        std::vector<std::string>{"cg/a", "cg/b"});
+  CHECK(error_for("title = \"A\"\ngallery = \"cg/a\"\n") ==
+        "project.toml:2:11: 'gallery' must be a list of image names");
+  CHECK(error_for("title = \"A\"\ngallery = [\"a\", 1]\n") ==
+        "project.toml:2:11: 'gallery' must be a list of image names");
+  CHECK(error_for("title = \"A\"\ngallery = [\"a\", \"a\"]\n") ==
+        "project.toml:2:11: 'gallery' lists 'a' twice");
+}
+
 TEST_CASE("project.toml: a missing file is an error") {
   const vnmaki::Vfs vfs = vnmaki::test::memory_vfs({{"scripts/main.lua", ""}});
 

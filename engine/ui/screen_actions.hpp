@@ -6,6 +6,7 @@
 //
 //   @open:<screen>   show Lua screen <screen> (modal). save and load get the slot list as args
 //   @close           hide the screen of the button, and the ones it opened
+//   @view:<image>    show the Lua screen gallery_view for an unlocked gallery image (modal)
 //   @save:<slot>     save to the slot; a slot that is in use asks "confirm" first
 //   @load:<slot>     load the slot and close the screens that were opened
 //   @auto            turn auto-advance on or off

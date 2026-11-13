@@ -60,6 +60,7 @@ enum class HeadlessOutcome : std::uint8_t {
 ///   hide <tag>            hide(tag)
 ///   tween <tag>           tween(tag, options); also "sequence" and "parallel" for a group
 ///   wait <tag>            wait(tag); "wait_all" for wait_all()
+///   pause <seconds>       pause(seconds); it ends at once, like a wait
 ///   music <name> ...      music(name, options), then the options given (see
 ///                         ScriptObserver::on_audio_command, also for the next four)
 ///   sound <name> ...      sound(name, options)

@@ -3,6 +3,7 @@
 // Builds UI trees: from the nodes a script wrote (ScreenNodeDef) and for the screens the engine
 // makes itself (the choice menu).
 
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -56,5 +57,12 @@ class UiBuildError : public std::runtime_error {
 /// The choice menu of a `menu { ... }`: the options as buttons in a column in the middle of the
 /// canvas. Button i returns the integer i + 1, the number `menu` gives back.
 [[nodiscard]] UiNode make_menu_screen(const std::vector<std::string>& options, Size canvas);
+
+/// The arguments of the Lua screen `nvl`: the props `lines` (how many page lines come first) and
+/// `typing` (the last line is the one on the typewriter: its text node has `reveal`), then one
+/// child for each page line (`speaker`, `text`, `color` as "#rrggbb" if it has one) and one for
+/// each menu option (`text`). The option at place i of `options` returns i + 1.
+[[nodiscard]] ScreenNodeDef make_nvl_args(const NvlPage& page, bool typing,
+                                          std::span<const std::string> options = {});
 
 }  // namespace vnmaki

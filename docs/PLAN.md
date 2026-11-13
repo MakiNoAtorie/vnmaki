@@ -117,12 +117,12 @@ Do 29, 30a and 31 in parallel after 19. They do not share files, except `script_
 
 Files: `engine/runtime/`, `engine/dialogue/`, `engine/runtime/default_screens.cpp`, `engine/saves/` (unlocks in `persistent`).
 
-- [ ] `pause(seconds)` is a step. A click or skip mode ends it. Replay does not wait. Rollback goes over it like over a `wait`.
-- [ ] `nvl(true|false)` and `character{ kind = "nvl" }` show lines in a full-screen NVL screen. `nvl_clear()` empties it. Menus in NVL mode show inside the NVL screen. The backlog is the same.
-- [ ] The NVL page is in the snapshot, so load and rollback show the same page.
-- [ ] `unlock(kind, name)` writes to `persistent.unlocks`. Images shown with `show`/`scene` unlock `cg/<name>` when `project.toml` lists `gallery = [...]`.
-- [ ] The gallery screen shows a grid of unlocked images and a locked placeholder for the others. Mouse, keyboard and gamepad work.
-- [ ] Headless tests: pause and skip, NVL page across rollback and load, unlock after `show`, gallery grid state.
+- [x] `pause(seconds)` is a step. A click or skip mode ends it. Replay does not wait. Rollback goes over it like over a `wait`.
+- [x] `nvl(true|false)` and `character{ kind = "nvl" }` show lines in a full-screen NVL screen. `nvl_clear()` empties it. Menus in NVL mode show inside the NVL screen. The backlog is the same.
+- [x] The NVL page is in the snapshot, so load and rollback show the same page.
+- [x] `unlock(kind, name)` writes to `persistent.unlocks`. Images shown with `show`/`scene` unlock `cg/<name>` when `project.toml` lists `gallery = [...]`.
+- [x] The gallery screen shows a grid of unlocked images and a locked placeholder for the others. Mouse, keyboard and gamepad work.
+- [x] Headless tests: pause and skip, NVL page across rollback and load, unlock after `show`, gallery grid state.
 
 ### 30a: UI styles, themes and the `input` node (SPEC §15)
 
