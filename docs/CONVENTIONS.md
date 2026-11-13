@@ -26,6 +26,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Lua is 5.4.8, because the specification requires 5.4.
   - `sdl3` has no default features. On Linux, it has `x11` and `wayland`.
   - mpack has no vcpkg port, and `third_party/` has no copy of it. The save format (`engine/saves/save_file.cpp`) has a small MessagePack reader and writer of its own. It is plain MessagePack, so mpack can replace it.
+  - dav1d (AV1) and libwebm (WebM, its `mkvparser`) are vcpkg dependencies. Neither has a CMake config that the engine uses, so `engine/video/CMakeLists.txt` finds both with `find_path` and `find_library` (libwebm's headers are in `include/webm`).
+  - dav1d 1.5.4 does not build with MSVC 14.5 (Visual Studio 2026): its `stdatomic.h` shim uses `__has_include_next` in a non-clang build. `vcpkg-configuration.json` adds the overlay port `tools/vcpkg-overlay/dav1d`, which is the vcpkg port with one patch for this. Remove the overlay when the vcpkg baseline has a dav1d that builds.
   - zstd is a vcpkg dependency. `engine/saves/CMakeLists.txt` finds `zstd::libzstd` (vcpkg) or the plain library (Debian: `libzstd-dev`).
 
 ## Code
@@ -65,8 +67,10 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - The script uses only the standard library. Its only argument is `OUT_DIR`.
   - Register it with `vnmaki_add_fixture_generator(<name> SCRIPT ... TEST_TARGETS ...)`.
   - Tests read the fixtures from `VNMAKI_FIXTURES_DIR "/<name>"`.
+- One binary fixture is committed: `tests/fixtures/video/clip.webm`. Python cannot write AV1, so the clip is not generated. It is a small CC0 clip of solid-color frames and a tone, and `tests/fixtures/video/README.md` has the exact ffmpeg command that made it. Do not commit another binary fixture without the owner's approval.
 - Script tests use `vnmaki::test::memory_vfs({{path, text}...})` from `tests/support/memory_vfs.hpp`.
 - `RecordingRenderer` (`tests/support/recording_renderer.hpp`) is an `IRenderer` that records the quads of each draw. Use it to test what a displayable draws, without a GPU.
+- Threaded tests that wait for a job poll with a timeout (`settle` in `tests/unit/video_test.cpp`).
 - Fuzz targets use `vnmaki_add_fuzzer(<name> <sources>)`. ctest gives each target a smoke test of 10,000 runs.
   - A fuzz target checks properties of the output, for example idempotence or an independent oracle. If a property is false, it calls `std::abort()`.
   - To check a new fuzz target, add a bug and make sure that the smoke test finds it.
@@ -175,6 +179,12 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `SceneCommands` calls also run during replay.
 - `SceneCommands` has `animation`, `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
 - A displayable draws its quads with `draw_state(texture)` (`Displayable`, protected). What a displayable adds to its draws, for example a shader, goes there, so it applies to every kind of displayable.
+- `show(tag, { movie = "movies/x.webm", loop = true })` shows a movie (`MovieDisplayable`) in place of an image. `movie` is the Vfs path with its extension. A bad or missing file is an error at the script line (`ShowRequest::movie`; a replay checks only that the file exists). `movie` and `loop` are in the prelude `show_options`.
+  - `Scene::prepare` loads a movie on a job (`MovieDisplayable::prepare`) and uploads its pictures. `Scene::update` is its clock. After a restore (a load, a rollback), or when it is shown again, a movie plays from time 0.
+  - `Scene::set_movie_audio(audio)` gives the movie its sound (see Video). The `MovieAudio` must outlive the scene, so make `Audio` before `Scene`.
+  - A movie that does not loop is what `wait(tag)` waits for, as for a frame animation, and `finish_tweens` ends it. A movie never blocks a wait when it loops.
+  - The snapshot part `movies` has the layer, the index in the layer (movies are put back last, so the `layered` index does not count them), the tag, the path, the loop flag and the properties. It has no time.
+  - A movie texture is made again for each new picture. A displayable that goes away gives its texture to `Scene::prepare` to destroy.
 - `place_corners(properties, size, part)` and `bounding_box(corners)` (`displayable.hpp`) place a box with the properties. Use them in a new displayable.
 
 ### Layered sprites (`engine/scene/layered_sprite.*`)
@@ -197,6 +207,21 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - A value of a layered group can be an animation: `eyes = { open = "eyes_open", blink = "blink" }`. It plays from frame 1 when the value is chosen, and a group that keeps its value keeps playing. In a crossfade, the old value shows the frame that it had when it left.
 - `wait(tag)` and `wait_all()` wait for an animation that does not loop: `Scene::tweening(tag)` is true until its last frame has played for its full time. A loop never blocks a wait. `finish_tweens` (a click, skip mode) puts the animation at its last frame. The same is true for the animation values of a layered sprite (`LayeredSprite::animating()` and `finish_animations()`).
 - The snapshot part `animations` has the layer position, the tag, the definition name and the properties. It has no definition and no time. `restore()` throws if the scene does not know the definition, so the scripts must load first. After a restore (a load, a rollback), an animation restarts at frame 1.
+
+### Video (`engine/video/`)
+
+- A movie is AV1 video and Opus audio in a WebM file. `open_movie(bytes)` (libwebm `mkvparser`) gives a `MovieData`: the encoded video packets with their times, the size, the duration and the audio. `load_movie(vfs, path)` reads it from the Vfs. A bad file throws `MovieError`, and the message is `movie '<path>' ...`. `movie_problem(vfs, path)` gives that text, or an empty string.
+  - The duration is the time of the last video packet plus one frame. There must be one AV1 video track. The audio track is optional and must be Opus. Laced blocks are an error.
+  - The audio is made again as an Ogg Opus file (`MovieData::audio`), so `AudioDecoder` reads it like any other file.
+- `VideoDecoder` (dav1d, one thread, no frame delay) turns packets into opaque RGBA `MovieFrame`s with `decode(n)`, and goes back to the start with `rewind()`. It handles 8 to 12 bit pictures, all chroma layouts, BT.601 and BT.709 (BT.709 by default), and limited and full range.
+- `MoviePlayer` plays one movie from time 0. The decoding runs on a job (`JobSystem`): one job at a time makes a few pictures, so the memory stays small. Call `update(seconds)` and `prepare(renderer)` from the main thread.
+  - The clock starts when the first picture is decoded. With a `MovieAudio` and a movie that has audio, the audio starts then and the picture follows the audio position (the audio clock). Without audio, or after the audio has ended, the picture follows the seconds that `update` gets (the loop clock). A loop starts again when the clock passes the end, and never finishes.
+  - A bad AV1 stream throws `MovieError` from `update`.
+- `MovieAudio` (`movie_audio.hpp`) is the interface to the audio. `Audio` implements it: the movie's Ogg Opus plays on the `movie` channel in place of the movie there, and `start_movie_audio` returns a token. The audio is not state: `Audio::restore` stops it, and a `MoviePlayer` stops its audio when it goes away. It is silent, with the loop clock, if the file cannot be played.
+- `movie(path, { skippable = true })` is a blocking call (`MovieRequest`). `SceneCommands::check_movie` checks the file first, and an error is raised at the script line. It is a step like a `wait`: `advance()` ends it, a replay passes it without playing it, and rollback goes back over it (`ScriptPosition::wait`). `skippable` is false by default.
+  - `MoviePresenter` (`movie_presenter.hpp`) plays it in the host. `update(seconds)` once per update, `prepare(renderer)` before drawing, and `draw(renderer, size)` after `Scene::draw` (it draws black and the picture, centered, over everything). `click()` ends a skippable movie and returns true if the story waits at a movie. `skip()` is for skip mode: it ends any movie (`PlaybackOptions::skip_wait`).
+  - The headless runner does not play a movie. It writes `movie <path>` to the transcript and goes on.
+- Fuzz target: `fuzz_video` (the container, the Ogg audio, the decoder).
 
 ### Anim (`engine/anim/`)
 
@@ -273,7 +298,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Set `ScriptRuntimeOptions::audio` to it. Also put it in `scene_state`, inside a `CompositeSceneState` when there is a `Scene`.
 - The runtime includes no audio headers.
 - Audio name `N` is the VFS file `audio/N.opus`, else `.ogg`, `.flac` or `.wav`. `voice(N)` plays `voice/N`.
-- Channels: `music`, `sound`, `voice`, `ambient`, `ui`. A script makes another by naming it.
+- Channels: `music`, `sound`, `voice`, `ambient`, `ui`. A script makes another by naming it. The `movie` channel (`kMovieChannel`) is made when a movie's audio first plays (see Video).
 - `AudioOutput::kManual` has no device. `update(seconds)` mixes that much. Tests and headless runs use it.
 - `kNullDevice` mixes on a device thread to nowhere. `kDevice` is the system output.
 - Call the commands, `update()` and `restore()` from one thread.
@@ -314,6 +339,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - The runtime includes no ui headers. It reads the Lua node tables into `ScreenNodeDef`.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
 - `wait(tag)` and `wait_all()` are blocking calls too (`WaitRequest`). `advance()` ends them. See Anim.
+- `movie(path, { skippable = })` is a blocking call (`MovieRequest`) that works as a wait for rollback and replay. See Video.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it. It ends a wait at once and needs no input for it.
 - `project.toml` has `title` (required), `version`, `resolution`, `languages`, `auto_save` (a list of `"label"` and `"menu"`), `rollback_depth` and `backlog_length` (each 0 to 10000, default 100).
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.

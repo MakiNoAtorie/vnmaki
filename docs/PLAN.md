@@ -199,12 +199,12 @@ Files: `engine/render/` (shader loading), `engine/scene/scene.cpp` (draw), `vcpk
 
 Files: new `engine/video/`, `engine/audio/` (movie stream), `vcpkg.json`, `engine/scene/scene.cpp`, runtime, `tests/fixtures/video/`.
 
-- [ ] Use dav1d and libwebm (vcpkg). Read WebM from the VFS. Decode AV1 on a job thread. Upload frames on the main thread.
-- [ ] The Opus audio of the movie plays on a custom `movie` channel. The picture follows the audio clock. If the movie has no audio, the picture follows the main loop clock.
-- [ ] `movie(path, { skippable = true })` plays over all layers and blocks. Replay and skip mode do not play it.
-- [ ] `show(tag, { movie = path, loop = true })` makes a movie displayable. After a load, it restarts at time 0.
-- [ ] Add a fuzz target for the WebM and AV1 loader. A bad file gives an error at the script line.
-- [ ] Fixture: Python cannot write AV1. Commit one small CC0 clip of solid-color frames, with the ffmpeg command that made it, and add this exception to CONVENTIONS. Tests: the color of frame N (with a tolerance), the duration, the loop, and sync with the null audio device.
+- [x] Use dav1d and libwebm (vcpkg). Read WebM from the VFS. Decode AV1 on a job thread. Upload frames on the main thread.
+- [x] The Opus audio of the movie plays on a custom `movie` channel. The picture follows the audio clock. If the movie has no audio, the picture follows the main loop clock.
+- [x] `movie(path, { skippable = true })` plays over all layers and blocks. Replay and skip mode do not play it.
+- [x] `show(tag, { movie = path, loop = true })` makes a movie displayable. After a load, it restarts at time 0.
+- [x] Add a fuzz target for the WebM and AV1 loader. A bad file gives an error at the script line.
+- [x] Fixture: Python cannot write AV1. Commit one small CC0 clip of solid-color frames, with the ffmpeg command that made it, and add this exception to CONVENTIONS. Tests: the color of frame N (with a tolerance), the duration, the loop, and sync with the null audio device.
 
 ### 26: Lip sync (SPEC §10, §14)
 
