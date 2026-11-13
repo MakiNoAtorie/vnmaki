@@ -7,6 +7,7 @@
 #include <variant>
 #include <vector>
 
+#include "engine/dialogue/rollback_input.hpp"
 #include "engine/ui/ui_build.hpp"
 
 namespace vnmaki {
@@ -83,6 +84,11 @@ void ScreenPresenter::answer(const ScreenValue& value) {
 }
 
 bool ScreenPresenter::handle_event(const InputEvent& event, const Viewport& viewport) {
+  // The player may roll back from a menu or `call_screen`, but not from a screen over it.
+  if (shown_ && is_rollback_event(event) && host_->is_top_modal(shown_->first) &&
+      !host_->wants_text_input()) {
+    return false;
+  }
   const UiEventResult result = host_->handle_event(event, viewport);
   if (result.activation) {
     if (actions_ && actions_(*result.activation)) {

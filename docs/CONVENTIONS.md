@@ -352,9 +352,9 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Only enabled buttons take the focus. Tab order is document order. The arrow keys and the d-pad pick the nearest button in that direction. Pointer hover moves the focus.
 - `UiHost` is the stack of screens (the last one shown is on top).
   - A screen with the same name is replaced. `handle_event(event, viewport)` returns `consumed` and an optional `ScreenActivation`.
-  - A modal screen takes the keys, the d-pad and all clicks. Other screens take the pointer only.
+  - A modal screen takes the keys, the d-pad and all clicks. Other screens take the pointer only. While any modal screen is shown, `handle_event` consumes every player input (wheel, Page Up, shoulders, A, S, L too), so nothing reaches the story. Window, gamepad connection and quit events pass.
   - `UiHost` does not store screens in snapshots. `show_screen` and `hide_screen` run again during replay, so they must be idempotent.
-- `ScreenPresenter` shows the modal screen of a `menu` or `call_screen` request and answers the runtime. Make it after `runtime.start()`. Call `sync()` after anything else that moves the story. Give it events before the dialogue presenter: if `handle_event` returns true, do not advance.
+- `ScreenPresenter` shows the modal screen of a `menu` or `call_screen` request and answers the runtime. Make it after `runtime.start()`. Call `sync()` after anything else that moves the story. Give it events before the dialogue presenter: if `handle_event` returns true, do not advance. Rollback input (`is_rollback_event`) is the one exception: while its own menu or `call_screen` is the top modal screen and no input has the keys, `handle_event` returns false for it, so the player can roll back from a menu. A modal screen over it (save, load, preferences, confirm) consumes it.
 - `UiRenderer` draws trees through `IRenderer`. Call `prepare(root, scale)` before `begin_frame`. Draw into a screen-resolution pass with the viewport scale and origin, like `SayBoxView`.
   - It has one glyph atlas for each text size. A node with `markup = true` uses text tags.
   - An image node draws `images/<name>.png` (else `.jpg`, else `.webp`) from the VFS. It needs `width` and `height`.

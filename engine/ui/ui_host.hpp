@@ -75,6 +75,8 @@ class UiHost final : public ScreenCommands {
   bool hide(std::string_view name);
   [[nodiscard]] bool is_shown(std::string_view name) const;
   [[nodiscard]] bool has_modal() const;
+  /// Whether screen `name` is the topmost modal screen.
+  [[nodiscard]] bool is_top_modal(std::string_view name) const;
 
   /// The tree of screen `name`, laid out; null if it is not shown.
   [[nodiscard]] UiNode* find(std::string_view name);
@@ -88,6 +90,9 @@ class UiHost final : public ScreenCommands {
   /// arrow keys and the d-pad move the focus; Enter, Space and the south gamepad button activate
   /// the focused button or toggle; Left and Right move the focused slider. Esc and the east
   /// button give the root's `cancel` value, or take the keys back from a non-modal screen.
+  /// While any modal screen is shown, every player input is consumed (also a wheel turn, Page Up
+  /// and the shoulder buttons that the story window rolls back on). Window and gamepad connection
+  /// events and a quit request are not.
   /// While an input has the keys, a TextInputEvent adds its text at the end (up to `max_length`
   /// characters) and Backspace removes the last character; Enter gives the input's `returns`;
   /// Tab, the arrow keys and Esc work as always; other keys are consumed and do nothing. Moving
