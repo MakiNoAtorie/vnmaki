@@ -75,6 +75,14 @@ vnmaki_add_fixture_generator(
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_render_tests)
 
+# Transitions: the clock, options, the script API and blocking, and GPU goldens (ticket 21).
+target_sources(vnmaki_unit_tests PRIVATE unit/transition_test.cpp)
+vnmaki_add_fixture_generator(
+  transition SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/transition_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
 # Layered sprites: attributes, crossfade, snapshot, drawing order (ticket 22).
 target_sources(vnmaki_unit_tests PRIVATE unit/layered_test.cpp)
 vnmaki_add_fixture_generator(
