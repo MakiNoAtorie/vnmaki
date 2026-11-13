@@ -250,7 +250,7 @@ bool DevOverlay::handle_event(const InputEvent& event) {
   if (const auto* button = std::get_if<PointerButtonEvent>(&event)) {
     io.AddMousePosEvent(button->position.x, button->position.y);
     io.AddMouseButtonEvent(to_imgui_button(button->button), button->pressed);
-    if (pick_ && screen_editor_ != nullptr && button->button == MouseButton::kLeft &&
+    if (pick_ && screen_editor_ != nullptr && viewport_ && button->button == MouseButton::kLeft &&
         !io.WantCaptureMouse) {
       if (button->pressed) {
         editor_message_.clear();

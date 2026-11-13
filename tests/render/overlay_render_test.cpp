@@ -236,7 +236,8 @@ TEST_CASE("overlay: the story graph window draws and follows the trace") {
   CHECK(fixture.frame(overlay) > 0);
 }
 
-TEST_CASE("overlay: with Pick on, a click on a node selects it, outlines it and is not the game's") {
+TEST_CASE(
+    "overlay: with Pick on, a click on a node selects it, outlines it and is not the game's") {
   Fixture fixture;
   if (!fixture.renderer) {
     return;
@@ -249,9 +250,8 @@ TEST_CASE("overlay: with Pick on, a click on a node selects it, outlines it and 
   host.show("probe", std::move(probe), false);
   vnmaki::ScreenEditor editor{fixture.vfs, {}, host};
   DevOverlay overlay{*fixture.renderer, fixture.platform, fixture.runtime, fixture.log};
-  overlay.set_screen_editor(&editor, [] {
-    return vnmaki::compute_viewport(kScreen, kScreen, vnmaki::ScaleMode::kFit);
-  });
+  overlay.set_screen_editor(
+      &editor, [] { return vnmaki::compute_viewport(kScreen, kScreen, vnmaki::ScaleMode::kFit); });
   overlay.set_visible(true);
   const vnmaki::PointF inside{.x = kProbeX + (kProbeSize / 2), .y = kProbeY + (kProbeSize / 2)};
   const InputEvent move = PointerMoveEvent{.position = inside};

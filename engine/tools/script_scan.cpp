@@ -630,9 +630,8 @@ namespace {
 // The nesting of node tables that the screen scan follows; deeper ones count as computed.
 constexpr std::size_t kMaxNodeDepth = 64;
 
-constexpr std::array<std::string_view, 11> kNodeKinds{"box",    "hbox",   "vbox",  "text",
-                                                      "image",  "button", "toggle", "slider",
-                                                      "bar",    "grid",   "input"};
+constexpr std::array<std::string_view, 11> kNodeKinds{
+    "box", "hbox", "vbox", "text", "image", "button", "toggle", "slider", "bar", "grid", "input"};
 
 bool is_node_kind(std::string_view name) {
   return std::ranges::find(kNodeKinds, name) != kNodeKinds.end();

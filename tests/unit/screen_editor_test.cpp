@@ -46,6 +46,7 @@ constexpr std::string_view kNewHello =
     "n\xC3\xAF \xE2\x9C\x93";
 constexpr std::string_view kNewSound = "Line1\nLine2";
 constexpr float kOne = 1;
+constexpr int kByteValues = 256;
 
 const fs::path kFixtures = fs::path{VNMAKI_FIXTURES_DIR} / "screen_editor";
 
@@ -156,8 +157,8 @@ TEST_CASE("script scan: tokens know their bytes") {
   for (const vnmaki::LuaToken& token : tokens) {
     written.push_back(source.substr(token.begin, token.end - token.begin));
   }
-  const std::vector<std::string> expected{"local", "x", "=",  "\"a\\\"b\"", ".", ".", "[[long]]",
-                                          "-",     "5", "foo", "'q'"};
+  const std::vector<std::string> expected{"local",    "x", "=", "\"a\\\"b\"", ".",  ".",
+                                          "[[long]]", "-", "5", "foo",        "'q'"};
   CHECK(written == expected);
 }
 
@@ -228,7 +229,7 @@ TEST_CASE("screen editor: a later field of the same name makes the earlier one c
 
 TEST_CASE("screen editor: a string literal that is written reads back the same") {
   for (const char quote : {'"', '\''}) {
-    for (int byte = 1; byte < 256; ++byte) {
+    for (int byte = 1; byte < kByteValues; ++byte) {
       const std::string content =
           std::string{"a"} + static_cast<char>(byte) + std::string{"1\\x\n"};
       const std::string literal = vnmaki::lua_string_literal(content, quote);

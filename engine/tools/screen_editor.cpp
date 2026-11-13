@@ -380,8 +380,8 @@ void ScreenEditor::refresh() {
     } else {
       field.editable = field.raw.find(kUnicodeEscape) == std::string::npos;
     }
-    if (scanned.kind == ScanValueKind::kString && (field.raw.starts_with('\'') ||
-                                                  field.raw.starts_with('"'))) {
+    if (scanned.kind == ScanValueKind::kString &&
+        (field.raw.starts_with('\'') || field.raw.starts_with('"'))) {
       field.quote = field.raw.front();
     }
     field.value = field.original;
