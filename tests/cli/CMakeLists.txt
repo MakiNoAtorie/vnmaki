@@ -349,15 +349,19 @@ add_test(NAME cli.new_makes_a_game_and_stops_at_a_second_one
          COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
                  -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/plain -P
                  "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
+set(vnmaki_new_precompiled "")
+if(NOT VNMAKI_SHADER_COMPILER)
+  set(vnmaki_new_precompiled "-DPRECOMPILED_DIR=${VNMAKI_PRECOMPILED_DIR}")
+endif()
 add_test(NAME cli.new_game_runs_in_a_window
-         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> ${vnmaki_new_precompiled}
                  -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/windowed -DFRAMES=3
                  -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/new_game_runs_in_a_window -P
                  "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
 # The presentation demo (ticket 28) in a window: the story starts at its label, so the GPU draws the
 # dissolve, the layered sprite with the blink, the camera, the shake and the sepia layer shader.
 add_test(NAME cli.new_presentation_runs_in_a_window
-         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> ${vnmaki_new_precompiled}
                  -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/presentation -DFRAMES=300
                  -DPRESENTATION=ON
                  -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/new_presentation_runs_in_a_window -P

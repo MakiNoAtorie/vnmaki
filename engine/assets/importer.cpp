@@ -33,7 +33,7 @@ constexpr std::string_view kHlslSuffix = ".frag.hlsl";
 constexpr std::string_view kCacheRoot = ".vnmaki";
 // The engine headers that a game shader includes: a change of one is a change of every shader.
 constexpr std::array<std::string_view, 3> kShaderHeaders{"vnmaki.hlsli", "sprite_fragment.hlsli",
-                                                          "transition.hlsli"};
+                                                         "transition.hlsli"};
 
 enum class Kind : std::uint8_t { kNone, kAudio, kFont, kShader, kGltf, kText };
 
@@ -76,8 +76,8 @@ Kind kind_of(std::string_view path) {
 
 bool is_language_code(std::string_view language) {
   return !language.empty() && std::ranges::all_of(language, [](char c) {
-           return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '-' || c == '_';
-         });
+    return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '-' || c == '_';
+  });
 }
 
 std::vector<std::byte> bytes_of(std::string_view text) {
@@ -185,10 +185,10 @@ ImportReport Importer::import_paths(const std::vector<std::string>& sources) con
       }
       switch (kind) {
         case Kind::kAudio:
-          report.files.push_back(cached_or_made(
-              cache_, source, *input, kAudioImporter, kAudioImporterVersion, audio_params,
-              std::string{without_extension(source)} + ".opus",
-              [&] { return import_audio(*input, settings).opus; }));
+          report.files.push_back(
+              cached_or_made(cache_, source, *input, kAudioImporter, kAudioImporterVersion,
+                             audio_params, std::string{without_extension(source)} + ".opus",
+                             [&] { return import_audio(*input, settings).opus; }));
           break;
         case Kind::kShader:
           report.files.push_back(cached_or_made(
@@ -213,8 +213,8 @@ ImportReport Importer::import_paths(const std::vector<std::string>& sources) con
             }
             auto found = codepoints.find(language);
             if (found == codepoints.end()) {
-              found = codepoints.emplace(language, language_codepoints(*vfs_, config, scripts,
-                                                                       language))
+              found = codepoints
+                          .emplace(language, language_codepoints(*vfs_, config, scripts, language))
                           .first;
             }
             const std::set<char32_t>& wanted = found->second;
@@ -240,7 +240,8 @@ ImportReport Importer::import_paths(const std::vector<std::string>& sources) con
     } catch (const std::exception& error) {
       const std::string_view what = error.what();
       // A message that starts with the file ("translations/ja.po:5: ...") already names its file.
-      report.problems.push_back(what.starts_with("translations/") || what.starts_with("project.toml")
+      report.problems.push_back(what.starts_with("translations/") ||
+                                        what.starts_with("project.toml")
                                     ? std::string{what}
                                     : source + ": " + std::string{what});
     }

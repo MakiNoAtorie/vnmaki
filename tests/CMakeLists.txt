@@ -24,6 +24,21 @@ vnmaki_add_fixture_generator(
   vfs SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/vfs_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
 
+# A build without a run-time shader compiler (release) cannot compile the sepia shader of the
+# template when a test loads it. This builds its `.vnshader` file, which the tests mount over the
+# project (VNMAKI_PRECOMPILED_DIR), so release tests load a precompiled game shader.
+include(VnmakiShaders)
+set(VNMAKI_PRECOMPILED_DIR "${PROJECT_BINARY_DIR}/precompiled")
+if(NOT VNMAKI_SHADER_COMPILER)
+  vnmaki_add_precompiled_shader(
+    vnmaki_precompiled_sepia
+    OUTPUT "${VNMAKI_PRECOMPILED_DIR}/shaders/sepia.frag.vnshader"
+    SHADER "${PROJECT_SOURCE_DIR}/templates/default/shaders/sepia.frag.hlsl"
+    INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/shaders")
+  add_dependencies(vnmaki_unit_tests vnmaki_precompiled_sepia)
+endif()
+target_compile_definitions(vnmaki_unit_tests PRIVATE VNMAKI_PRECOMPILED_DIR="${VNMAKI_PRECOMPILED_DIR}")
+
 add_subdirectory(cli)
 
 # Platform: window, input, main loop, virtual resolution (ticket 04).

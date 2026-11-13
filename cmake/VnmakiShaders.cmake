@@ -132,3 +132,50 @@ function(vnmaki_add_shaders target)
   add_custom_target(${shader_target} DEPENDS ${all_generated})
   add_dependencies(${target} ${shader_target})
 endfunction()
+
+# vnmaki_add_precompiled_shader(<target> OUTPUT <name>.frag.vnshader SHADER <name>.frag.hlsl
+#                               [INCLUDE_DIRS <dir>...])
+#
+# Compiles a game shader at build time into the file that `vnmaki import` writes for it
+# (engine/render/precompiled_shader.hpp), with the same shadercross as above and
+# tools/generators/vnshader_pack.py. A build that has no run-time shader compiler
+# (VNMAKI_SHADER_COMPILER off) uses it in its tests, where the shaders of the template have to load.
+# <target> is a custom target that makes OUTPUT; add a dependency on it.
+function(vnmaki_add_precompiled_shader target)
+  cmake_parse_arguments(PARSE_ARGV 1 arg "" "OUTPUT;SHADER" "INCLUDE_DIRS")
+  find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+  set(launcher "")
+  if(WIN32 AND VNMAKI_DXC)
+    cmake_path(GET VNMAKI_DXC PARENT_PATH dxc_dir)
+    set(launcher "${CMAKE_COMMAND}" -E env --modify "PATH=path_list_prepend:${dxc_dir}" --)
+  endif()
+  set(include_args "")
+  set(include_deps "")
+  foreach(dir IN LISTS arg_INCLUDE_DIRS)
+    list(APPEND include_args -I "${dir}")
+    file(GLOB dir_headers CONFIGURE_DEPENDS "${dir}/*.hlsli")
+    list(APPEND include_deps ${dir_headers})
+  endforeach()
+  set(work "${CMAKE_CURRENT_BINARY_DIR}/${target}")
+  set(commands "")
+  set(formats SPIRV MSL DXIL JSON)
+  foreach(format IN LISTS formats)
+    string(TOLOWER "${format}" extension)
+    list(APPEND commands COMMAND ${launcher} "${VNMAKI_SHADERCROSS}" "${arg_SHADER}" -s HLSL -d
+         ${format} -t fragment -e main ${include_args} -o "${work}/shader.${extension}")
+  endforeach()
+  set(dxil "${work}/shader.dxil")
+  if(APPLE)
+    set(dxil "")
+  endif()
+  add_custom_command(
+    OUTPUT "${arg_OUTPUT}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${work}" ${commands}
+    COMMAND Python3::Interpreter "${PROJECT_SOURCE_DIR}/tools/generators/vnshader_pack.py"
+            "${arg_OUTPUT}" "${work}/shader.json" "${work}/shader.spirv" "${work}/shader.msl"
+            "${dxil}"
+    DEPENDS "${arg_SHADER}" ${include_deps} "${PROJECT_SOURCE_DIR}/tools/generators/vnshader_pack.py"
+    COMMENT "Precompiling game shader ${arg_SHADER}"
+    VERBATIM)
+  add_custom_target(${target} DEPENDS "${arg_OUTPUT}")
+endfunction()

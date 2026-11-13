@@ -1,5 +1,6 @@
 // Asset import (engine/assets/): the cache, the audio gain, font subsets, glTF checks, the project
-// importer and the precompiled shader file. The inputs come from tools/generators/import_fixtures.py.
+// importer and the precompiled shader file. The inputs come from
+// tools/generators/import_fixtures.py.
 
 #include <algorithm>
 #include <array>
@@ -26,6 +27,7 @@
 #include "engine/assets/importer.hpp"
 #include "engine/audio/audio_decoder.hpp"
 #include "engine/render/precompiled_shader.hpp"
+#include "engine/render/renderer.hpp"
 #include "engine/render/shader_compiler.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/vfs/vfs.hpp"
@@ -46,7 +48,8 @@ const fs::path& fixtures() {
 std::vector<std::byte> read_bytes(const fs::path& path) {
   std::ifstream in{path, std::ios::binary};
   REQUIRE(in);
-  const std::vector<char> chars{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+  const std::vector<char> chars{std::istreambuf_iterator<char>{in},
+                                std::istreambuf_iterator<char>{}};
   std::vector<std::byte> bytes;
   for (const char c : chars) {
     bytes.push_back(static_cast<std::byte>(c));
@@ -56,7 +59,8 @@ std::vector<std::byte> read_bytes(const fs::path& path) {
 
 void write_bytes(const fs::path& path, std::span<const std::byte> bytes) {
   std::ofstream out{path, std::ios::binary | std::ios::trunc};
-  out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  out.write(reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
 }
 
 // A folder in the temp directory that goes when the test ends.
@@ -106,8 +110,8 @@ Levels levels_of(std::vector<std::byte> encoded) {
 
 double db(double level) { return 20 * std::log10(level); }
 
-constexpr double kTone = 0.25;      // the amplitude of tone.wav
-constexpr double kQuiet = 0.05;     // the amplitude of quiet.wav
+constexpr double kTone = 0.25;   // the amplitude of tone.wav
+constexpr double kQuiet = 0.05;  // the amplitude of quiet.wav
 constexpr double kGainTolerance = 0.01;
 constexpr double kOpusTolerance = 0.06;  // Opus is lossy
 constexpr double kHalfSecondFrames = 24000;
@@ -119,7 +123,8 @@ constexpr double kRmsTargetDb = -18;
 
 }  // namespace
 
-TEST_CASE("import cache: a key changes with the source, the importer, its version and its settings") {
+TEST_CASE(
+    "import cache: a key changes with the source, the importer, its version and its settings") {
   const std::vector<std::byte> source{std::byte{1}, std::byte{2}, std::byte{3}};
   const std::vector<std::byte> other{std::byte{1}, std::byte{2}, std::byte{4}};
   const std::string key = vnmaki::import_cache_key(source, "audio", 1, "a");
@@ -199,21 +204,24 @@ TEST_CASE("audio import: data that is not audio is an error") {
 
 TEST_CASE("import settings: the keys of [build.audio]") {
   CHECK(vnmaki::parse_import_settings("title = \"x\"\n") == ImportSettings{});
-  const ImportSettings peak = vnmaki::parse_import_settings("[build.audio]\nnormalize = \"peak\"\n");
+  const ImportSettings peak =
+      vnmaki::parse_import_settings("[build.audio]\nnormalize = \"peak\"\n");
   CHECK(peak == ImportSettings{.normalize = AudioNormalize::kPeak,
                                .target_db = vnmaki::kDefaultPeakTargetDb});
   const ImportSettings rms =
       vnmaki::parse_import_settings("[build.audio]\nnormalize = \"rms\"\ntarget_db = -14\n");
   CHECK(rms == ImportSettings{.normalize = AudioNormalize::kRms, .target_db = -14});
-  CHECK_THROWS_AS(static_cast<void>(vnmaki::parse_import_settings("[build.audio]\nnormalize = \"loud\"\n")),
-                  vnmaki::ImportSettingsError);
-  CHECK_THROWS_AS(static_cast<void>(vnmaki::parse_import_settings("[build.audio]\ntarget_db = 3\n")),
-                  vnmaki::ImportSettingsError);
+  CHECK_THROWS_AS(
+      static_cast<void>(vnmaki::parse_import_settings("[build.audio]\nnormalize = \"loud\"\n")),
+      vnmaki::ImportSettingsError);
+  CHECK_THROWS_AS(
+      static_cast<void>(vnmaki::parse_import_settings("[build.audio]\ntarget_db = 3\n")),
+      vnmaki::ImportSettingsError);
 }
 
 TEST_CASE("font import: a subset keeps the glyphs of the characters only") {
-  const std::vector<std::byte> font = read_bytes(fs::path{VNMAKI_TEMPLATES_DIR} / "default" /
-                                                 "fonts" / "default.ttf");
+  const std::vector<std::byte> font =
+      read_bytes(fs::path{VNMAKI_TEMPLATES_DIR} / "default" / "fonts" / "default.ttf");
   const vnmaki::FontSubset ascii = vnmaki::subset_font(font, vnmaki::ascii_codepoints());
   const vnmaki::FontSubset three = vnmaki::subset_font(font, {U'A', U'B', U'C'});
   const vnmaki::FontSubset four = vnmaki::subset_font(font, {U'A', U'B', U'C', U'D'});
@@ -234,7 +242,8 @@ TEST_CASE("font import: data that is not a font is an error") {
 TEST_CASE("font import: a language needs ASCII, the script strings and its translations") {
   vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
       {{"project.toml", "title = \"T\"\nlanguages = [\"en\", \"ja\"]\n"},
-       {"scripts/main.lua", "label(\"start\", function() say(nil, \"caf\\u{E9} \xE2\x82\xAC\") end)\n"},
+       {"scripts/main.lua",
+        "label(\"start\", function() say(nil, \"caf\\u{E9} \xE2\x82\xAC\") end)\n"},
        {"translations/ja.po",
         "msgid \"\"\nmsgstr \"\"\n\nmsgctxt \"a\"\nmsgid \"x\"\nmsgstr \"\xE3\x81\x82\"\n"}});
   const vnmaki::ProjectConfig config = vnmaki::load_project_config(vfs);
@@ -248,7 +257,7 @@ TEST_CASE("font import: a language needs ASCII, the script strings and its trans
   CHECK(english.contains(U'€'));  // a letter written in the script
   CHECK_FALSE(english.contains(U'あ'));
   CHECK(japanese.contains(U'あ'));  // from translations/ja.po
-  CHECK(japanese.contains(U'é'));  // a missing translation shows the source text
+  CHECK(japanese.contains(U'é'));   // a missing translation shows the source text
   CHECK(vnmaki::codepoints_text(english) != vnmaki::codepoints_text(japanese));
 }
 
@@ -292,7 +301,8 @@ TEST_CASE("precompiled shader: the file form round-trips and bad data is an erro
   CHECK(back.samplers == 3);
   CHECK(back.uniform_buffers == 1);
 
-  CHECK_THROWS_AS(static_cast<void>(vnmaki::read_precompiled_shader({})), vnmaki::ShaderCompileError);
+  CHECK_THROWS_AS(static_cast<void>(vnmaki::read_precompiled_shader({})),
+                  vnmaki::ShaderCompileError);
   std::vector<std::byte> wrong = bytes;
   wrong[0] = std::byte{'X'};
   CHECK_THROWS_AS(static_cast<void>(vnmaki::read_precompiled_shader(wrong)),
@@ -320,13 +330,13 @@ TEST_CASE("precompiled shader: a game loads it when the source is not there") {
   shader.samplers = 1;
   shader.uniform_buffers = 1;
   const std::string file = string_of(vnmaki::write_precompiled_shader(shader));
-  vnmaki::Vfs vfs = vnmaki::test::memory_vfs({{"shaders/tint.frag.vnshader", file},
-                                              {"shaders/bad.frag.vnshader", "not a shader"}});
+  vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
+      {{"shaders/tint.frag.vnshader", file}, {"shaders/bad.frag.vnshader", "not a shader"}});
   vnmaki::Scene scene{vfs, vnmaki::Size{.width = 64, .height = 48}};
   const std::array<std::string, 1> uniforms{"amount"};
   CHECK(scene.declare_shader("tint", uniforms).empty());
-  CHECK(scene.declare_shader("bad", {}).find("shaders/bad.frag.vnshader is not a precompiled shader") !=
-        std::string::npos);
+  CHECK(scene.declare_shader("bad", {}).find(
+            "shaders/bad.frag.vnshader is not a precompiled shader") != std::string::npos);
   CHECK(scene.declare_shader("absent", {}).find("not found") != std::string::npos);
 }
 
@@ -432,4 +442,22 @@ TEST_CASE("importer: a shader is precompiled, and the result loads without the s
   vnmaki::Scene scene{game, vnmaki::Size{.width = 64, .height = 48}};
   const std::array<std::string, 1> uniforms{"amount"};
   CHECK(scene.declare_shader("tint", uniforms).empty());
+}
+
+TEST_CASE("precompiled shader: the build's own writer (vnshader_pack.py) makes a file that loads") {
+  const fs::path file = fs::path{VNMAKI_PRECOMPILED_DIR} / "shaders" / "sepia.frag.vnshader";
+  if (!fs::exists(file)) {
+    MESSAGE("only a build without a shader compiler makes this file");
+    return;
+  }
+  constexpr std::uint8_t kSpirvMagicLowByte = 0x03;  // 0x07230203, little-endian
+  const vnmaki::CompiledShader shader = vnmaki::read_precompiled_shader(read_bytes(file));
+  REQUIRE(shader.spirv.size() > 4);
+  CHECK(shader.spirv.front() == kSpirvMagicLowByte);
+  CHECK(shader.samplers == vnmaki::kMaxShaderTextures);
+  CHECK(shader.uniform_buffers == 1);
+  CHECK_FALSE(shader.msl.empty());
+#ifndef __APPLE__
+  CHECK_FALSE(shader.dxil.empty());
+#endif
 }

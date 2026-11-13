@@ -33,7 +33,8 @@ cgltf_result read_from_vfs(const cgltf_memory_options* /*memory*/,
     return cgltf_result_data_too_short;
   }
   // cgltf frees it with `release` below.
-  void* copy = std::malloc(bytes->empty() ? 1 : bytes->size());  // NOLINT(cppcoreguidelines-no-malloc)
+  void* copy =
+      std::malloc(bytes->empty() ? 1 : bytes->size());  // NOLINT(cppcoreguidelines-no-malloc)
   if (copy == nullptr) {
     return cgltf_result_out_of_memory;
   }

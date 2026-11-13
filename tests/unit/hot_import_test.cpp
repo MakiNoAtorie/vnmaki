@@ -1,5 +1,6 @@
 // Dev-mode import (engine/tools/hot_import.hpp): a batch of the file watcher goes through the
-// importers. The project is the one of tools/generators/import_fixtures.py, copied to a temp folder.
+// importers. The project is the one of tools/generators/import_fixtures.py, copied to a temp
+// folder.
 
 #include "engine/tools/hot_import.hpp"
 
@@ -68,7 +69,8 @@ TEST_CASE("hot import: a failed import is an error in the log") {
   import.apply(batch);
   REQUIRE(log.entries().size() == 2);
   CHECK(log.entries().front().level == vnmaki::LogLevel::kError);
-  CHECK(log.entries().front().text == "import: models/missing.gltf: buffer 0 'nothing.bin' not found");
+  CHECK(log.entries().front().text ==
+        "import: models/missing.gltf: buffer 0 'nothing.bin' not found");
 
   std::error_code ignored;
   fs::remove_all(project, ignored);

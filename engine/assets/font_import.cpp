@@ -32,7 +32,8 @@ using Buffer = std::unique_ptr<hb_buffer_t, HbDeleter<hb_buffer_t, hb_buffer_des
 using SubsetInput =
     std::unique_ptr<hb_subset_input_t, HbDeleter<hb_subset_input_t, hb_subset_input_destroy>>;
 
-// The codepoints of UTF-8 text (HarfBuzz decodes it; a bad byte gives U+FFFD). Controls are skipped.
+// The codepoints of UTF-8 text (HarfBuzz decodes it; a bad byte gives U+FFFD). Controls are
+// skipped.
 void add_utf8(std::set<char32_t>& codepoints, std::string_view text) {
   const Buffer buffer{hb_buffer_create()};
   hb_buffer_add_utf8(buffer.get(), text.data(), static_cast<int>(text.size()), 0,

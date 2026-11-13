@@ -483,9 +483,8 @@ std::optional<Scene::Slot> Scene::locate(std::string_view tag) const {
 }
 
 Timeline::Lookup Scene::lookup() {
-  return [this](std::string_view tag) {
-    return properties_in(layers_, layer_state_, camera_, tag);
-  };
+  return
+      [this](std::string_view tag) { return properties_in(layers_, layer_state_, camera_, tag); };
 }
 
 DisplayProperties* Scene::properties_in(Layers& layers, LayerState& layer_state,
@@ -860,8 +859,8 @@ std::string Scene::reload_image(const std::string& path, JobSystem& jobs) {
   return {};
 }
 
-std::string Scene::declare_shader_impl(std::string_view name,
-                                       std::span<const std::string> uniforms, bool force) {
+std::string Scene::declare_shader_impl(std::string_view name, std::span<const std::string> uniforms,
+                                       bool force) {
   const std::string label = quoted("shader '", name, "'");
   if (uniforms.size() > kMaxUniforms) {
     return label + " declares more than " + std::to_string(kMaxUniforms) + " uniforms";
@@ -1579,9 +1578,9 @@ void Scene::update(double seconds) {
         }
       }
       if (auto* sprite = dynamic_cast<LayeredSprite*>(entry.displayable.get())) {
-        sprite->set_voice_level(voice_level_ != nullptr ? voice_level_->voice_level(
-                                                              sprite->lip_voice_tag())
-                                                        : std::nullopt);
+        sprite->set_voice_level(voice_level_ != nullptr
+                                    ? voice_level_->voice_level(sprite->lip_voice_tag())
+                                    : std::nullopt);
       }
     }
   }
