@@ -12,6 +12,7 @@
 #include <system_error>
 #include <vector>
 
+#include "cli/story_window.hpp"
 #include "engine/audio/audio.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/runtime/headless_runner.hpp"
@@ -31,6 +32,7 @@ struct RunArguments {
   std::filesystem::path project_dir = ".";
   bool headless = false;
   std::size_t max_steps = kDefaultMaxSteps;
+  std::optional<std::size_t> max_frames;
 };
 
 std::optional<std::size_t> parse_positive(std::string_view text) {
@@ -60,6 +62,13 @@ std::optional<RunArguments> parse_arguments(std::span<const std::string_view> ar
       }
       parsed.max_steps = *steps;
       ++i;
+    } else if (arg == "--frames") {
+      parsed.max_frames = i + 1 < args.size() ? parse_positive(args[i + 1]) : std::nullopt;
+      if (!parsed.max_frames) {
+        err << "vnmaki run: --frames needs a positive whole number\n";
+        return std::nullopt;
+      }
+      ++i;
     } else if (arg.starts_with("-") || have_project_dir) {
       err << "vnmaki run: unexpected argument '" << arg << "'\n";
       return std::nullopt;
@@ -68,8 +77,8 @@ std::optional<RunArguments> parse_arguments(std::span<const std::string_view> ar
       have_project_dir = true;
     }
   }
-  if (!parsed.headless) {
-    err << "vnmaki run: only --headless is available so far\n";
+  if (parsed.headless && parsed.max_frames) {
+    err << "vnmaki run: --frames needs a window, so it cannot go with --headless\n";
     return std::nullopt;
   }
   return parsed;
@@ -89,17 +98,21 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
     err << "vnmaki: " << arguments->project_dir << " is not a directory\n";
     return kExitError;
   }
-  Size resolution;
+  ProjectConfig config;
   try {
-    const Resolution configured = load_project_config(vfs).resolution;
-    resolution = Size{.width = configured.width, .height = configured.height};
+    config = load_project_config(vfs);
   } catch (const ProjectConfigError& error) {
     err << "vnmaki: " << error.what() << '\n';
     return kExitError;
   }
 
+  if (!arguments->headless) {
+    return run_story_window(vfs, config, arguments->max_frames, err);
+  }
+
   // Nothing is drawn or heard, but the scene and the audio still check every file a script
   // names. The audio has no device: no time passes in a headless run.
+  const Size resolution{.width = config.resolution.width, .height = config.resolution.height};
   Scene scene{vfs, resolution};
   Audio audio{vfs};
   CompositeSceneState state{{&scene, &audio}};

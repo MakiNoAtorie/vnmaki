@@ -3,6 +3,8 @@
 # (e.g. a mutex destroyed while another driver thread unlocks it) that are not the engine's.
 # Only reports whose stacks run through the driver library are suppressed.
 race:libvulkan_lvp.so
+# lavapipe compiles shaders with LLVM on those threads.
+race:libLLVM
 mutex:libvulkan_lvp.so
 # SDL's Vulkan backend takes two of its own mutexes in both orders while releasing a window's
 # swapchain (VULKAN_INTERNAL_DestroyTexture / FramebufferHashDestroy); the renderer calls SDL from
