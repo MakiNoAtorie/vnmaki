@@ -49,6 +49,13 @@ class DialoguePresenter {
   DialoguePresenter(ScriptRuntime& runtime, GlyphCounter counter,
                     double characters_per_second = kDefaultCharactersPerSecond, Reveal reveal = {});
 
+  /// Changes the typewriter speed from now on (the player's text speed preference).
+  void set_characters_per_second(double characters_per_second) {
+    characters_per_second_ = characters_per_second;
+  }
+
+  [[nodiscard]] double characters_per_second() const { return characters_per_second_; }
+
   /// The line being shown; empty when the story waits at something else or has ended.
   [[nodiscard]] const std::optional<DialogueLine>& line() const { return line_; }
   /// How many glyphs of line() show now; 0 without a line.

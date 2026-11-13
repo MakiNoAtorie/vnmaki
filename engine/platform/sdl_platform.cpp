@@ -87,6 +87,14 @@ void SdlPlatform::set_text_input(bool enabled) {
   }
 }
 
+void SdlPlatform::set_fullscreen(bool fullscreen) {
+  SDL_SetWindowFullscreen(window_.get(), fullscreen);
+}
+
+void SdlPlatform::set_window_opacity(float opacity) {
+  SDL_SetWindowOpacity(window_.get(), opacity);
+}
+
 std::filesystem::path user_data_directory(std::string_view organization,
                                           std::string_view application) {
   const std::string org{organization};
