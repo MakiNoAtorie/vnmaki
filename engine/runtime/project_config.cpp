@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <toml++/toml.hpp>
@@ -120,6 +121,34 @@ FontFallbacks read_font_fallbacks(const toml::node& fonts,
   return chains;
 }
 
+// Reads `[text_direction]` or `[styles]`: a table with one string for each language. `parse` turns
+// the string into the value, or returns false.
+template <typename T, typename Parse>
+std::map<std::string, T> read_language_table(const toml::node& node, std::string_view name,
+                                             const std::vector<std::string>& languages,
+                                             std::string_view expected, Parse parse) {
+  const toml::table* table = node.as_table();
+  if (table == nullptr) {
+    fail_at(node, "'" + std::string{name} + "' must be a table with a value for each language");
+  }
+  std::map<std::string, T> result;
+  for (auto&& [key, value] : *table) {
+    const std::string language{key.str()};
+    if (std::ranges::find(languages, language) == languages.end()) {
+      fail_at(value, "'" + std::string{name} + "' has language '" + language +
+                         "', which 'languages' does not list");
+    }
+    const std::optional<std::string> text = value.value_exact<std::string>();
+    T parsed{};
+    if (!text || !parse(*text, parsed)) {
+      fail_at(value,
+              "'" + std::string{name} + "." + language + "' must be " + std::string{expected});
+    }
+    result[language] = std::move(parsed);
+  }
+  return result;
+}
+
 std::vector<AutoSaveEvent> read_auto_save(const toml::node& node) {
   constexpr std::string_view kReason = R"('auto_save' must be a list of "label" and "menu")";
   const toml::array* array = node.as_array();
@@ -211,6 +240,22 @@ ProjectConfig parse_project_config(std::string_view toml_text) {
   }
   if (const toml::node* fonts = table.get("fonts")) {
     config.font_fallbacks = read_font_fallbacks(*fonts, config.languages);
+  }
+  if (const toml::node* directions = table.get("text_direction")) {
+    config.text_directions = read_language_table<TextDirection>(
+        *directions, "text_direction", config.languages, R"("ltr" or "rtl")",
+        [](const std::string& text, TextDirection& direction) {
+          direction = text == "rtl" ? TextDirection::kRtl : TextDirection::kLtr;
+          return text == "rtl" || text == "ltr";
+        });
+  }
+  if (const toml::node* styles = table.get("styles")) {
+    config.language_styles =
+        read_language_table<std::string>(*styles, "styles", config.languages, "a file path",
+                                         [](const std::string& text, std::string& path) {
+                                           path = text;
+                                           return !text.empty();
+                                         });
   }
   if (const toml::node* auto_save = table.get("auto_save")) {
     config.auto_save = read_auto_save(*auto_save);
