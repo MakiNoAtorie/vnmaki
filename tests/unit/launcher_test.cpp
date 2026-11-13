@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -16,6 +17,8 @@
 #include <doctest/doctest.h>
 
 #include "engine/platform/shell.hpp"
+#include "engine/render/shader_compiler.hpp"
+#include "engine/vfs/pak_mount.hpp"
 #include "tests/support/temp_dir.hpp"
 
 namespace {
@@ -183,6 +186,51 @@ TEST_CASE("launcher: New, Check, Extract strings and Build windows on a temporar
     CHECK_FALSE(no_runner.log().empty());
     CHECK(no_runner.recent().list().empty());
   }
+}
+
+TEST_CASE("launcher: New, Check and Build windows on one temporary folder") {
+  const TempDir temp{"demo"};
+  FakeHost fake;
+  const fs::path runner = temp.path() / "runner.exe";
+  write_file(runner, "not a program; the build only copies it");
+  Launcher launcher{RecentProjects{temp.path() / "data" / "recent.txt"}, fake.host(runner)};
+  const fs::path game = temp.path() / "game";
+
+  // New makes the template, with its quick menu and its Japanese sample.
+  REQUIRE(launcher.run(LauncherAction::kNew, game.string()) == 0);
+  CHECK(fs::is_regular_file(game / "scripts" / "ui.lua"));
+  CHECK(fs::is_regular_file(game / "translations" / "ja.po"));
+
+  // Check finds nothing in the template: the log has the command and the CSV header only.
+  launcher.clear_log();
+  CHECK(launcher.run(LauncherAction::kCheck, game.string()) == 0);
+  const std::string command = "> vnmaki check \"" + game.string() + "\"";
+  CHECK(launcher.log() == command + "\nfile,line,severity,code,message\n");
+
+  // Build windows packs the folder. A build with no shader compiler cannot import the sepia
+  // shader, so it gets the precompiled file in its place (as tests/cli/run_build.cmake does).
+  if (!vnmaki::shader_compiler_available()) {
+    const fs::path shaders = game / "shaders";
+    fs::copy_file(fs::path{VNMAKI_PRECOMPILED_DIR} / "shaders" / "sepia.frag.vnshader",
+                  shaders / "sepia.frag.vnshader");
+    fs::remove(shaders / "sepia.frag.hlsl");
+  }
+  launcher.clear_log();
+  REQUIRE(launcher.run(LauncherAction::kBuildWindows, game.string()) == 0);
+  CHECK(contains(launcher.log(), "packed"));
+  const fs::path out = game / ".vnmaki" / "windows";
+  CHECK(fs::is_regular_file(out / "game.exe"));
+  CHECK(fs::is_regular_file(out / "game.vnpak"));
+  const std::unique_ptr<vnmaki::PakMount> pak = vnmaki::PakMount::open(out / "game.vnpak");
+  REQUIRE(pak != nullptr);
+  for (const char* path : {"project.toml", "scripts/main.lua", "scripts/ui.lua",
+                           "translations/ja.po", "images/bg/classroom.png"}) {
+    CHECK_MESSAGE(pak->is_file(path), path);
+  }
+  CHECK_FALSE(pak->is_file(".vnmaki/cache"));  // the build folder is not packed into itself
+  // The folder is in the recent list once, newest first.
+  REQUIRE(launcher.recent().list().size() == 1);
+  CHECK(launcher.recent().list().front() == game);
 }
 
 TEST_CASE("launcher: Run starts `vnmaki run <folder>` as a process; Open folder opens a folder") {
