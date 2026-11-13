@@ -334,3 +334,8 @@ vnmaki_add_fixture_generator(
   DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
+
+# The Phase 5 demo (ticket 49): the label content of the template, built with `build windows` and
+# played from the packs in both languages with self-voicing on a recording backend. The GPU goldens
+# are tests/render/content_render_test.cpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/content_demo_test.cpp)
