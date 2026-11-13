@@ -255,11 +255,11 @@ Files: new `engine/scene/frame_animation.*`, `engine/scene/scene.cpp`, runtime, 
 
 This task is the Phase 3 acceptance demo.
 
-- [ ] Add a `presentation` label to `templates/default/`. It has a dissolve, a layered sprite with a crossfaded face change, a blink, a camera pan and shake, a sepia layer shader, a lip-synced voice line and a short movie.
-- [ ] Generator scripts make all assets, except the movie (see task 25).
-- [ ] End-to-end headless test on Windows: `new`, play `presentation`, save during a tween, load, and roll back over a transition.
-- [ ] GPU goldens of the demo at three fixed frames.
-- [ ] Write a script reference for the presentation API in `docs/`.
+- [x] Add a `presentation` label to `templates/default/`. It has a dissolve, a layered sprite with a crossfaded face change, a blink, a camera pan and shake, a sepia layer shader, a lip-synced voice line and a short movie.
+- [x] Generator scripts make all assets, except the movie (see task 25).
+- [x] End-to-end headless test on Windows: `new`, play `presentation`, save during a tween, load, and roll back over a transition.
+- [x] GPU goldens of the demo at three fixed frames.
+- [x] Write a script reference for the presentation API in `docs/`.
 
 ### Deferred
 
