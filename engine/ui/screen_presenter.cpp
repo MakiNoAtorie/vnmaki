@@ -49,8 +49,10 @@ void ScreenPresenter::sync() {
   const auto* menu = request != nullptr ? std::get_if<MenuRequest>(request) : nullptr;
   const auto* call = request != nullptr ? std::get_if<CallScreenRequest>(request) : nullptr;
   const ScriptPosition position = runtime_->position();
-  if (shown_ && ((menu == nullptr && call == nullptr) || shown_->second != position)) {
-    host_->hide(shown_->first);
+  // A replay to the same position (a quick-load) can bring other options or another screen.
+  if (shown_ && ((menu == nullptr && call == nullptr) || shown_->position != position ||
+                 shown_->request != *request)) {
+    host_->hide(shown_->name);
     shown_.reset();
   }
   if (shown_) {
@@ -58,10 +60,10 @@ void ScreenPresenter::sync() {
   }
   if (menu != nullptr) {
     host_->show(std::string{kMenuScreenName}, menu_tree(*menu), true);
-    shown_ = {std::string{kMenuScreenName}, position};
+    shown_ = Shown{std::string{kMenuScreenName}, position, *request};
   } else if (call != nullptr) {
     host_->show(call->name, build_ui_tree(call->screen), true);
-    shown_ = {call->name, position};
+    shown_ = Shown{call->name, position, *request};
   }
 }
 
@@ -85,7 +87,7 @@ void ScreenPresenter::answer(const ScreenValue& value) {
 
 bool ScreenPresenter::handle_event(const InputEvent& event, const Viewport& viewport) {
   // The player may roll back from a menu or `call_screen`, but not from a screen over it.
-  if (shown_ && is_rollback_event(event) && host_->is_top_modal(shown_->first) &&
+  if (shown_ && is_rollback_event(event) && host_->is_top_modal(shown_->name) &&
       !host_->wants_text_input()) {
     return false;
   }
@@ -93,7 +95,7 @@ bool ScreenPresenter::handle_event(const InputEvent& event, const Viewport& view
   if (result.activation) {
     if (actions_ && actions_(*result.activation)) {
       sync();  // a load moved the story
-    } else if (shown_ && result.activation->screen == shown_->first) {
+    } else if (shown_ && result.activation->screen == shown_->name) {
       answer(result.activation->value);
     }
   }

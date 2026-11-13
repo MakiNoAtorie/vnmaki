@@ -534,3 +534,20 @@ end)
     CHECK(screens.handle_event(event, kViewport));
   }
 }
+
+TEST_CASE("menu: a replay to the same position with other options shows the new menu") {
+  Game game{R"(
+label("start", function()
+  persistent.n = (persistent.n or 0) + 1
+  menu { "opt" .. persistent.n }
+end)
+)"};
+  vnmaki::ScreenPresenter screens{game.runtime, game.host};
+  REQUIRE(game.host.find(vnmaki::kMenuScreenName)->children.at(0).label == "opt1");
+
+  constexpr std::uint32_t kMenuStep = 1;
+  const vnmaki::LabelSnapshot snapshot = *game.runtime.label_snapshot();
+  game.runtime.replay(snapshot, {}, kMenuStep);  // as a quick-load of the same label and step
+  screens.sync();
+  CHECK(game.host.find(vnmaki::kMenuScreenName)->children.at(0).label == "opt2");
+}
