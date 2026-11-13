@@ -192,6 +192,7 @@ screen("preferences", function()
     switch("fullscreen", "Fullscreen"),
     switch("skip_unseen", "Skip text not read yet"),
     switch("reduce_motion", "Reduce motion"),
+    switch("self_voicing", "Self-voicing (V key)"),
     button { "Back", returns = "@close", style = "back_button" },
   }
 end)

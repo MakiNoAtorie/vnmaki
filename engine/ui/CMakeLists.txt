@@ -12,6 +12,8 @@ target_sources(
           screen_actions.hpp
           screen_presenter.cpp
           screen_presenter.hpp
+          self_voicing.cpp
+          self_voicing.hpp
           ui_build.cpp
           ui_build.hpp
           ui_focus.cpp

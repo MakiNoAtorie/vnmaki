@@ -28,6 +28,7 @@
 #include "engine/platform/input.hpp"
 #include "engine/platform/main_loop.hpp"
 #include "engine/platform/sdl_platform.hpp"
+#include "engine/platform/tts.hpp"
 #include "engine/platform/viewport.hpp"
 #include "engine/render/image.hpp"
 #include "engine/render/renderer.hpp"
@@ -53,6 +54,7 @@
 #include "engine/ui/preferences.hpp"
 #include "engine/ui/screen_actions.hpp"
 #include "engine/ui/screen_presenter.hpp"
+#include "engine/ui/self_voicing.hpp"
 #include "engine/ui/ui_build.hpp"
 #include "engine/ui/ui_host.hpp"
 #include "engine/ui/ui_renderer.hpp"
@@ -236,11 +238,14 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     PlaybackIndicator indicator{ui};
     const Backlog backlog{runtime, audio.get(), config.backlog_length};
     BacklogScreen backlog_screen{ui, backlog, ui_renderer.text_measure()};
+    const std::unique_ptr<TtsBackend> tts = make_system_tts();  // the COM thread is this one
+    SelfVoicing self_voicing{*tts, runtime, presenter, playback, ui};
     PreferenceApplier preferences{runtime,
                                   {.presenter = &presenter,
                                    .playback = &playback,
                                    .audio = audio.get(),
-                                   .platform = &platform}};
+                                   .platform = &platform,
+                                   .self_voicing = &self_voicing}};
 
 #if VNMAKI_DEV_TOOLS
     dev_overlay.set_profiler(&profiler);
@@ -315,6 +320,9 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
         } else if (key->pressed && !key->repeat && key->key == Key::kS) {
           playback.toggle_skip(preferences.current().skip_unseen ? SkipMode::kAll
                                                                  : SkipMode::kSeen);
+        } else if (key->pressed && !key->repeat && key->key == Key::kV) {
+          static_cast<void>(runtime.set_binding("prefs", "self_voicing",
+                                                !preferences.current().self_voicing));
         }
       } else if (const auto* click = std::get_if<PointerButtonEvent>(&event)) {
         if (click->pressed && click->button == MouseButton::kLeft &&
@@ -358,6 +366,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       movies.update(seconds);
       waits.update(seconds);
       screens.sync();
+      self_voicing.update();
       indicator.sync(playback.skip(), playback.automatic());
       persistent.flush();
     };

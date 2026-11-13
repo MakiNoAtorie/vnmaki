@@ -228,3 +228,6 @@ endif()
 # Profiler: frame phases with a fake clock, the CSV text and the load timing (ticket 33). It needs
 # no ImGui, so it is in every build.
 target_sources(vnmaki_unit_tests PRIVATE unit/profiler_test.cpp)
+
+# Self-voicing: the strings spoken for scripted sessions, with a recording backend (ticket 43).
+target_sources(vnmaki_unit_tests PRIVATE unit/self_voicing_test.cpp)

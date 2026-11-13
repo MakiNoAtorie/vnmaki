@@ -754,8 +754,8 @@ struct EvalResult {
 /// lays children out in rows). `prefs` is `persistent.prefs` with defaults: text_speed (characters
 /// a second, 40), auto_delay (seconds, 1), volume_music, volume_sound, volume_voice,
 /// volume_ambient and volume_ui (0 to 1, 1), fullscreen (false), skip_unseen (false: the skip
-/// key stops at unread text), window_opacity (0.3 to 1, 1) and reduce_motion (false). The engine
-/// applies them.
+/// key stops at unread text), window_opacity (0.3 to 1, 1), reduce_motion (false) and
+/// self_voicing (false: speak the story and the focused control). The engine applies them.
 ///
 /// Pauses and NVL: `pause(seconds)` is a blocking step (a WaitRequest for kPauseTag). `nvl(true)`
 /// turns NVL mode on and `nvl(false)` off (and empties the page); `nvl_clear()` empties the page.

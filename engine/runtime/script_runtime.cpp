@@ -1516,12 +1516,12 @@ end
 -- Preferences, bindings and the bridge the engine calls (docs/SPEC.md sections 15 and 17).
 -- `prefs` keeps what the player changed in persistent.prefs; a value never set reads as its
 -- default. The engine reads these keys: text_speed (characters a second), auto_delay (seconds),
--- volume_<channel> (0 to 1), fullscreen, skip_unseen, window_opacity (0.3 to 1)
--- and reduce_motion.
+-- volume_<channel> (0 to 1), fullscreen, skip_unseen, window_opacity (0.3 to 1),
+-- reduce_motion and self_voicing.
 local pref_defaults = {
   text_speed = 40, auto_delay = 1, volume_music = 1, volume_sound = 1, volume_voice = 1,
   volume_ambient = 1, volume_ui = 1, fullscreen = false, skip_unseen = false, window_opacity = 1,
-  reduce_motion = false,
+  reduce_motion = false, self_voicing = false,
 }
 local prefs = setmetatable({}, {
   __index = function(_, key)

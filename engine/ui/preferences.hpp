@@ -16,6 +16,7 @@ class Audio;
 class DialoguePresenter;
 class Platform;
 class Playback;
+class SelfVoicing;
 
 /// The defaults are the ones of `prefs` in the prelude.
 struct Preferences {
@@ -34,6 +35,8 @@ struct Preferences {
   double window_opacity = 1;
   /// Read by the presentation code (camera moves, flashes) that reduce_motion switches off.
   bool reduce_motion = false;
+  /// Speak the story and the focused UI node (SelfVoicing).
+  bool self_voicing = false;
 
   bool operator==(const Preferences&) const = default;
 };
@@ -53,6 +56,7 @@ struct PreferenceTargets {
   Playback* playback = nullptr;
   Audio* audio = nullptr;
   Platform* platform = nullptr;
+  SelfVoicing* self_voicing = nullptr;
 };
 
 class PreferenceApplier {
