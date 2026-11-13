@@ -305,11 +305,11 @@ Files: new `engine/tools/overlay.*`, `engine/tools/imgui_backend.cpp`, `vcpkg.js
 
 Files: new `engine/tools/inspect_*.cpp`, `engine/tools/overlay.cpp`.
 
-- [ ] Panels: `store` and `persistent` as a tree, scene graph by layer, the properties of the selected displayable, active tweens, and audio channels (file, volume, position).
-- [ ] The panel data comes from functions without ImGui (`inspect_store()` returns rows). ImGui only draws the rows.
-- [ ] An edit of a displayable property applies at once. It is not in the snapshot. A note in the panel says this.
-- [ ] A label list with a "Jump" button. It goes to step 1 of that label through the replay code.
-- [ ] Unit tests for each row function with the task 19 template scene.
+- [x] Panels: `store` and `persistent` as a tree, scene graph by layer, the properties of the selected displayable, active tweens, and audio channels (file, volume, position).
+- [x] The panel data comes from functions without ImGui (`inspect_store()` returns rows). ImGui only draws the rows.
+- [x] An edit of a displayable property applies at once. It is not in the snapshot. A note in the panel says this.
+- [x] A label list with a "Jump" button. It goes to step 1 of that label through the replay code.
+- [x] Unit tests for each row function with the task 19 template scene.
 
 ### 32: Hot reload (SPEC §18, §4)
 
