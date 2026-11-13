@@ -157,11 +157,11 @@ Files: new `engine/anim/`, `engine/scene/scene.*`, `engine/scene/displayable.*`,
 
 Files: new `engine/anim/transition.*`, `shaders/transition_*.hlsl`, `engine/scene/scene.cpp`, runtime.
 
-- [ ] `with = name` on `scene`, `show` and `hide`, and `transition(name, options)`. All changes in one step use one transition.
-- [ ] The scene draws the old frame and the new frame into two virtual-resolution targets. A transition shader mixes them. The UI and transient layers are not part of the transition.
-- [ ] Built-in transitions: dissolve, fade through a color, slide and wipe (left, right, up, down), and image mask (`mask = "masks/x"`, `softness`). A custom shader from task 24 can be used by name.
-- [ ] A transition blocks like `wait`, and a click ends it. Replay and skip mode do not show a transition. An unknown name gives an error at the script line.
-- [ ] GPU goldens for each built-in transition at progress 0, 0.5 and 1, with a fake clock.
+- [x] `with = name` on `scene`, `show` and `hide`, and `transition(name, options)`. All changes in one step use one transition.
+- [x] The scene draws the old frame and the new frame into two virtual-resolution targets. A transition shader mixes them. The UI and transient layers are not part of the transition.
+- [x] Built-in transitions: dissolve, fade through a color, slide and wipe (left, right, up, down), and image mask (`mask = "masks/x"`, `softness`). A custom shader from task 24 can be used by name.
+- [x] A transition blocks like `wait`, and a click ends it. Replay and skip mode do not show a transition. An unknown name gives an error at the script line.
+- [x] GPU goldens for each built-in transition at progress 0, 0.5 and 1, with a fake clock.
 
 ### 22: Layered sprites (SPEC §10, §7)
 

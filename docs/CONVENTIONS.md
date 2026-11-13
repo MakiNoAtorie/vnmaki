@@ -75,7 +75,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - If there is no device, it prints `VNMAKI_SKIP:` and ctest skips the test. `VNMAKI_REQUIRE_GPU=1` stops the skip. Linux CI sets it, because it has lavapipe.
   - Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png`.
   - `tools/generators/render_fixtures.py` makes the golden images with a reference rasterizer.
-  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`.
+  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`, `transition_fixtures.py`.
 
 ## Module contracts
 
@@ -122,11 +122,12 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Then draw that target to `kScreen` at `compute_viewport(virtual, window_metrics().pixels, mode).rect`.
 - Shaders are HLSL in `shaders/`. shadercross compiles them at build time through `vnmaki_add_shaders(...)`.
 - Custom fragment shaders include `vnmaki.hlsli`. They can have one constant buffer at `register(b0, space3)`.
+- A custom shader can read up to `kMaxShaderTextures` (3) textures. `DrawState::texture` is slot 0 (`sample_sprite`). `DrawState::more_textures` are slots 1 and 2 (`sample_texture1(uv)`, `sample_texture2(uv)`). An id of zero binds `texture` there. Every draw binds all three slots, because `vnmaki.hlsli` declares them all. So a shader reports 3 samplers.
 - Game shaders compile at run time, not at build time (`shader_compiler.hpp`).
   - `compile_fragment_shader(name, hlsl)` uses the SDL_shadercross library (`sdl3-shadercross` in `vcpkg.json` is a target dependency, not only a host tool). It returns a `CompiledShader` that owns SPIR-V, MSL and DXIL. `bytecode()` is the view for `IRenderer::create_shader`.
   - `#include "vnmaki.hlsli"` finds the engine header. The build embeds `shaders/*.hlsli` as text (`shader_headers.cpp.in`), so a game needs no engine shader files.
   - A compile error throws `ShaderCompileError`. The message has the file, the line, the column and the compiler message. Example: `shaders/sepia.frag.hlsl:5:18: error: use of undeclared identifier 'x'`.
-  - A shader may use one texture and one constant buffer at `register(b0, space3)`. Storage textures and buffers are errors.
+  - A shader may use up to three textures and one constant buffer at `register(b0, space3)`. Storage textures and buffers are errors.
   - `shader_compiler_available()` is false on macOS, where vcpkg has no `sdl3-shadercross`. Tests that compile shaders return early then.
   - The compiler is only in `engine/render/sdl_shader_compiler.cpp`, because it includes SDL headers.
 - `load_image(vfs, jobs, path)` loads an image and returns `JobHandle<Image>`.
@@ -170,6 +171,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - A layer with a shader (and displayables) draws into its own render target of the virtual size, and then that target draws with the shader. The layer properties are in `layer_properties(layer)`.
   - The tag `@layer.<name>` is for the uniforms of a layer in `tween`. A `show` tag cannot start with `@layer.`.
   - The snapshot part `shaders` keeps the shader name (not the number) and the 16 uniform values of each displayable and layer. The part is left out when no shader is set. `restore()` ignores a shader that is not declared.
+- Transitions (`SceneCommands::transition`, see Anim):
+  - `transition(request)` checks the request and the shader or the mask image, and starts a transition. A replay (`TransitionRequest::replaying`) checks it and does not start it. A duration of 0 does not start it.
+  - The layers from `background` to `overlay` are mixed. The `ui` and `transient` layers draw over the result.
+  - The old frame is `frames_[0]`, a render target of the virtual size. The first change after `draw()` (`scene`, `show`, `hide` or `transition`) draws the scene as it is then into it, in a frame of its own (`capture_old_frame`). It uses the renderer that `prepare()` saw: the renderer must outlive the changes, and the changes must not be between `begin_frame` and `end_frame`. If nothing was drawn yet (a transition at the start of the story), the old frame is empty. `restore()` also means that nothing was drawn.
+  - While a transition runs, `draw()` draws the layers into `frames_[1]` (live, so tweens go on). Then it draws one quad over the virtual screen with the transition shader into the pass of `target`, and the `ui` and `transient` layers after it. Texture slot 0 is the old frame, slot 1 the new frame and slot 2 the mask image (the new frame if there is none).
+  - Without a transition `draw()` is as before: the layers draw into the pass of the caller, with no extra pass or quad.
+  - `update(seconds)` moves the clock. `tweening(kTransitionTag)` is true until the duration has passed. The transition is drawn one more time at progress 1 and ends at the next `update()`. `finish_tweens(kTransitionTag)` and `restore()` end it at once. It is not in the snapshot.
 - `SceneCommands` calls return an error string. The prelude raises it at the script line.
 - `SceneCommands` calls also run during replay.
 - `SceneCommands` has `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
@@ -206,6 +214,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - A wait is always one step, also when nothing is tweening, so replay counts the same steps as live play. `WaitPresenter` (`wait_presenter.hpp`) ends it:
   - Call `update()` once per update after `Scene::update`. It ends a wait whose tweens have ended.
   - Call `skip()` on a click or in skip mode, before `DialoguePresenter::advance()`. It puts the tweens at their end values and goes on. If it returns true, the input is used.
+- Transitions (`transition.hpp`, `shaders/transition_*.frag.hlsl`):
+  - Names: `dissolve`, `fade`, `slide_left`, `slide_right`, `slide_up`, `slide_down`, `wipe_left`, `wipe_right`, `wipe_up`, `wipe_down` and `mask`. The direction is the way the content (slide) or the edge (wipe) moves.
+  - Options: `duration` (seconds, 0.5 if none), `color` (`fade`: "#rrggbb", black if none), `softness` (`wipe_*` and `mask`: 0 to 1), `mask` (`mask`: an image name; the new image shows first where the mask is dark), `uniforms` (a custom shader). An option that the transition does not use is an error. `make_transition_spec` checks all this without a GPU.
+  - Any other name is a game shader (task 24) that includes `transition.hlsli` and declares the uniform `progress`. The engine sets `progress` each frame. `from_at(uv)`, `to_at(uv)` and `mask_at(uv)` read the three textures. The other uniforms come from `uniforms = { name = number }`. A shader that is not declared, or has no `progress`, is an error at the script line.
+  - `Transition` is the clock. It has no real clock: the caller gives the seconds to `advance()`. Progress is linear.
+  - Script API: `transition(name, options)` and the `with` option of `scene(image, options)`, `show(tag, options)` and `hide(tag, options)`. `with` is a name, or `{ name, option = value, ... }`. `with` starts the transition before the change, so a bad name changes nothing. All the changes of one step (since the last blocking call) use the one transition that the step ends with. A layered sprite cannot have a group named `with`.
+  - A transition blocks like `wait`: it is a `WaitRequest` with the tag `kTransitionTag` (`"@transition"`). It is a step also when nothing is shown, so replay counts the same steps. `WaitPresenter::skip()` (a click, skip mode) ends it. `ScriptPosition::wait` marks it, so rollback goes back over it. In a replay the transition is checked and not shown. In skip mode the first tick of a transition can be drawn.
 - `ScriptPosition::wait` marks a wait step. Rollback goes back over wait steps to the previous say, narrate, menu or `call_screen` (a wait is never a rollback step).
 
 ### Dialogue (`engine/dialogue/`)
@@ -295,7 +310,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `check_screen` runs on every tree first. Its error string is raised at the script line.
   - The runtime includes no ui headers. It reads the Lua node tables into `ScreenNodeDef`.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
-- `wait(tag)` and `wait_all()` are blocking calls too (`WaitRequest`). `advance()` ends them. See Anim.
+- `wait(tag)`, `wait_all()` and transitions (`transition(...)`, the `with` option) are blocking calls too (`WaitRequest`; a transition has the tag `@transition`). `advance()` ends them. See Anim.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it. It ends a wait at once and needs no input for it.
 - `project.toml` has `title` (required), `version`, `resolution`, `languages`, `auto_save` (a list of `"label"` and `"menu"`) and `rollback_depth` (0 to 10000, default 100).
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
