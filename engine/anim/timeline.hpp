@@ -87,6 +87,17 @@ struct TweenNode {
 /// A tween starts after its delay. It reads the property it changes at that moment, so a
 /// sequence of tweens on one property continues from where the last one ended. A looping group
 /// reads each property once and goes back to that value in every repeat.
+/// One running tween of a displayable, for the dev inspectors.
+struct TweenInfo {
+  std::string tag{};
+  std::vector<std::size_t> channels{};  ///< The slots (slot(), uniform_slot()) it changes.
+  double elapsed = 0;                   ///< Seconds since it began; 0 while it waits for its delay.
+  double duration = 0;                  ///< Seconds of one cycle.
+  bool loop = false;
+  bool yoyo = false;
+  Ease ease = Ease::kLinear;
+};
+
 class Timeline {
  public:
   using Lookup = std::function<DisplayProperties*(std::string_view tag)>;
@@ -116,6 +127,9 @@ class Timeline {
 
   /// Every tag a running tween changes.
   [[nodiscard]] std::vector<std::string> tags() const;
+
+  /// The tweens that have not ended, one for each displayable of each group.
+  [[nodiscard]] std::vector<TweenInfo> active() const;
 
   /// Puts the properties in the state a snapshot keeps: every tween that ends is at its end
   /// value, and every property a loop changes is where it was when the loop started.
