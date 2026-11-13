@@ -18,8 +18,9 @@ The new game has these files:
 | File | Content |
 |------|---------|
 | `project.toml` | Title, version, resolution (1280 by 720), languages, auto save. |
-| `scripts/main.lua` | A short story: a classroom, Eileen, and a menu that leads to the labels `warm` and `cold`. |
-| `images/`, `audio/`, `fonts/default.ttf` | Placeholder art, a music loop and a pixel font. |
+| `scripts/main.lua` | A short story: a classroom, Eileen, and a menu that leads to the labels `warm`, `cold` and `presentation`. |
+| `scripts/presentation.lua` | The presentation demo (third menu option): dissolve, layered sprite, blink, camera, shake, sepia shader, lip sync, movie. See `docs/script-reference.md`. |
+| `images/`, `audio/`, `shaders/`, `movies/`, `fonts/default.ttf` | Placeholder art, a music loop, a voice line, a shader, a short movie and a pixel font. |
 | `ASSETS.txt` | The license of the assets (CC0). They come from `tools/generators/template_assets.py`. |
 
 The font has only ASCII characters. Replace the assets with your own.
