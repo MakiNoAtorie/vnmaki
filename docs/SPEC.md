@@ -279,7 +279,7 @@ screen "quick_menu" {
   - `vnmaki extract-strings` — localization export
   - `vnmaki check` — lint scripts, missing assets, unreachable labels
 - `project.toml`: title, version, resolution, languages, platforms, plugins, build options.
-- A launcher GUI comes later.
+- `vnmaki launcher` (or `vnmaki` with no arguments, in a dev build) — a window with recent projects and buttons for New, Run, Check, Extract strings, Build windows and Open folder.
 
 ## 20. Plugin API
 

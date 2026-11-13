@@ -6,7 +6,7 @@
 function(vnmaki_isolate_run_data name args_var define_var)
   set(args ${${args_var}})
   set(define "")
-  if(args MATCHES "^(run|debug)(;|$)")
+  if(args MATCHES "^(run|debug|launcher)(;|$)")
     set(directory "${CMAKE_CURRENT_BINARY_DIR}/data/${name}")
     list(APPEND args --data-dir "${directory}")
     set(define "-DDATA_DIR=${directory}")
@@ -49,11 +49,21 @@ vnmaki_add_cli_test(
   NO_STDOUT
   STDERR_REGEX "unknown option '--frobnicate'.*usage: vnmaki")
 
-vnmaki_add_cli_test(
-  no_arguments_prints_usage
-  EXIT 2
-  NO_STDOUT
-  STDERR_REGEX "^usage: vnmaki")
+# With no arguments a dev build opens the launcher (cli.launcher_*); a release build prints the
+# usage.
+if(NOT VNMAKI_DEV_TOOLS)
+  vnmaki_add_cli_test(
+    no_arguments_prints_usage
+    EXIT 2
+    NO_STDOUT
+    STDERR_REGEX "^usage: vnmaki")
+  vnmaki_add_cli_test(
+    launcher_needs_the_dev_tools
+    ARGS launcher
+    EXIT 1
+    NO_STDOUT
+    STDERR_REGEX "vnmaki launcher: this build has no launcher")
+endif()
 
 # vnmaki window (ticket 04): opens an empty window and runs the main loop.
 vnmaki_add_cli_test(
@@ -733,3 +743,36 @@ vnmaki_add_cli_test(
   NO_STDOUT
   STDERR_REGEX "no runner at .*no_such_runner.exe")
 
+
+# vnmaki launcher (task 51): the window opens on the GPU, runs a few frames and ends. --data-dir
+# keeps the recent-project file out of the user's data. The actions are in the unit tests.
+vnmaki_add_cli_test(
+  launcher_rejects_an_unknown_option
+  ARGS launcher --frobnicate
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki launcher: unexpected argument '--frobnicate'.*usage: vnmaki launcher")
+vnmaki_add_cli_test(
+  launcher_frames_must_be_a_number
+  ARGS launcher --frames many
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki launcher: --frames needs a whole number, not 'many'")
+set_tests_properties(cli.launcher_rejects_an_unknown_option cli.launcher_frames_must_be_a_number
+                     PROPERTIES TIMEOUT 60)
+if(VNMAKI_DEV_TOOLS)
+  vnmaki_add_cli_test(
+    launcher_opens_and_runs_some_frames
+    ARGS launcher --frames 3
+    EXIT 0
+    NO_STDOUT)
+  set_tests_properties(cli.launcher_opens_and_runs_some_frames PROPERTIES TIMEOUT 60)
+  if(vnmaki_gpu_cli_env)
+    set_tests_properties(cli.launcher_opens_and_runs_some_frames
+                         PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
+  endif()
+  if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+    set_tests_properties(cli.launcher_opens_and_runs_some_frames
+                         PROPERTIES SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
+  endif()
+endif()
