@@ -56,6 +56,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 ## Tests
 
 - Tests use doctest. Each doctest executable needs `DOCTEST_CONFIG_USE_STD_HEADERS`.
+- Every `main` calls `vnmaki::disable_crt_dialogs()` (`engine/core/no_crt_dialogs.hpp`) first. MSVC debug builds otherwise open a modal dialog on `abort()` or an assert, which blocks the run on the desktop. This also applies to throwaway programs. Run them with a timeout.
 - Unit tests are in `tests/unit/*_test.cpp`. They run in `vnmaki_unit_tests`. The ctest name of each test is `unit.<name>`.
 - Platform tests are in `tests/platform/` and have their own executable. On Linux, they use `SDL_VIDEO_DRIVER=offscreen`.
 - CLI tests use `vnmaki_add_cli_test(name ARGS ... EXIT n [STDOUT_LINE t | NO_STDOUT] [STDERR_REGEX r] [EXPECTED_FILES f...])`.

@@ -6,6 +6,7 @@
 
 #include "cli/run_command.hpp"
 #include "cli/window_command.hpp"
+#include "engine/core/no_crt_dialogs.hpp"
 #include "engine/core/version.hpp"
 
 namespace {
@@ -17,6 +18,7 @@ constexpr std::string_view usage = "usage: vnmaki --version\n";
 }  // namespace
 
 int main(int argc, char* argv[]) {
+  vnmaki::disable_crt_dialogs();
   const std::span<char*> raw_args{argv, static_cast<std::size_t>(argc)};
   // argv[0] is the program name; argc can be 0 when exec'd with an empty argv.
   const std::span<char*> user_args = raw_args.empty() ? raw_args : raw_args.subspan(1);
