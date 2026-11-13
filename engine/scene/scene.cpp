@@ -828,6 +828,7 @@ std::string Scene::recompile_shader(std::string_view name) {
 }
 
 std::string Scene::reload_image(const std::string& path, JobSystem& jobs) {
+  failed_paths_.erase(path);  // a fixed file loads at the next prepare()
   const auto found = textures_.find(path);
   if (found == textures_.end() || renderer_ == nullptr) {
     return {};  // never drawn: prepare() reads the file when it is needed
@@ -1255,6 +1256,30 @@ std::vector<std::byte> Scene::capture() const {
   return writer.take();
 }
 
+void Scene::check_assets(const Layers& layers) const {
+  const auto need = [this](const std::string& path) {
+    if (!vfs_->exists(path)) {
+      throw std::invalid_argument{"scene state: missing file '" + path + "'"};
+    }
+  };
+  for (const std::vector<Entry>& shown : layers) {
+    for (const Entry& entry : shown) {
+      const Displayable* displayable = entry.displayable.get();
+      std::vector<std::string> paths;
+      if (const auto* image = dynamic_cast<const ImageDisplayable*>(displayable)) {
+        paths.push_back(image->path());
+      } else if (const auto* movie = dynamic_cast<const MovieDisplayable*>(displayable)) {
+        paths.push_back(movie->path());
+      } else if (const auto* sprite = dynamic_cast<const LayeredSprite*>(displayable)) {
+        paths = sprite->missing_paths();
+      } else if (const auto* animation = dynamic_cast<const FrameAnimation*>(displayable)) {
+        paths = animation->missing_paths();
+      }
+      std::ranges::for_each(paths, need);
+    }
+  }
+}
+
 Scene::Layers Scene::read_displayables(std::span<const std::byte> bytes) {
   Layers layers;
   Reader reader{bytes};
@@ -1474,6 +1499,7 @@ void Scene::restore(std::span<const std::byte> state) {
       });
     }
   }
+  check_assets(layers);  // a missing file is a failed load, not a crash at the next frame
   layers_ = std::move(layers);
   layer_state_ = std::move(layer_state);
   camera_ = camera;
@@ -1530,7 +1556,17 @@ void Scene::update(double seconds) {
   timeline_.update(seconds, lookup());
   for (std::vector<Entry>& shown : layers_) {
     for (Entry& entry : shown) {
-      entry.displayable->update(seconds);
+      try {
+        entry.displayable->update(seconds);
+      } catch (const MovieError& error) {
+        if (!warn_) {
+          throw;
+        }
+        warn_(error.what());
+        if (auto* movie = dynamic_cast<MovieDisplayable*>(entry.displayable.get())) {
+          movie->finish();  // a movie that fails stops, once
+        }
+      }
       if (auto* sprite = dynamic_cast<LayeredSprite*>(entry.displayable.get())) {
         sprite->set_voice_level(voice_level_ != nullptr ? voice_level_->voice_level(
                                                               sprite->lip_voice_tag())
@@ -1551,34 +1587,57 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
       frame = renderer.create_render_target(virtual_size_, TextureFilter::kNearest);
     }
   }
-  const auto texture_of = [&](const std::string& path) -> const Texture& {
+  // Null for an image that does not load: it is reported once, and its displayable draws nothing.
+  const auto texture_of = [&](const std::string& path) -> const Texture* {
     auto found = textures_.find(path);
     if (found == textures_.end()) {
-      // ponytail: decodes while the main thread waits and never frees a texture. Preload on
-      // jobs and evict by memory budget when a real game hitches or runs out.
-      const Image decoded = load_image(*vfs_, jobs, path).get();
-      const TextureId texture = renderer.create_texture(decoded, TextureFilter::kLinear);
-      found = textures_.emplace(path, Texture{.id = texture, .size = decoded.size}).first;
+      if (failed_paths_.contains(path)) {
+        return nullptr;
+      }
+      try {
+        // ponytail: decodes while the main thread waits and never frees a texture. Preload on
+        // jobs and evict by memory budget when a real game hitches or runs out.
+        const Image decoded = load_image(*vfs_, jobs, path).get();
+        const TextureId texture = renderer.create_texture(decoded, TextureFilter::kLinear);
+        found = textures_.emplace(path, Texture{.id = texture, .size = decoded.size}).first;
+      } catch (const ImageError& error) {
+        if (!warn_) {
+          throw;
+        }
+        failed_paths_.insert(path);
+        warn_(error.what());
+        return nullptr;
+      }
     }
-    return found->second;
+    return &found->second;
   };
   for (std::vector<Entry>& shown : layers_) {
     for (Entry& entry : shown) {
       if (auto* sprite = dynamic_cast<LayeredSprite*>(entry.displayable.get())) {
         for (const std::string& path : sprite->missing_paths()) {
-          const Texture& texture = texture_of(path);
-          sprite->set_texture(path, texture.id, texture.size);
+          if (const Texture* texture = texture_of(path)) {
+            sprite->set_texture(path, texture->id, texture->size);
+          }
         }
         continue;
       }
       if (auto* movie = dynamic_cast<MovieDisplayable*>(entry.displayable.get())) {
-        movie->prepare(renderer, jobs, *vfs_, movie_audio_);
+        try {
+          movie->prepare(renderer, jobs, *vfs_, movie_audio_);
+        } catch (const MovieError& error) {
+          if (!warn_) {
+            throw;
+          }
+          warn_(error.what());
+          movie->finish();  // not loaded again
+        }
         continue;
       }
       if (auto* animation = dynamic_cast<FrameAnimation*>(entry.displayable.get())) {
         for (const std::string& path : animation->missing_paths()) {
-          const Texture& texture = texture_of(path);
-          animation->set_texture(path, texture.id, texture.size);
+          if (const Texture* texture = texture_of(path)) {
+            animation->set_texture(path, texture->id, texture->size);
+          }
         }
         continue;
       }
@@ -1586,8 +1645,9 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
       if (image == nullptr || image->has_texture()) {
         continue;
       }
-      const Texture& texture = texture_of(image->path());
-      image->set_texture(texture.id, texture.size);
+      if (const Texture* texture = texture_of(image->path())) {
+        image->set_texture(texture->id, texture->size);
+      }
     }
   }
   if (transition_.has_value() && !transition_->mask_path.empty()) {

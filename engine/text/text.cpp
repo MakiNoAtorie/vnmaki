@@ -26,6 +26,7 @@
 #include <hb.h>
 #include <linebreak.h>
 
+#include "engine/core/load_timing.hpp"
 #include "engine/render/builtin_shaders.hpp"
 #include "engine/vfs/vfs.hpp"
 
@@ -800,6 +801,7 @@ Font& Font::operator=(Font&&) noexcept = default;
 Font::~Font() = default;
 
 Font load_font(const Vfs& vfs, std::string_view path) {
+  const LoadTimer timer{path};
   std::optional<std::vector<std::byte>> data = vfs.read(path);
   if (!data) {
     throw FontError{"cannot read font '" + std::string{path} + "'"};

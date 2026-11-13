@@ -118,6 +118,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 
 - `Platform` (SDL or headless) changes OS events into `InputEvent`, a `std::variant`.
 - `MainLoop` runs a fixed timestep: events, updates, then `draw(alpha)`. You can inject the clock.
+  - `MainLoopHooks::frame_end` gets a `FrameTiming` (`events`, `update`, `draw` as clock differences, and the number of `updates`) at the end of each frame that ran. `draw` is the whole draw hook. The loop reads the clock for the phases only while `frame_end` is set. A frame that quits does not call it.
 - Pointer positions are in window pixels. Convert them with `window_to_virtual(compute_viewport(...), pos)`.
 - Clicks in the letterbox bars are outside the virtual area.
 - Text input is off when no text field has the focus. `UiHost::set_platform(&platform)` does this for the `input` node (see UI).
@@ -132,7 +133,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - A frame:
   1. `begin_frame`.
   2. One or more passes: `begin_pass({.target, .clear})`, then `draw(quads, DrawState)`.
-  3. `end_frame()`. It returns `FrameStats` (`draw_calls`).
+  3. `end_frame()`. It returns `FrameStats` (`passes`, `quads`, `draw_calls`).
 - Adjacent quads with the same `DrawState` are one draw call.
 - Coordinates are pixels of the pass target. The origin is top-left.
 - The GPU uses premultiplied colors. `Image` pixels are premultiplied RGBA8.
@@ -148,6 +149,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - A shader may use up to three textures and one constant buffer at `register(b0, space3)`. Storage textures and buffers are errors.
   - `shader_compiler_available()` is false on macOS, where vcpkg has no `sdl3-shadercross`. Tests that compile shaders return early then.
   - The compiler is only in `engine/render/sdl_shader_compiler.cpp`, because it includes SDL headers.
+- `SdlGpuRenderer::texture_memory()` returns `TextureMemory`: the bytes (RGBA8, width x height x 4) and the number of live textures and of render targets, counted when a resource is created and when it is released. A destroy inside a frame counts at `end_frame()`. It is on `SdlGpuRenderer`, not on `IRenderer`.
 - `load_image(vfs, jobs, path)` loads an image and returns `JobHandle<Image>`. `decode_image` reads PNG and JPEG (stb_image) and WebP, lossless or lossy, not animated (libwebp). It finds WebP by the `RIFF....WEBP` header, not by the file name. All three are premultiplied after decoding.
 - Upload images with `create_texture` on the main thread.
 - `SdlGpuRenderer::set_overlay(fn)` sets a hook that `end_frame()` calls once the passes are recorded. It gets the frame's command buffer and the target of the last pass (`GpuOverlayTarget`), so the hook can draw over the screen. It is not called when the screen pass was skipped. `gpu_info()` gives the device and the screen's format. The dev tools use it for ImGui (see Tools). Remove the hook before the renderer is destroyed.
@@ -182,6 +184,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - The snapshot keeps the properties as a replay leaves them. A tween that ends is at its end value. A loop is at the value where it started.
 - Tweens write through `Scene::find(tag)->properties()`. `Scene::update(seconds)` moves them. `hide` and `scene` end the tweens of the displayables that they remove.
 - `Scene::show` of a tag that is shown does not end its tweens.
+- `Scene::restore()` throws `std::invalid_argument` (a failed load: `Saves::load` returns the error and the story stays) when a snapshot names an image, sprite or animation frame or movie that is not in the VFS. It checks before it changes anything.
+  - `Scene::set_warning_handler(fn)`: `prepare()` and `update()` then send an image that does not decode (`ImageError`) or a movie that fails (`MovieError`) to `fn`, once for each file. The displayable stays and draws nothing, and the frame goes on. Without a handler they throw. The story window sets it to its `warn`.
 - For each frame, call `scene.prepare(renderer, jobs)` on the main thread. Then call `scene.draw(renderer, target)` in a pass on the virtual-resolution target. Give the id of that target: a layer with a shader ends the pass and begins a new pass on `target`.
 - Game shaders:
   - `shader(name, { "amount", ... })` declares `shaders/<name>.frag.hlsl` and compiles it when the scripts load. A declaration again with the same uniforms does nothing. The uniforms are floats (at most `kMaxUniforms`, 16) packed in order into `b0` and padded to 16 bytes. `SceneCommands::declare_shader` carries it out and returns the error string.
@@ -257,6 +261,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - The clock starts when the first picture is decoded. With a `MovieAudio` and a movie that has audio, the audio starts then and the picture follows the audio position (the audio clock). Without audio, or after the audio has ended, the picture follows the seconds that `update` gets (the loop clock). A loop starts again when the clock passes the end, and never finishes.
   - A bad AV1 stream throws `MovieError` from `update`.
 - `MovieAudio` (`movie_audio.hpp`) is the interface to the audio. `Audio` implements it: the movie's Ogg Opus plays on the `movie` channel in place of the movie there, and `start_movie_audio` returns a token. The audio is not state: `Audio::restore` stops it, and a `MoviePlayer` stops its audio when it goes away. It is silent, with the loop clock, if the file cannot be played.
+- `MoviePresenter::set_warning_handler(fn)`: a movie that fails to load or decode (`MovieError`) goes to `fn`, and the presenter ends that movie and advances the story. Without a handler `update()` throws. The story window sets it to its `warn`.
 - `movie(path, { skippable = true })` is a blocking call (`MovieRequest`). `SceneCommands::check_movie` checks the file first, and an error is raised at the script line. It is a step like a `wait`: `advance()` ends it, a replay passes it without playing it, and rollback goes back over it (`ScriptPosition::wait`). `skippable` is false by default.
   - `MoviePresenter` (`movie_presenter.hpp`) plays it in the host. `update(seconds)` once per update, `prepare(renderer)` before drawing, and `draw(renderer, size)` after `Scene::draw` (it draws black and the picture, centered, over everything). `click()` ends a skippable movie and returns true if the story waits at a movie. `skip()` is for skip mode: it ends any movie (`PlaybackOptions::skip_wait`).
   - The headless runner does not play a movie. It writes `movie <path>` to the transcript and goes on.
@@ -354,9 +359,9 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Only enabled buttons take the focus. Tab order is document order. The arrow keys and the d-pad pick the nearest button in that direction. Pointer hover moves the focus.
 - `UiHost` is the stack of screens (the last one shown is on top).
   - A screen with the same name is replaced. `handle_event(event, viewport)` returns `consumed` and an optional `ScreenActivation`.
-  - A modal screen takes the keys, the d-pad and all clicks. Other screens take the pointer only.
+  - A modal screen takes the keys, the d-pad and all clicks. Other screens take the pointer only. While any modal screen is shown, `handle_event` consumes every player input (wheel, Page Up, shoulders, A, S, L too), so nothing reaches the story. Window, gamepad connection and quit events pass.
   - `UiHost` does not store screens in snapshots. `show_screen` and `hide_screen` run again during replay, so they must be idempotent.
-- `ScreenPresenter` shows the modal screen of a `menu` or `call_screen` request and answers the runtime. Make it after `runtime.start()`. Call `sync()` after anything else that moves the story. Give it events before the dialogue presenter: if `handle_event` returns true, do not advance.
+- `ScreenPresenter` shows the modal screen of a `menu` or `call_screen` request and answers the runtime. Make it after `runtime.start()`. Call `sync()` after anything else that moves the story. Give it events before the dialogue presenter: if `handle_event` returns true, do not advance. Rollback input (`is_rollback_event`) is the one exception: while its own menu or `call_screen` is the top modal screen and no input has the keys, `handle_event` returns false for it, so the player can roll back from a menu. A modal screen over it (save, load, preferences, confirm) consumes it. `sync()` shows the screen again when the request changes at the same position (a quick-load to the same label and step with other options or another screen tree).
 - `UiRenderer` draws trees through `IRenderer`. Call `prepare(root, scale)` before `begin_frame`. Draw into a screen-resolution pass with the viewport scale and origin, like `SayBoxView`.
   - It has one glyph atlas for each text size. A node with `markup = true` uses text tags.
   - An image node draws `images/<name>.png` (else `.jpg`, else `.webp`) from the VFS. It needs `width` and `height`.
@@ -403,7 +408,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Call the commands, `update()` and `restore()` from one thread.
 - `vnmaki run` in a window makes an `Audio` with the system output (the null device if there is none) and calls `update()` every frame. A headless run uses `kManual` and never mixes.
 - Music crossfades. The same music on a channel carries on. The music channel ducks while a voice plays.
-- The snapshot has each channel's volume and music. `restore()` stops sounds and voices.
+- The snapshot has each channel's volume and music. `restore()` stops sounds and voices. `restore()` throws `std::invalid_argument` (a failed load) when a music file of the state is not in the VFS, before it changes anything. `Audio::set_warning_handler(fn)`: `update()` sends a music file that does not decode to `fn` (it throws `AudioError` without a handler). The story window sets it to its `warn`.
 - Music tracks change at the next `update()`. A replay then gives the same music, so it does not stop.
 - The runtime does not pass `sound` and `voice` on during replay.
 - `set_preference_volume(channel, level)` is the player's volume for a channel. It multiplies the script's `volume` and the ducking. It is not in the snapshot, so a load or rollback leaves it.
@@ -567,7 +572,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 
 ### Tools (`engine/tools/`)
 
-- Dev builds only. `engine/CMakeLists.txt` adds the module when `VNMAKI_DEV_TOOLS` is ON. A release build compiles none of it, links no ImGui, and `cli/story_window.cpp` guards its calls with `#if VNMAKI_DEV_TOOLS`.
+- Dev builds only, except the Lua scan, the story graph and the profiler (no ImGui; see Profiler). `engine/CMakeLists.txt` adds the module when `VNMAKI_DEV_TOOLS` is ON. A release build compiles none of the rest, links no ImGui, and `cli/story_window.cpp` guards the overlay calls with `#if VNMAKI_DEV_TOOLS`.
 - `ImguiBackend` (`imgui_backend.*`) owns the ImGui context and the SDL GPU backend. Only `imgui_backend.cpp` includes SDL (`lint.no_sdl_outside_platform` allows it). Its header has no ImGui and no SDL.
   - It draws through `SdlGpuRenderer::set_overlay`, so the ImGui frame goes over the last pass of the renderer frame (the screen pass in the game). Per frame: `begin_frame(pixels, seconds)`, the windows, `end_frame()`, then the renderer's `end_frame()` draws it.
   - ImGui does not read SDL events. `DevOverlay::handle_event` gives it the engine's `InputEvent`s. Text arrives as `TextInputEvent`, so the overlay turns `Platform::set_text_input` on while ImGui wants text.
@@ -597,3 +602,10 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `run_story_window(vfs, project_dir, ...)` gets the folder to watch. If efsw cannot watch it, hot reload is off and a warning goes to the log.
   - A game shader that a script declares again with other uniforms compiles while the scripts load. If a later script then fails, the scene keeps the new shader (the shader table is not part of the rollback of a failed reload).
 - Tests: `tests/unit/repl_test.cpp` (REPL and log), `tests/unit/inspect_test.cpp` (the row functions, on the template in `templates/default`), `tests/unit/hot_reload_test.cpp` (injected batches and edits of a temporary project, with a counting renderer for the texture and shader checks), `tests/platform/file_watcher_test.cpp` (real writes, Windows) and `tests/render/overlay_render_test.cpp` (a headless GPU frame, F12, input, a click on each inspector tab). All are only built with the tools.
+- Profiler (`profiler.*`, `engine/core/load_timing.*`). `Profiler(clock, {.enabled, .max_frames})` records a `FrameSample` for each frame (`events`, `update`, `prepare`, `draw`, `updates`, the `FrameStats` and the `TextureMemory` of the frame) and the asset loads. It keeps the last `max_frames` frames (0 keeps all) and at most 10000 loads. A disabled profiler records nothing and sets no load sink.
+  - It has no ImGui. It builds in every preset. Only the overlay panel is dev-only. `vnmaki run <dir> --frames N --profile out.csv` therefore works in a release build too, which is the build whose numbers matter. `--profile` needs a window (not `--headless`).
+  - `story_window.cpp` makes the profiler first (so that it sees the font loads): in a dev build it is always enabled, for the overlay (last 300 frames). In a release build it is enabled only by `--profile`, and then it keeps all frames. The wiring: `hooks.frame_end` calls `end_frame(timing)`; the draw hook calls `begin_prepare()` and `end_prepare()` around the uploads before the first pass (`prepare` is that time, and `draw` is the rest of the draw hook), and `set_gpu(end_frame(), texture_memory())` after the renderer's `end_frame()`.
+  - CSV (SPEC §5): `out.csv` has `frame,events_us,update_us,prepare_us,draw_us,total_us,updates,passes,quads,draw_calls,texture_bytes,target_bytes,textures,targets` and a row for each frame. `out_loads.csv` has `path,time_us` and a row for each load, in the order they ended. The files are written when the window closes. Times are whole microseconds.
+  - Asset loads: a `LoadTimer` (`engine/core/load_timing.hpp`) in `load_image`, `load_font`, `load_movie` and the audio track loader times the read and the decode. It reports to one global sink (`set_load_sink`), because loads run on job threads. With no sink it costs one atomic read. Only one enabled profiler can exist. The loader of a new asset kind adds a `LoadTimer`.
+  - The panel "Profiler" (`DevOverlay::set_profiler`, `draw_profiler`) is drawn last in `draw()`: a frame-time graph of the last 300 frames, the phase times of the last frame, the GPU counters and the memory, and the 8 slowest loads.
+- Profiler tests: `tests/unit/profiler_test.cpp` (a fake clock with exact phase times, the CSV text, the load timing; in every build), `tests/platform/main_loop_test.cpp` (`frame_end` timing), `tests/render/renderer_test.cpp` (the texture byte count) and `cli.run_profile_writes_a_row_for_each_frame` (the CSV header and the row count).

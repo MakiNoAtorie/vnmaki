@@ -205,3 +205,7 @@ endif()
 if(VNMAKI_DEV_TOOLS)
   target_sources(vnmaki_unit_tests PRIVATE unit/inspect_test.cpp)
 endif()
+
+# Profiler: frame phases with a fake clock, the CSV text and the load timing (ticket 33). It needs
+# no ImGui, so it is in every build.
+target_sources(vnmaki_unit_tests PRIVATE unit/profiler_test.cpp)

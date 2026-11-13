@@ -133,6 +133,17 @@ struct FrameStats {
   std::uint32_t draw_calls = 0;
 };
 
+/// The GPU memory of textures and render targets, as the renderer counted it (the profiler shows
+/// it).
+struct TextureMemory {
+  std::uint64_t texture_bytes = 0;
+  std::uint64_t target_bytes = 0;
+  std::uint32_t textures = 0;
+  std::uint32_t targets = 0;
+
+  bool operator==(const TextureMemory&) const = default;
+};
+
 /// Draws textured quads into render targets and the screen.
 ///
 /// A frame is begin_frame(), then passes (begin_pass() followed by draws), then end_frame(),

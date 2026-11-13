@@ -28,8 +28,11 @@ inline constexpr std::string_view kDefaultFontPath = "fonts/default.ttf";
 /// when the project, its font, a script or the GPU cannot be used or a script fails while running.
 /// In a dev build, `project_dir` (the folder that `vfs` serves) is watched, and changed scripts,
 /// images and shaders are loaded again while the game runs (engine/tools/hot_reload.hpp).
+/// With `profile_csv`, the profiler (engine/tools/profiler.hpp) keeps every frame and writes the
+/// file and its `_loads` twin when the window closes. Dev builds always profile, for the overlay.
 int run_story_window(const Vfs& vfs, const std::filesystem::path& project_dir,
                      const ProjectConfig& config, std::optional<std::uint64_t> max_frames,
-                     const std::optional<std::filesystem::path>& data_directory, std::ostream& err);
+                     const std::optional<std::filesystem::path>& data_directory, std::ostream& err,
+                     const std::optional<std::filesystem::path>& profile_csv = {});
 
 }  // namespace vnmaki::cli

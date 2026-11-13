@@ -231,3 +231,41 @@ TEST_CASE("main loop: without a frame cap it never sleeps") {
 
   CHECK(clock.sleeps().empty());
 }
+
+TEST_CASE("main loop: frame_end gets the exact time of each phase from the clock") {
+  vnmaki::HeadlessPlatform platform;
+  FakeClock clock;
+  vnmaki::MainLoop loop{platform, clock, {.update_step = kStep}};
+  constexpr Duration kEventTime = 2ms;
+  constexpr Duration kUpdateTime = 3ms;
+  constexpr Duration kDrawTime = 7ms;
+  platform.push_event(vnmaki::InputEvent{vnmaki::KeyEvent{}});
+
+  std::vector<vnmaki::FrameTiming> timings;
+  vnmaki::MainLoopHooks hooks;
+  hooks.on_event = [&](const vnmaki::InputEvent&) { clock.advance(kEventTime); };
+  hooks.update = [&](Duration) { clock.advance(kUpdateTime); };
+  hooks.draw = [&](double) { clock.advance(kDrawTime); };
+  hooks.frame_end = [&](const vnmaki::FrameTiming& timing) { timings.push_back(timing); };
+
+  clock.advance(2 * kStep);  // two updates are due
+  loop.run_frame(hooks);
+  REQUIRE(timings.size() == 1);
+  CHECK(timings.front().events == kEventTime);
+  CHECK(timings.front().update == 2 * kUpdateTime);
+  CHECK(timings.front().draw == kDrawTime);
+  CHECK(timings.front().updates == 2);
+}
+
+TEST_CASE("main loop: frame_end is skipped on the frame that quits") {
+  vnmaki::HeadlessPlatform platform;
+  FakeClock clock;
+  vnmaki::MainLoop loop{platform, clock, {.update_step = kStep}};
+  int ends = 0;
+  vnmaki::MainLoopHooks hooks;
+  hooks.frame_end = [&](const vnmaki::FrameTiming&) { ++ends; };
+  loop.run_frame(hooks);
+  platform.push_event(vnmaki::QuitRequestedEvent{});
+  loop.run_frame(hooks);
+  CHECK(ends == 1);
+}

@@ -85,6 +85,11 @@ class SdlGpuRenderer final : public IRenderer {
   FrameStats end_frame() override;
   [[nodiscard]] Image read_pixels(TextureId texture) override;
 
+  /// The bytes that the live textures and render targets hold (RGBA8, one mip level). A resource
+  /// counts from its creation until it is released: a destroy inside a frame takes effect at
+  /// end_frame().
+  [[nodiscard]] TextureMemory texture_memory() const;
+
   [[nodiscard]] GpuInfo gpu_info() const;
   /// Sets the overlay (an empty function removes it). end_frame() calls it once the passes are
   /// recorded, unless the screen pass was skipped (a minimized window). The overlay must not

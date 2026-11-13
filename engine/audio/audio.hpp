@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -143,9 +144,14 @@ class Audio final : public SceneState,
   [[nodiscard]] std::vector<std::byte> capture() const override;
   void restore(std::span<const std::byte> state) override;
 
+  /// `restore` throws std::invalid_argument (a failed load) if a music file of the state is not in
+  /// the Vfs. Where update() reports a music file that cannot be played (a decode error) instead
+  /// of throwing AudioError. Without a handler it throws.
+  void set_warning_handler(std::function<void(std::string_view)> handler);
+
   /// Call once a frame. Starts and stops music tracks to match a restored state; throws
-  /// AudioError, after doing the rest, if a file of that state cannot be played. With
-  /// AudioOutput::kManual it then mixes `seconds` of audio.
+  /// AudioError, after doing the rest, if a file of that state cannot be played (without a
+  /// warning handler). With AudioOutput::kManual it then mixes `seconds` of audio.
   void update(double seconds);
 
   /// Every channel, in byte order of the names.
@@ -156,6 +162,8 @@ class Audio final : public SceneState,
   [[nodiscard]] bool voice_playing() const;
 
  private:
+  void update_music();
+
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };

@@ -318,6 +318,31 @@ vnmaki_add_cli_test(
   NO_STDOUT
   STDERR_REGEX "vnmaki run: --max-steps needs a positive whole number")
 
+# vnmaki run --profile (ticket 33): one CSV row for each frame, and the loads file. It is in every
+# build, and needs a GPU like the other window tests.
+set(vnmaki_profile_out "${CMAKE_CURRENT_BINARY_DIR}/profile/run.csv")
+add_test(NAME cli.run_profile_writes_a_row_for_each_frame
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+                 -DPROJECT=${vnmaki_run_fixtures}/say -DFRAMES=5 -DOUT=${vnmaki_profile_out}
+                 -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/run_profile -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_profile.cmake")
+set_tests_properties(cli.run_profile_writes_a_row_for_each_frame PROPERTIES TIMEOUT 60)
+if(vnmaki_gpu_cli_env)
+  set_tests_properties(cli.run_profile_writes_a_row_for_each_frame
+                       PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
+endif()
+if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+  set_tests_properties(cli.run_profile_writes_a_row_for_each_frame
+                       PROPERTIES SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
+endif()
+
+vnmaki_add_cli_test(
+  run_rejects_profile_with_headless
+  ARGS run "${vnmaki_run_fixtures}/demo" --headless --profile out.csv
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki run: --profile needs a window")
+
 # vnmaki new (ticket 19). The scripts delete the game folder first, so a second run of the test
 # starts clean. The second test needs a GPU, like the other window tests.
 add_test(NAME cli.new_makes_a_game_and_stops_at_a_second_one

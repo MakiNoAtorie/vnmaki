@@ -49,6 +49,15 @@ struct MainLoopConfig {
   Duration min_frame_time{0};
 };
 
+/// How long the phases of one frame took, by the loop's clock. `draw` is the whole draw hook.
+struct FrameTiming {
+  Duration events{0};
+  Duration update{0};
+  Duration draw{0};
+  /// How many fixed steps ran.
+  int updates = 0;
+};
+
 /// What the game does each frame. Empty hooks are skipped.
 struct MainLoopHooks {
   /// Called for each platform event, at the start of the frame.
@@ -58,6 +67,9 @@ struct MainLoopHooks {
   /// Called once per frame after the updates. `alpha` in [0, 1) is how far real time has run
   /// past the last update, as a fraction of a step, for interpolating motion.
   std::function<void(double alpha)> draw{};
+  /// Called at the end of each frame that ran its updates and draw, before the frame is padded to
+  /// `min_frame_time`. The loop reads its clock for the phases only while this is set.
+  std::function<void(const FrameTiming&)> frame_end{};
 };
 
 /// Runs frames: pending events, then fixed-timestep updates, then one draw. A

@@ -8,7 +8,7 @@ namespace vnmaki::cli {
 
 inline constexpr std::string_view kRunUsage =
     "       vnmaki run [<project-dir>] [--headless [--max-steps <n>] | --frames <n>]"
-    " [--data-dir <path>]\n";
+    " [--data-dir <path>] [--profile <file.csv>]\n";
 
 /// `vnmaki run [<project-dir>] [--headless [--max-steps <n>] | --frames <n>] [--data-dir <path>]`
 /// (docs/SPEC.md section 19). Runs the game in <project-dir> (default: the
@@ -24,6 +24,9 @@ inline constexpr std::string_view kRunUsage =
 ///
 /// Saves and the persistent file go to the user-data directory of the game's title, or to
 /// <path> with --data-dir (in a window and headless). Tests use it to leave the user's data alone.
+///
+/// With --profile <file.csv> (a window only, in every build) the run writes one CSV row for each
+/// frame to <file.csv> and the asset loads to <file>_loads.csv (engine/tools/profiler.hpp).
 ///
 /// `args` are the arguments after "run". Returns the process exit code: 0 when
 /// the story ends, 1 on a project or script error or at the step limit, 2 on

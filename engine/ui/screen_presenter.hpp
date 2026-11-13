@@ -53,8 +53,13 @@ class ScreenPresenter {
   ScriptRuntime* runtime_;
   UiHost* host_;
   std::function<bool(const ScreenActivation&)> actions_;
-  // The screen shown for the current request, and where the script waited when it was shown.
-  std::optional<std::pair<std::string, ScriptPosition>> shown_;
+  // The screen shown for a request, and where the script waited when it was shown.
+  struct Shown {
+    std::string name;
+    ScriptPosition position;
+    BlockingRequest request;
+  };
+  std::optional<Shown> shown_;
 };
 
 }  // namespace vnmaki

@@ -14,13 +14,16 @@
 
 #include <doctest/doctest.h>
 
+#include "engine/jobs/job_system.hpp"
 #include "engine/platform/geometry.hpp"
+#include "engine/render/image.hpp"
 #include "engine/render/renderer.hpp"
 #include "engine/runtime/headless_runner.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/scene/displayable.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/support/memory_vfs.hpp"
+#include "tests/support/recording_renderer.hpp"
 
 namespace {
 
@@ -388,6 +391,42 @@ TEST_CASE("scene: a captured state restores what was shown, where and with which
     longer.push_back(std::byte{0});
     CHECK_THROWS_AS(scene.restore(longer), std::invalid_argument);
     CHECK(scene.capture() == captured);
+  }
+}
+
+TEST_CASE("scene: restoring a state that names a missing image is a failed load") {
+  const vnmaki::Vfs vfs = game_files("");
+  Scene scene{vfs, kVirtualSize};
+  REQUIRE(scene.show({.tag = "eileen", .image = "eileen", .at = "left"}).empty());
+  const Bytes captured = scene.capture();
+
+  const vnmaki::Vfs without = vnmaki::test::memory_vfs({{"images/lucy.png", ""}});
+  Scene other{without, kVirtualSize};
+  REQUIRE(other.show({.tag = "lucy", .image = "lucy"}).empty());
+  const Bytes before = other.capture();
+  CHECK_THROWS_AS(other.restore(captured), std::invalid_argument);
+  CHECK(other.capture() == before);
+}
+
+TEST_CASE("scene: an image that does not decode warns once and the frame goes on") {
+  // The test files are empty, so no image decodes.
+  const vnmaki::Vfs vfs = game_files("");
+  Scene scene{vfs, kVirtualSize};
+  REQUIRE(scene.scene("bg/classroom").empty());
+  REQUIRE(scene.show({.tag = "eileen", .image = "eileen", .at = "left"}).empty());
+  vnmaki::JobSystem jobs;
+  vnmaki::test::RecordingRenderer renderer;
+  SUBCASE("without a handler the error is thrown") {
+    CHECK_THROWS_AS(scene.prepare(renderer, jobs), vnmaki::ImageError);
+  }
+  SUBCASE("with a handler each file is reported once") {
+    Lines warnings;
+    scene.set_warning_handler([&](std::string_view message) { warnings.emplace_back(message); });
+    CHECK_NOTHROW(scene.prepare(renderer, jobs));
+    CHECK(warnings.size() == 2);
+    CHECK_NOTHROW(scene.prepare(renderer, jobs));
+    CHECK(warnings.size() == 2);
+    CHECK(scene.tags(Layer::kCharacters) == Lines{"eileen"});
   }
 }
 
