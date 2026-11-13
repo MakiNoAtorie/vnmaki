@@ -201,6 +201,27 @@ struct ShowRequest {
   std::optional<double> x{};        ///< A fraction of the virtual width.
   std::optional<double> y{};        ///< A fraction of the virtual height.
   std::optional<std::string> layer{};
+  /// For a layered sprite: the groups the script named and the values it chose, in the order of
+  /// the definition's groups. Other groups keep their values.
+  std::vector<std::pair<std::string, std::string>> attributes{};
+  /// Set while the runtime replays: an attribute change does not crossfade.
+  bool replaying = false;
+};
+
+/// `layered(name, options)`: a character whose image is composed of layers. `show` of `name`
+/// shows it. Value names and images are in the order the script gave them (sorted by name).
+struct LayeredRequest {
+  /// The images of one group, in the order they draw.
+  struct Group {
+    std::string name{};
+    /// A group of one fixed image has one value with an empty name.
+    std::vector<std::pair<std::string, std::string>> values{};  ///< (value, image name)
+  };
+
+  std::string name{};
+  std::vector<Group> groups{};  ///< From the back to the front.
+  std::vector<std::pair<std::string, std::string>> defaults{};  ///< (group, value)
+  double crossfade = 0;  ///< Seconds an attribute change takes; 0 for a cut.
 };
 
 /// `tween(tag, options)`, or the group `sequence{...}` or `parallel{...}` of tweens. Fields the
@@ -251,6 +272,10 @@ class SceneCommands {
   [[nodiscard]] virtual std::string scene(std::string_view image) = 0;
   [[nodiscard]] virtual std::string show(const ShowRequest& request) = 0;
   virtual void hide(std::string_view tag) = 0;
+
+  /// Defines a layered sprite. Returns why it cannot (a missing image, an unknown default, ...),
+  /// as for `show`. The default does nothing, for implementations without layered sprites.
+  [[nodiscard]] virtual std::string layered(const LayeredRequest& /*request*/) { return {}; }
 
   /// Starts the tweens. Returns why it cannot (an unknown tag or easing, ...), as for `show`. The
   /// defaults do nothing, for implementations without an animation system.
