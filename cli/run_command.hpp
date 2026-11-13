@@ -8,7 +8,7 @@ namespace vnmaki::cli {
 
 inline constexpr std::string_view kRunUsage =
     "       vnmaki run [<project-dir>] [--headless [--max-steps <n>] | --frames <n>]"
-    " [--data-dir <path>] [--profile <file.csv>]\n";
+    " [--data-dir <path>] [--profile <file.csv>] [--lang <code>]\n";
 
 /// `vnmaki run [<project-dir>] [--headless [--max-steps <n>] | --frames <n>] [--data-dir <path>]`
 /// (docs/SPEC.md section 19). Runs the game in <project-dir> (default: the
@@ -24,6 +24,10 @@ inline constexpr std::string_view kRunUsage =
 ///
 /// Saves and the persistent file go to the user-data directory of the game's title, or to
 /// <path> with --data-dir (in a window and headless). Tests use it to leave the user's data alone.
+///
+/// With --lang <code> the game runs in that language (a code of `languages` in project.toml; SPEC
+/// section 16). In a window it also sets the preference `prefs.language`, so the choice stays; a
+/// headless run prints the translated lines and does not read the preference.
 ///
 /// With --profile <file.csv> (a window only, in every build) the run writes one CSV row for each
 /// frame to <file.csv> and the asset loads to <file>_loads.csv (engine/tools/profiler.hpp).

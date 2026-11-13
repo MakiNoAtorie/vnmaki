@@ -12,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "engine/l10n/translator.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/saves/saves.hpp"
 
@@ -86,6 +87,10 @@ struct HeadlessOptions {
   /// slot, and keeps `persistent` in `saves->directory`. Without it those calls do nothing.
   /// Warnings of the saves go to the transcript unless `on_warning` is set.
   std::optional<SavesOptions> saves;
+  /// Set: the transcript has the translation of each `say`, `narrate` and menu option (SPEC section
+  /// 16) in the language of the translator, which must outlive the run. Everything else, and the
+  /// story itself, is the source text.
+  const Translator* translator = nullptr;
 };
 
 /// Loads every script under `scripts/` in `vfs`, enters the start label and

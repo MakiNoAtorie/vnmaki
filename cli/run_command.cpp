@@ -1,5 +1,6 @@
 #include "cli/run_command.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cstddef>
 #include <filesystem>
@@ -14,6 +15,7 @@
 
 #include "cli/story_window.hpp"
 #include "engine/audio/audio.hpp"
+#include "engine/l10n/translator.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/sdl_platform.hpp"
 #include "engine/runtime/headless_runner.hpp"
@@ -37,6 +39,7 @@ struct RunArguments {
   std::optional<std::size_t> max_frames;
   std::optional<std::filesystem::path> data_dir;
   std::optional<std::filesystem::path> profile_csv;
+  std::optional<std::string> language;
 };
 
 std::optional<std::size_t> parse_positive(std::string_view text) {
@@ -72,6 +75,13 @@ std::optional<RunArguments> parse_arguments(std::span<const std::string_view> ar
         return std::nullopt;
       }
       parsed.data_dir = std::filesystem::path{args[i + 1]};
+      ++i;
+    } else if (arg == "--lang") {
+      if (i + 1 >= args.size() || args[i + 1].empty() || args[i + 1].starts_with("-")) {
+        err << "vnmaki run: --lang needs a language code\n";
+        return std::nullopt;
+      }
+      parsed.language = std::string{args[i + 1]};
       ++i;
     } else if (arg == "--profile") {
       if (i + 1 >= args.size() || args[i + 1].empty()) {
@@ -128,9 +138,16 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
     return kExitError;
   }
 
+  if (arguments->language &&
+      std::ranges::find(config.languages, *arguments->language) == config.languages.end()) {
+    err << "vnmaki: language '" << *arguments->language
+        << "' is not in 'languages' of project.toml\n";
+    return kExitError;
+  }
   if (!arguments->headless) {
     return run_story_window(vfs, arguments->project_dir, config, arguments->max_frames,
-                            arguments->data_dir, err, arguments->profile_csv);
+                            arguments->data_dir, err, arguments->profile_csv, nullptr,
+                            arguments->language);
   }
 
   // Nothing is drawn or heard, but the scene and the audio still check every file a script
@@ -138,10 +155,21 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
   const Size resolution{.width = config.resolution.width, .height = config.resolution.height};
   Scene scene{vfs, resolution};
   Audio audio{vfs};
+  Translator translator{vfs, config};
+  if (arguments->language) {
+    if (const std::string problem = translator.set_language(*arguments->language);
+        !problem.empty()) {
+      err << "vnmaki: " << problem << '\n';
+    }
+    scene.set_language(*arguments->language);
+    audio.set_language(*arguments->language);
+  }
   CompositeSceneState state{{&scene, &audio}};
   HeadlessOptions options;
   options.runtime.rollback_depth = config.rollback_depth;
   options.runtime.gallery = config.gallery;
+  options.runtime.languages = config.languages;
+  options.translator = &translator;
   options.runtime.scene = &scene;
   options.runtime.audio = &audio;
   options.runtime.scene_state = &state;

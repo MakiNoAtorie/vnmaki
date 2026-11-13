@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -24,6 +25,7 @@
 #include "engine/dialogue/rollback_input.hpp"
 #include "engine/dialogue/say_box.hpp"
 #include "engine/jobs/job_system.hpp"
+#include "engine/l10n/translator.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/main_loop.hpp"
@@ -47,6 +49,7 @@
 #include "engine/tools/observer_chain.hpp"
 #include "engine/tools/overlay.hpp"
 #include "engine/tools/story_graph.hpp"
+#include "engine/tools/translation_editor.hpp"
 #endif
 #include "engine/ui/backlog_screen.hpp"
 #include "engine/ui/playback_indicator.hpp"
@@ -95,7 +98,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                      const ProjectConfig& config, std::optional<std::uint64_t> max_frames,
                      const std::optional<std::filesystem::path>& data_directory_override,
                      std::ostream& err, const std::optional<std::filesystem::path>& profile_csv,
-                     [[maybe_unused]] DapChannel* dap) {
+                     [[maybe_unused]] DapChannel* dap, const std::optional<std::string>& language) {
   const Size virtual_size{.width = config.resolution.width, .height = config.resolution.height};
   try {
     SteadyClock clock;
@@ -106,28 +109,33 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                        .max_frames = profile_csv ? 0 : Profiler::kGraphFrames}};
     // Everything that needs no window comes first, so a broken project fails before one opens.
     const Font font = load_font(vfs, kDefaultFontPath);
-    // The fallback chain of the source language (the first in project.toml).
-    std::vector<Font> fallback_fonts;
-    if (!config.languages.empty()) {
-      if (const auto chain = config.font_fallbacks.find(config.languages.front());
+    // The font chain of each language (`[fonts.fallback]` of project.toml). A font file loads once.
+    std::map<std::string, Font> chain_fonts;
+    std::map<std::string, FontSet> font_sets;
+    for (const std::string& code : config.languages) {
+      FontSet set{.base = {.regular = &font}};
+      if (const auto chain = config.font_fallbacks.find(code);
           chain != config.font_fallbacks.end()) {
-        fallback_fonts.reserve(chain->second.size());
         for (const std::string& path : chain->second) {
-          fallback_fonts.push_back(load_font(vfs, path));
+          auto loaded = chain_fonts.find(path);
+          if (loaded == chain_fonts.end()) {
+            loaded = chain_fonts.emplace(path, load_font(vfs, path)).first;
+          }
+          set.fallbacks.push_back(&loaded->second);
         }
       }
+      font_sets.emplace(code, std::move(set));
     }
-    FontSet fonts{.base = {.regular = &font}};
-    for (const Font& fallback : fallback_fonts) {
-      fonts.fallbacks.push_back(&fallback);
-    }
+    FontSet fonts = font_sets.at(config.languages.front());
     // The audio comes first, so that it outlives the scene: a movie stops its audio when it goes.
     const std::unique_ptr<Audio> audio = make_audio(vfs, err);
     Scene scene{vfs, virtual_size};
     scene.set_movie_audio(audio.get());
     scene.set_voice_level(audio.get());
     CompositeSceneState scene_state{{&scene, audio.get()}};
+    Translator translator{vfs, config};
     UiHost ui{virtual_size};
+    ui.set_translator(&translator);
     ScriptRuntime runtime{vfs,
                           {.rollback_depth = config.rollback_depth,
                            .scene_state = &scene_state,
@@ -135,6 +143,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                            .screens = &ui,
                            .audio = audio.get(),
                            .gallery = config.gallery,
+                           .languages = config.languages,
                            .canvas_width = virtual_size.width,
                            .canvas_height = virtual_size.height}};
     ui.set_bindings(&runtime);
@@ -155,6 +164,21 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                                 : user_data_directory(kUserDataOrganization, config.title);
     PersistentStore persistent{runtime, data_directory, warn};
     persistent.load();  // before the scripts, so that their defaults see the saved values
+    // The language: --lang (which is also kept as the preference), else the preference. The style
+    // file of it runs when the scripts load.
+    if (language) {
+      if (const std::string problem = runtime.set_binding("prefs", "language", *language);
+          !problem.empty()) {
+        warn(problem);
+      }
+    }
+    const std::string initial_language = read_preferences(runtime).language;
+    if (!initial_language.empty()) {
+      if (const std::string problem = translator.set_language(initial_language); !problem.empty()) {
+        warn(problem);
+      }
+    }
+    static_cast<void>(runtime.set_language_styles(translator.style_file()));
     runtime.load_scripts();
 #if VNMAKI_DEV_TOOLS
     // `vnmaki debug`: the pump (below) draws and handles OS events while the story is stopped.
@@ -170,9 +194,11 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     ui.set_platform(&platform);  // text input is on only while an `input` node has the keys
     const std::unique_ptr<SdlGpuRenderer> renderer = SdlGpuRenderer::create_for_window(platform);
 #if VNMAKI_DEV_TOOLS
+    TranslationEditor translation_editor{translator, runtime, project_dir};  // before the overlay
     DevOverlay dev_overlay{*renderer, platform, runtime, dev_log};  // F12; dies before the renderer
     dev_overlay.set_inspect_targets(&scene, audio.get());
     dev_overlay.set_story(vfs, dev_trace);
+    dev_overlay.set_translations(&translation_editor);
 #endif
     JobSystem jobs;
     const TextureId canvas = renderer->create_render_target(virtual_size, TextureFilter::kLinear);
@@ -202,6 +228,34 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
         },
         virtual_size);
 
+    // Puts the language of the translator into the scene, the audio, the fonts and the styles. It
+    // is called for the first language, for the preference and for @language.
+    std::string applied_language;
+    bool reopen_quick_menu = false;
+    const auto apply_language = [&](const std::string& code) {
+      const std::string target = code.empty() ? translator.source_language() : code;
+      if (target != translator.language()) {
+        if (const std::string problem = translator.set_language(target); !problem.empty()) {
+          warn(problem);
+        }
+      }
+      if (translator.language() == applied_language) {
+        return;
+      }
+      reopen_quick_menu = !applied_language.empty();  // it is built again in the new styles
+      applied_language = translator.language();
+      scene.set_language(applied_language);
+      audio->set_language(applied_language);
+      const FontSet& set = font_sets.at(applied_language);
+      ui_renderer.set_fonts(set);
+      say_box.set_language(set, translator.direction());
+      if (const std::string problem = runtime.set_language_styles(translator.style_file());
+          !problem.empty()) {
+        warn(problem);
+      }
+    };
+    apply_language(initial_language);
+
     Saves saves{runtime,
                 {.directory = data_directory,
                  .game_version = config.version,
@@ -217,6 +271,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
 #endif
     saves.poll();
     ScreenPresenter screens{runtime, ui};
+    screens.set_translator(&translator);
     WaitPresenter waits{runtime, scene};
     MoviePresenter movies{runtime, vfs, jobs, audio.get()};
     scene.set_warning_handler(warn);  // a file that fails to load or play must not end the game
@@ -228,19 +283,21 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                                 [&](const DialogueLine& line, double speed, double elapsed) {
                                   return say_box.revealed(line, speed, elapsed);
                                 }};
+    presenter.set_translator(&translator);
     Playback playback{runtime,
                       presenter,
                       persistent,
                       {.voice_playing = [&] { return audio->voice_playing(); },
                        .skip_wait = [&] { return waits.skip() || movies.skip(); }}};
     PlaybackIndicator indicator{ui};
-    const Backlog backlog{runtime, audio.get(), config.backlog_length};
+    const Backlog backlog{runtime, audio.get(), config.backlog_length, &translator};
     BacklogScreen backlog_screen{ui, backlog, ui_renderer.text_measure()};
     PreferenceApplier preferences{runtime,
                                   {.presenter = &presenter,
                                    .playback = &playback,
                                    .audio = audio.get(),
-                                   .platform = &platform}};
+                                   .platform = &platform,
+                                   .language = apply_language}};
 
 #if VNMAKI_DEV_TOOLS
     dev_overlay.set_profiler(&profiler);
@@ -252,6 +309,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                           {.playback = &playback,
                            .backlog = &backlog_screen,
                            .quit = [&] { loop.request_quit(); },
+                           .language = apply_language,
                            .on_warning = warn}};
     screens.set_action_handler(
         [&](const ScreenActivation& activation) { return actions.handle(activation); });
@@ -357,6 +415,11 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       audio->update(seconds);
       movies.update(seconds);
       waits.update(seconds);
+      backlog_screen.sync();
+      if (reopen_quick_menu) {  // a language with other styles
+        reopen_quick_menu = false;
+        static_cast<void>(actions.open("quick_menu", {}, false));
+      }
       screens.sync();
       indicator.sync(playback.skip(), playback.automatic());
       persistent.flush();
