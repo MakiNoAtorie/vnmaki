@@ -47,6 +47,7 @@
 #include "engine/tools/log_buffer.hpp"
 #include "engine/tools/observer_chain.hpp"
 #include "engine/tools/overlay.hpp"
+#include "engine/tools/screen_editor.hpp"
 #include "engine/tools/story_graph.hpp"
 #endif
 #include "engine/ui/backlog_screen.hpp"
@@ -299,6 +300,10 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     const auto viewport = [&] {
       return compute_viewport(virtual_size, platform.window_metrics().pixels, ScaleMode::kFit);
     };
+#if VNMAKI_DEV_TOOLS
+    ScreenEditor screen_editor{vfs, project_dir, ui};  // the overlay's "Screen editor" window
+    dev_overlay.set_screen_editor(&screen_editor, viewport);
+#endif
     const auto inside_canvas = [&](PointF window_point) {
       const PointF point = window_to_virtual(viewport(), window_point);
       return point.x >= 0 && point.y >= 0 && point.x < static_cast<float>(virtual_size.width) &&

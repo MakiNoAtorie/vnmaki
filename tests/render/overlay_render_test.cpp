@@ -10,6 +10,7 @@
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/platform.hpp"
+#include "engine/platform/viewport.hpp"
 #include "engine/render/image.hpp"
 #include "engine/render/renderer.hpp"
 #include "engine/render/sdl_gpu_renderer.hpp"
@@ -17,7 +18,10 @@
 #include "engine/scene/scene.hpp"
 #include "engine/tools/log_buffer.hpp"
 #include "engine/tools/overlay.hpp"
+#include "engine/tools/screen_editor.hpp"
 #include "engine/tools/story_graph.hpp"
+#include "engine/ui/ui_host.hpp"
+#include "engine/ui/ui_node.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/render/gpu_test_support.hpp"
 #include "tests/support/memory_vfs.hpp"
@@ -46,6 +50,10 @@ constexpr Size kScreen{.width = 1280, .height = 720};
 constexpr float kInsideConsole = 100;
 constexpr float kOutsideConsole = 1000;
 constexpr float kInsideGraph = 800;
+// A probe node of the screen editor test: below the editor window, away from the other windows.
+constexpr float kProbeX = 700;
+constexpr float kProbeY = 560;
+constexpr float kProbeSize = 100;
 constexpr float kInsideGraphY = 100;
 constexpr int kSettleFrames = 3;
 // The tab bar of the inspectors: its y, and the x range and step of a sweep that clicks each tab.
@@ -226,4 +234,42 @@ TEST_CASE("overlay: the story graph window draws and follows the trace") {
   trace.on_label_entered("start");
   fixture.settle(overlay);
   CHECK(fixture.frame(overlay) > 0);
+}
+
+TEST_CASE("overlay: with Pick on, a click on a node selects it, outlines it and is not the game's") {
+  Fixture fixture;
+  if (!fixture.renderer) {
+    return;
+  }
+  vnmaki::UiHost host{kScreen};
+  vnmaki::UiNode probe = vnmaki::make_node(vnmaki::NodeKind::kBox);
+  probe.style.width = kProbeSize;
+  probe.style.height = kProbeSize;
+  probe.style.position = vnmaki::PointF{.x = kProbeX, .y = kProbeY};
+  host.show("probe", std::move(probe), false);
+  vnmaki::ScreenEditor editor{fixture.vfs, {}, host};
+  DevOverlay overlay{*fixture.renderer, fixture.platform, fixture.runtime, fixture.log};
+  overlay.set_screen_editor(&editor, [] {
+    return vnmaki::compute_viewport(kScreen, kScreen, vnmaki::ScaleMode::kFit);
+  });
+  overlay.set_visible(true);
+  const vnmaki::PointF inside{.x = kProbeX + (kProbeSize / 2), .y = kProbeY + (kProbeSize / 2)};
+  const InputEvent move = PointerMoveEvent{.position = inside};
+  static_cast<void>(overlay.handle_event(move));
+  fixture.settle(overlay);
+  const InputEvent press = PointerButtonEvent{.pressed = true, .position = inside};
+
+  CHECK_FALSE(overlay.handle_event(press));  // Pick is off: the game gets the click
+  CHECK_FALSE(editor.has_selection());
+
+  overlay.set_pick_mode(true);
+  CHECK(overlay.handle_event(press));
+  REQUIRE(editor.has_selection());
+  CHECK(editor.screen_name() == "probe");
+  const std::size_t outlined = fixture.frame(overlay);
+  CHECK(outlined > 0);  // the window and the outline draw with a selection
+
+  const vnmaki::PointF outside{.x = kProbeX - kProbeSize, .y = kProbeY};  // no node, no window
+  CHECK(overlay.handle_event(PointerButtonEvent{.pressed = true, .position = outside}));
+  CHECK_FALSE(editor.has_selection());
 }

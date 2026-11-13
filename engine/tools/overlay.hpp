@@ -5,6 +5,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/platform.hpp"
+#include "engine/platform/viewport.hpp"
 #include "engine/render/sdl_gpu_renderer.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/tools/log_buffer.hpp"
@@ -24,6 +26,7 @@ class Audio;
 class ImguiBackend;
 class Profiler;
 class Scene;
+class ScreenEditor;
 struct StoreRow;
 
 /// The overlay: a log console with a Lua REPL, the story graph, and the inspectors (store,
@@ -65,6 +68,14 @@ class DevOverlay {
   /// `profiler`, which must outlive the overlay or be reset first (null).
   void set_profiler(const Profiler* profiler) { profiler_ = profiler; }
 
+  /// Turns on the "Screen editor" window (engine/tools/screen_editor.hpp): with its "Pick" box
+  /// on, a left click on a node of a shown screen selects it instead of going to the game. The
+  /// outline of the selected node is drawn with its rectangle. `viewport` says where the canvas
+  /// is in the window now. `editor` must outlive the overlay.
+  void set_screen_editor(ScreenEditor* editor, std::function<Viewport()> viewport);
+  /// The "Pick" box of the screen editor window.
+  void set_pick_mode(bool on) { pick_ = on; }
+
   /// Builds this frame's windows and gives them to the renderer, which draws them in its
   /// end_frame() over the last pass. Call it once per frame after the game's passes. Does
   /// nothing while hidden. `window_pixels` is the size of that pass's target.
@@ -83,6 +94,8 @@ class DevOverlay {
   void draw_labels_tab();
   void draw_story_graph();
   void draw_profiler();
+  void draw_screen_editor();
+  void draw_editor_fields(ScreenEditor& editor);
   void run_input();
 
   std::unique_ptr<ImguiBackend> backend_;
@@ -104,6 +117,10 @@ class DevOverlay {
   StoryGraph graph_;
   std::size_t trace_revision_ = 0;
   const Profiler* profiler_ = nullptr;
+  ScreenEditor* screen_editor_ = nullptr;
+  std::function<Viewport()> viewport_;
+  bool pick_ = false;
+  std::string editor_message_;
 };
 
 }  // namespace vnmaki
