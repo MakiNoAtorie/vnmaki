@@ -55,3 +55,6 @@ if(TARGET vnmaki_fixtures_audio)
   add_test(NAME fuzz.audio.seeded COMMAND fuzz_audio -runs=10000 -seed=1 "${vnmaki_audio_corpus}"
                                           "${PROJECT_BINARY_DIR}/fixtures/audio/seeds")
 endif()
+
+# Save loader (ticket 12). It edits a valid payload, so no seed corpus is needed.
+vnmaki_add_fuzzer(save_loader save_loader_fuzzer.cpp)

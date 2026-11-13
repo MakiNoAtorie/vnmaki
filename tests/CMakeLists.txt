@@ -71,3 +71,6 @@ vnmaki_add_fixture_generator(
 # Say box: characters, the dialogue presenter and the say box view (ticket 08).
 target_sources(vnmaki_unit_tests PRIVATE unit/character_test.cpp
                                          unit/dialogue_test.cpp)
+
+# Saves: file format, slots, quick save, auto save, on_load (ticket 12).
+target_sources(vnmaki_unit_tests PRIVATE unit/saves_test.cpp)
