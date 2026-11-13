@@ -1,20 +1,22 @@
 #pragma once
 
 // The scene (docs/SPEC.md sections 7 and 9): a stack of layers holding tagged displayables. The
-// script calls `scene`, `show` and `hide` change it, snapshots capture it, and the engine draws
-// it each frame.
+// script calls `scene`, `show`, `hide` and `tween` change it, snapshots capture it, and the engine
+// draws it each frame.
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "engine/anim/timeline.hpp"
 #include "engine/jobs/job_system.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
@@ -66,6 +68,14 @@ inline constexpr std::string_view kBackgroundTag = "background";
 /// order if the layer is the same. `scene(image)` empties the background, master and characters
 /// layers and puts the image on the background with its top-left corner at the origin. `hide` of a
 /// tag not shown does nothing.
+///
+/// `tween` changes the properties of shown displayables over time (engine/anim/timeline.hpp), as
+/// update() moves the clock on. `hide` and `scene` end the tweens of the displayables they remove.
+///
+/// The snapshot is a map from a part's name to its bytes, so a later feature adds a part without
+/// changing the others: "displayables" (what is shown) and "tweens" (the loops). It keeps the
+/// properties as a replay would leave them: tweens that end are at their end values, loops at the
+/// value they started from, and restore() starts each loop again at time 0.
 class Scene final : public SceneState, public SceneCommands {
  public:
   /// `vfs` must outlive the scene. `virtual_size` is the virtual resolution.
@@ -74,6 +84,9 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] std::string scene(std::string_view image) override;
   [[nodiscard]] std::string show(const ShowRequest& request) override;
   void hide(std::string_view tag) override;
+  [[nodiscard]] std::string tween(const TweenRequest& request) override;
+  void finish_tweens(std::string_view tag) override;
+  [[nodiscard]] bool tweening(std::string_view tag) const override;
 
   [[nodiscard]] std::vector<std::byte> capture() const override;
   void restore(std::span<const std::byte> state) override;
@@ -83,10 +96,10 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] std::optional<Layer> layer_of(std::string_view tag) const;
   /// The displayable with this tag, or null. Invalidated by the next call that changes what is
   /// shown.
-  [[nodiscard]] ImageDisplayable* find(std::string_view tag);
-  [[nodiscard]] const ImageDisplayable* find(std::string_view tag) const;
+  [[nodiscard]] Displayable* find(std::string_view tag);
+  [[nodiscard]] const Displayable* find(std::string_view tag) const;
 
-  /// Advances every displayable by `seconds`.
+  /// Advances the tweens and every displayable by `seconds`.
   void update(double seconds);
   /// Loads and uploads the images of displayables that have no texture yet. Call it on the main
   /// thread before draw(), always with the same renderer (the scene keeps its textures). Rethrows
@@ -98,7 +111,7 @@ class Scene final : public SceneState, public SceneCommands {
  private:
   struct Entry {
     std::string tag;
-    ImageDisplayable displayable;
+    std::unique_ptr<Displayable> displayable;
   };
   struct Texture {
     TextureId id{};
@@ -111,6 +124,10 @@ class Scene final : public SceneState, public SceneCommands {
   using Layers = std::array<std::vector<Entry>, kLayerOrder.size()>;
 
   [[nodiscard]] std::optional<Slot> locate(std::string_view tag) const;
+  [[nodiscard]] Timeline::Lookup lookup();
+  [[nodiscard]] static Displayable* find_in(Layers& layers, std::string_view tag);
+  // Reads the "displayables" part of a snapshot. Throws std::invalid_argument.
+  [[nodiscard]] static Layers read_displayables(std::span<const std::byte> bytes);
 
   [[nodiscard]] std::vector<Entry>& entries(Layer layer);
   [[nodiscard]] const std::vector<Entry>& entries(Layer layer) const;
@@ -119,6 +136,7 @@ class Scene final : public SceneState, public SceneCommands {
   Size virtual_size_;
   Layers layers_;
   std::map<std::string, Texture, std::less<>> textures_;
+  Timeline timeline_;
 };
 
 }  // namespace vnmaki

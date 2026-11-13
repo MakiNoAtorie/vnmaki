@@ -543,6 +543,146 @@ function call_screen(name, args)
   return engine.call_screen(name)
 end
 )lua" R"lua(
+-- Tweens (docs/SPEC.md section 10). A tween item is a table { tag, option = value, ... }; a group
+-- item is { sequence = { items } } or { parallel = { items } }. `level` is the error() level that
+-- reaches the script from the function that holds it.
+local tween_numbers = { "x", "y", "rotation", "alpha", "duration", "delay" }
+local max_tween_depth = 16
+
+local function typed(fname, options, key, expected, level)
+  local value = options[key]
+  if value ~= nil and type(value) ~= expected then
+    error(format("bad option '%s' to '%s' (%s expected, got %s)", key, fname, expected,
+                 type(value)), level + 1)
+  end
+  return value
+end
+
+local function number_table(fname, options, key, names, node, level)
+  local fields = typed(fname, options, key, "table", level)
+  if fields == nil then
+    return
+  end
+  for i = 1, #names do
+    local value = fields[names[i]]
+    if value ~= nil and type(value) ~= "number" then
+      error(format("bad field '%s' of option '%s' to '%s' (number expected, got %s)", names[i], key,
+                   fname, type(value)), level)
+    end
+    node[key .. "_" .. names[i]] = value
+  end
+end
+
+local function tween_node(fname, tag, options, level)
+  if type(tag) ~= "string" or tag == "" then
+    error(format("bad tween tag (a tag string expected, got %s)", type(tag)), level)
+  end
+  local node = { kind = "tween", tag = tag }
+  for i = 1, #tween_numbers do
+    node[tween_numbers[i]] = typed(fname, options, tween_numbers[i], "number", level)
+  end
+  node.ease = typed(fname, options, "ease", "string", level)
+  node.loop = typed(fname, options, "loop", "boolean", level)
+  node.yoyo = typed(fname, options, "yoyo", "boolean", level)
+  number_table(fname, options, "anchor", { "x", "y" }, node, level + 1)
+  number_table(fname, options, "crop", { "x", "y", "width", "height" }, node, level + 1)
+  if type(options.scale) == "number" then
+    node.scale_x, node.scale_y = options.scale, options.scale
+  else
+    number_table(fname, options, "scale", { "x", "y" }, node, level + 1)
+  end
+  local tint = typed(fname, options, "tint", "string", level)
+  if tint ~= nil then
+    if not tint:match("^#%x%x%x%x%x%x$") then
+      error(format("bad option 'tint' to '%s' (\"#rrggbb\" expected)", fname), level)
+    end
+    node.tint = tonumber(tint:sub(2), 16)
+  end
+  return node
+end
+
+local tween_item
+local function tween_group(kind, items, options, level, depth)
+  if depth > max_tween_depth then
+    error(format("groups nest more than %d levels deep", max_tween_depth), level)
+  end
+  if #items == 0 then
+    error(kind .. "() needs at least one item", level)
+  end
+  local node = { kind = kind, children = {} }
+  node.delay = typed(kind, options, "delay", "number", level)
+  node.loop = typed(kind, options, "loop", "boolean", level)
+  for i = 1, #items do
+    node.children[i] = tween_item(kind, items[i], i, level + 1, depth + 1)
+  end
+  return node
+end
+
+function tween_item(fname, item, index, level, depth)
+  if type(item) ~= "table" then
+    error(format("bad item #%d in '%s' (a table expected, got %s)", index, fname, type(item)),
+          level)
+  end
+  local kind = (item.sequence ~= nil and "sequence") or (item.parallel ~= nil and "parallel")
+  if kind then
+    if type(item[kind]) ~= "table" then
+      error(format("bad item #%d in '%s' ('%s' must be a table of items)", index, fname, kind),
+            level)
+    end
+    -- Not a tail call, which would drop this frame and shift the error levels.
+    local group_node = tween_group(kind, item[kind], item, level + 1, depth)
+    return group_node
+  end
+  local node = tween_node(fname, item[1], item, level + 1)
+  return node
+end
+
+local function start_tween(node, command)
+  local problem = engine.tween(node)
+  if problem then
+    error(problem, 3)
+  end
+  engine.scene_command(command)
+end
+
+function tween(tag, options)
+  if type(tag) ~= "string" then
+    bad_argument("tween", 1, "string", tag)
+  end
+  options = options_argument("tween", options)
+  require_label("tween")
+  start_tween(tween_node("tween", tag, options, 3), "tween " .. tag)
+end
+
+local function group_function(kind)
+  return function(items)
+    if type(items) ~= "table" then
+      bad_argument(kind, 1, "table", items)
+    end
+    require_label(kind)
+    start_tween(tween_group(kind, items, items, 3, 0), kind)
+  end
+end
+sequence, parallel = group_function("sequence"), group_function("parallel")
+
+-- Blocks until the tweens of `tag` end. It is a step even when none runs, so replays count the
+-- same steps as live play.
+function wait(tag)
+  if type(tag) ~= "string" then
+    bad_argument("wait", 1, "string", tag)
+  end
+  if tag == "" then
+    error("wait() needs a tag (wait_all() waits for every tween)", 2)
+  end
+  require_label("wait")
+  engine.wait(tag)
+end
+
+function wait_all()
+  require_label("wait_all")
+  engine.wait("")
+end
+)lua" R"lua(
 
 -- Saves. A call only queues a request; the host carries it out when the story waits.
 local function slot_name(slot)
@@ -926,6 +1066,66 @@ std::string read_screen_node(const sol::table& table, int depth, ScreenNodeDef& 
   return {};
 }
 
+// How deep a tween group may nest; the prelude allows far less.
+constexpr int kMaxTweenDepth = 64;
+
+// Copies a tween node table built by the prelude into `request`. Returns why it cannot, or an
+// empty string.
+std::string read_tween(const sol::table& table, int depth, TweenRequest& request) {
+  if (depth > kMaxTweenDepth) {
+    return "tween groups nest more than " + std::to_string(kMaxTweenDepth) + " levels deep";
+  }
+  const auto number = [&table](const char* key) -> std::optional<double> {
+    const auto value = table.get<sol::optional<double>>(key);
+    return value ? std::optional<double>{*value} : std::nullopt;
+  };
+  const auto kind = table.get<sol::optional<std::string>>("kind");
+  if (!kind) {
+    return "a tween is malformed (use tween, sequence and parallel)";
+  }
+  if (*kind == "sequence") {
+    request.kind = TweenRequest::Kind::kSequence;
+  } else if (*kind == "parallel") {
+    request.kind = TweenRequest::Kind::kParallel;
+  }
+  request.tag = table.get_or<std::string>("tag", "");
+  request.x = number("x");
+  request.y = number("y");
+  request.anchor_x = number("anchor_x");
+  request.anchor_y = number("anchor_y");
+  request.scale_x = number("scale_x");
+  request.scale_y = number("scale_y");
+  request.rotation = number("rotation");
+  request.alpha = number("alpha");
+  if (const auto tint = table.get<sol::optional<std::int64_t>>("tint")) {
+    request.tint = static_cast<std::uint32_t>(*tint);
+  }
+  request.crop_x = number("crop_x");
+  request.crop_y = number("crop_y");
+  request.crop_width = number("crop_width");
+  request.crop_height = number("crop_height");
+  request.duration = number("duration").value_or(request.duration);
+  request.delay = number("delay").value_or(request.delay);
+  request.ease = table.get_or<std::string>("ease", request.ease);
+  request.loop = table.get_or("loop", false);
+  request.yoyo = table.get_or("yoyo", false);
+  if (const auto children = table.get<sol::optional<sol::table>>("children")) {
+    const std::size_t count = children->size();
+    request.children.reserve(count);
+    for (std::size_t i = 1; i <= count; ++i) {
+      const auto child = children->get<sol::optional<sol::table>>(i);
+      if (!child) {
+        return "a tween group has an item that is not a tween";
+      }
+      if (std::string problem = read_tween(*child, depth + 1, request.children.emplace_back());
+          !problem.empty()) {
+        return problem;
+      }
+    }
+  }
+  return {};
+}
+
 // Continues `coroutine` with the answer of a blocking call as its result.
 sol::protected_function_result resume_with(sol::coroutine& coroutine, const ScreenValue& value) {
   return std::visit(
@@ -990,7 +1190,9 @@ class ScriptRuntime::Impl {
     if (frames_.empty()) {
       return {};
     }
-    return {.label = frames_.back().label, .step = frames_.back().step};
+    return {.label = frames_.back().label,
+            .step = frames_.back().step,
+            .wait = state_ == RunState::kWaiting && std::holds_alternative<WaitRequest>(request_)};
   }
   [[nodiscard]] const std::string& error() const { return error_; }
 
@@ -1301,6 +1503,23 @@ void ScriptRuntime::Impl::bind_engine() {
       options_.scene->hide(tag);
     }
   };
+  // Tweens start during a replay too: those that end then go to their end values at once.
+  engine_["tween"] = [this, problem_or_nil](sol::this_state state, const sol::table& spec) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    TweenRequest request;
+    std::string problem = read_tween(spec, 0, request);
+    if (problem.empty()) {
+      request.replaying = replaying_;
+      problem = options_.scene->tween(request);
+    }
+    return problem_or_nil(state, problem);
+  };
+  engine_["wait"] = sol::yielding([this](sol::this_state state, const std::string& tag) {
+    yield_at(state, WaitRequest{.tag = tag});
+  });
   engine_["scene_command"] = [this](const std::string& command) {
     if (!replaying_) {
       observer_->on_scene_command(command);
@@ -1681,7 +1900,8 @@ bool ScriptRuntime::Impl::enter(const std::string& name) {
 
 void ScriptRuntime::Impl::advance() {
   const bool at_line = std::holds_alternative<SayRequest>(request_) ||
-                       std::holds_alternative<NarrateRequest>(request_);
+                       std::holds_alternative<NarrateRequest>(request_) ||
+                       std::holds_alternative<WaitRequest>(request_);
   if (state_ != RunState::kWaiting || !at_line) {
     return;
   }
@@ -1888,7 +2108,10 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
       }
       replaying_ = false;
       state_ = RunState::kWaiting;
-      observer_->on_blocked(request_, ScriptPosition{.label = frame.label, .step = frame.step});
+      observer_->on_blocked(request_,
+                            ScriptPosition{.label = frame.label,
+                                           .step = frame.step,
+                                           .wait = std::holds_alternative<WaitRequest>(request_)});
       return;
     }
     TransferKind kind = TransferKind::kReturn;

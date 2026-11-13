@@ -11,6 +11,7 @@
 #include <variant>
 #include <vector>
 
+#include "engine/anim/wait_presenter.hpp"
 #include "engine/dialogue/dialogue_presenter.hpp"
 #include "engine/dialogue/say_box.hpp"
 #include "engine/jobs/job_system.hpp"
@@ -81,6 +82,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
 
     runtime.start("start");
     ScreenPresenter screens{runtime, ui};
+    WaitPresenter waits{runtime, scene};
     DialoguePresenter presenter{
         runtime,
         [&](const DialogueLine& line) { return say_box.glyph_count(line); },
@@ -100,6 +102,12 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
              point.y < static_cast<float>(virtual_size.height);
     };
 
+    // A click, key or button ends a wait for tweens first (skip mode will do the same).
+    const auto advance = [&] {
+      if (!waits.skip()) {
+        presenter.advance();
+      }
+    };
     MainLoopHooks hooks;
     hooks.on_event = [&](const InputEvent& event) {
       if (screens.handle_event(event, viewport())) {
@@ -107,7 +115,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       }
       if (const auto* key = std::get_if<KeyEvent>(&event)) {
         if (key->pressed && !key->repeat && is_advance_key(key->key)) {
-          presenter.advance();
+          advance();
         }
       } else if (const auto* click = std::get_if<PointerButtonEvent>(&event)) {
         if (click->pressed && click->button == MouseButton::kLeft &&
@@ -116,12 +124,12 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
           const std::string link =
               line ? say_box.link_at(*line, window_to_virtual(viewport(), click->position)) : "";
           if (link.empty() || !runtime.activate_link(link)) {
-            presenter.advance();
+            advance();
           }
         }
       } else if (const auto* button = std::get_if<GamepadButtonEvent>(&event)) {
         if (button->pressed && button->button == GamepadButton::kSouth) {
-          presenter.advance();
+          advance();
         }
       }
     };
@@ -129,6 +137,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       const double seconds = std::chrono::duration<double>(step).count();
       presenter.update(seconds);
       scene.update(seconds);
+      waits.update();
       screens.sync();
     };
     hooks.draw = [&](double /*alpha*/) {
