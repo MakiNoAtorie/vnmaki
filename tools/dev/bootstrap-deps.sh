@@ -35,7 +35,7 @@ $SUDO apt-get install -y -qq --no-install-recommends \
   git cmake ninja-build pkg-config curl ca-certificates \
   doctest-dev liblua5.4-dev libtomlplusplus-dev libclang-rt-18-dev libstb-dev \
   libharfbuzz-dev libfreetype-dev libunibreak-dev \
-  libopusfile-dev libvorbis-dev libzstd-dev \
+  libopusfile-dev libvorbis-dev libzstd-dev libdav1d-dev libwebm-dev libogg-dev \
   mesa-vulkan-drivers libvulkan1 \
   libx11-dev libxext-dev libxtst-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
   libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libasound2-dev libpulse-dev
