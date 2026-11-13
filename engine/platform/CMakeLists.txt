@@ -10,3 +10,12 @@ find_package(SDL3 CONFIG REQUIRED COMPONENTS SDL3)
 target_sources(vnmaki_engine PRIVATE sdl_events.cpp sdl_events.hpp sdl_platform.cpp
                                      sdl_platform.hpp)
 target_link_libraries(vnmaki_engine PRIVATE SDL3::SDL3)
+
+# Self-voicing (ticket 43): SAPI on Windows, a null backend elsewhere.
+target_sources(vnmaki_engine PRIVATE tts.hpp)
+if(WIN32)
+  target_sources(vnmaki_engine PRIVATE win_tts.cpp)
+  target_link_libraries(vnmaki_engine PRIVATE sapi ole32)
+else()
+  target_sources(vnmaki_engine PRIVATE tts.cpp)
+endif()
