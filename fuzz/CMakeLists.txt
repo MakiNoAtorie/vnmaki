@@ -92,3 +92,9 @@ vnmaki_add_fuzzer(script_scan script_scan_fuzzer.cpp script_scan_properties.hpp)
 add_test(NAME fuzz.script_scan.dictionary
          COMMAND fuzz_script_scan -runs=10000 -seed=1
                  "-dict=${CMAKE_CURRENT_SOURCE_DIR}/script_scan.dict")
+
+# `.po` files (ticket 40). Random bytes rarely form a message, so a dictionary gives libFuzzer the
+# pieces.
+vnmaki_add_fuzzer(po po_fuzzer.cpp po_properties.hpp)
+add_test(NAME fuzz.po.dictionary
+         COMMAND fuzz_po -runs=10000 -seed=1 "-dict=${CMAKE_CURRENT_SOURCE_DIR}/po.dict")

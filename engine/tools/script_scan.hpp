@@ -51,6 +51,15 @@ enum class ScanCallKind : std::uint8_t {
   kMovie,
 };
 
+/// One positional value of a table, as in `menu { "a", "b" }`. A `name = value` is not one.
+struct ScanElement {
+  /// The text when the value is one string literal, else nothing.
+  std::optional<std::string> text{};
+  std::uint32_t line = 0;  ///< The line of the first token of the value.
+
+  friend bool operator==(const ScanElement&, const ScanElement&) = default;
+};
+
 /// A call of `label`, `jump`, `call`, `ret`, `menu`, `say`, `show`, `narrate`, `scene`, `music`,
 /// `sound`, `voice` or `movie` in the body of a label,
 /// written as `name(...)`, `name "text"` or `name { ... }`. A call after `.` or `:` (a method) is
@@ -67,6 +76,12 @@ struct ScanCall {
   std::vector<std::optional<std::string>> arguments{};
   /// The keys written as `name =` at the top level of a table argument, in source order.
   std::vector<std::string> option_keys{};
+  /// `say` only: the first argument as a string literal's text, or as a name (`eileen`,
+  /// `chars.eileen`). Empty for `nil` and for any other value.
+  std::string speaker{};
+  /// `menu` only: the positional values of its table argument (the options). Nothing when the
+  /// argument is not a table written in the call.
+  std::optional<std::vector<ScanElement>> table{};
 
   friend bool operator==(const ScanCall&, const ScanCall&) = default;
 };
@@ -93,5 +108,23 @@ struct ScanLabel {
 
 /// `scan_tokens(tokenize_lua(source))`.
 [[nodiscard]] std::vector<ScanLabel> scan_labels(std::string_view source);
+
+/// One call of `screen "name" { ... }` or `screen("name", function(args) ... end)`.
+struct ScanScreen {
+  std::optional<std::string> name{};  ///< Nothing when the name is computed.
+  std::uint32_t line = 0;
+  /// The first positional value of each `text { ... }` and `button { ... }` in the call, in source
+  /// order: the string a player sees, or a computed value (no text).
+  std::vector<ScanElement> texts{};
+
+  friend bool operator==(const ScanScreen&, const ScanScreen&) = default;
+};
+
+/// The screens that the tokens define, in source order. A `text` or `button` after `.` or `:` is
+/// not a node.
+[[nodiscard]] std::vector<ScanScreen> scan_screen_tokens(std::span<const LuaToken> tokens);
+
+/// `scan_screen_tokens(tokenize_lua(source))`.
+[[nodiscard]] std::vector<ScanScreen> scan_screens(std::string_view source);
 
 }  // namespace vnmaki

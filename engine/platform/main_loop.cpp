@@ -29,6 +29,19 @@ bool MainLoop::run_frame(const MainLoopHooks& hooks) {
   accumulated_ += std::max(frame_start - previous_time_, Duration::zero());
   previous_time_ = frame_start;
 
+  // The clock is read for the phases only when someone listens, so a test clock that counts its
+  // reads sees no more of them.
+  const bool timed = static_cast<bool>(hooks.frame_end);
+  FrameTiming timing;
+  Duration lap_start = frame_start;
+  const auto lap = [&](Duration& phase) {
+    if (timed) {
+      const Duration now = clock_->now();
+      phase = now - lap_start;
+      lap_start = now;
+    }
+  };
+
   while (auto event = platform_->poll_event()) {
     if (hooks.on_event) {
       hooks.on_event(*event);
@@ -37,6 +50,7 @@ bool MainLoop::run_frame(const MainLoopHooks& hooks) {
       quit_requested_ = true;
     }
   }
+  lap(timing.events);
   if (quit_requested_) {
     return false;
   }
@@ -51,11 +65,17 @@ bool MainLoop::run_frame(const MainLoopHooks& hooks) {
       hooks.update(step);
     }
     accumulated_ -= step;
+    ++timing.updates;
   }
+  lap(timing.update);
 
   if (hooks.draw) {
     const double alpha = std::chrono::duration<double>(accumulated_) / step;
     hooks.draw(alpha);
+  }
+  lap(timing.draw);
+  if (timed) {
+    hooks.frame_end(timing);
   }
 
   if (config_.min_frame_time > Duration::zero()) {

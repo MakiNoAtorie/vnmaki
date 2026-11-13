@@ -21,6 +21,7 @@
 
 #include "engine/audio/audio_decoder.hpp"
 #include "engine/core/byte_stream.hpp"
+#include "engine/core/load_timing.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki {
@@ -260,6 +261,7 @@ struct Audio::Impl {
                                                 std::string& problem) const;
   std::string set_music(std::string_view channel_name, MusicSpec music, double fade);
   void reconcile();
+  std::function<void(std::string_view)> warn;
 
   /// Adds the next out.size() / kAudioChannels frames of every channel to `out`. Call with
   /// `mutex` held.
@@ -363,6 +365,7 @@ std::optional<Track> Audio::Impl::make_track(std::string_view name, const MusicS
     if (!vfs->exists(path)) {
       continue;
     }
+    const LoadTimer timer{path};
     std::optional<std::vector<std::byte>> bytes = vfs->read(path);
     if (!bytes) {
       problem = quoted_audio(name) + ": cannot read " + path;
@@ -431,6 +434,17 @@ std::string Audio::Impl::set_music(std::string_view channel_name, MusicSpec musi
 
 // Makes the music tracks match each channel's music, with no fade: the state was restored, and
 // the player should hear the step as it was.
+void Audio::update_music() {
+  try {
+    impl_->reconcile();
+  } catch (const AudioError& error) {
+    if (!impl_->warn) {
+      throw;
+    }
+    impl_->warn(error.what());  // the rest is done: the music of that channel stays silent
+  }
+}
+
 void Audio::Impl::reconcile() {
   pending = false;
   std::vector<std::pair<std::string, std::optional<MusicSpec>>> wanted;
@@ -751,6 +765,12 @@ std::vector<std::byte> Audio::capture() const {
 
 void Audio::restore(std::span<const std::byte> state) {
   std::map<std::string, ChannelSettings, std::less<>> settings = read_state(state);
+  // A music file that is gone is a failed load (std::invalid_argument), before anything changes.
+  for (const auto& [name, restored] : settings) {
+    if (restored.music && !resolve_audio(*impl_->vfs, restored.music->name)) {
+      throw std::invalid_argument{"audio state: " + missing_audio(restored.music->name)};
+    }
+  }
   const std::scoped_lock lock{impl_->mutex};
   for (auto& [name, entry] : impl_->channels) {
     entry.volume = 1;
@@ -766,9 +786,13 @@ void Audio::restore(std::span<const std::byte> state) {
   impl_->pending = true;
 }
 
+void Audio::set_warning_handler(std::function<void(std::string_view)> handler) {
+  impl_->warn = std::move(handler);
+}
+
 void Audio::update(double seconds) {
   if (impl_->pending) {
-    impl_->reconcile();
+    update_music();
   }
   if (impl_->options.output != AudioOutput::kManual || !(seconds > 0)) {
     return;

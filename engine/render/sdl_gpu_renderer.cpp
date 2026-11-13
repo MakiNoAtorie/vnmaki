@@ -201,6 +201,7 @@ struct SdlGpuRenderer::Impl {
 
   std::unordered_map<std::uint32_t, Texture> textures;
   std::uint32_t next_texture = 1;
+  TextureMemory memory;  // what `textures` holds; changed by add_texture() and release_destroyed()
   std::unordered_map<std::uint32_t, Shader> custom_shaders;
   std::uint32_t next_shader = 1;
   std::map<PipelineKey, GpuPtr<SDL_GPUGraphicsPipeline>> pipelines;
@@ -230,6 +231,7 @@ struct SdlGpuRenderer::Impl {
   void upload_index_buffer();
   [[nodiscard]] const Texture& texture(TextureId id) const;
   [[nodiscard]] TextureId add_texture(Size size, TextureFilter filter, bool render_target);
+  void track_memory(Size size, bool render_target, int direction);
   [[nodiscard]] SDL_GPUGraphicsPipeline* pipeline(ShaderId shader, BlendMode blend,
                                                   SDL_GPUTextureFormat format);
   void upload_vertices(SDL_GPUCommandBuffer* commands);
@@ -388,6 +390,15 @@ const SdlGpuRenderer::Impl::Texture& SdlGpuRenderer::Impl::texture(TextureId id)
   return found->second;
 }
 
+void SdlGpuRenderer::Impl::track_memory(Size size, bool render_target, int direction) {
+  const std::uint64_t bytes = static_cast<std::uint64_t>(size.width) *
+                              static_cast<std::uint64_t>(size.height) * kBytesPerPixel;
+  std::uint64_t& total = render_target ? memory.target_bytes : memory.texture_bytes;
+  std::uint32_t& count = render_target ? memory.targets : memory.textures;
+  total = direction > 0 ? total + bytes : total - bytes;
+  count = direction > 0 ? count + 1 : count - 1;
+}
+
 TextureId SdlGpuRenderer::Impl::add_texture(Size size, TextureFilter filter, bool render_target) {
   if (size.width <= 0 || size.height <= 0) {
     throw RenderError{"a texture needs a positive size, not " + std::to_string(size.width) + "x" +
@@ -415,6 +426,7 @@ TextureId SdlGpuRenderer::Impl::add_texture(Size size, TextureFilter filter, boo
                                      .size = size,
                                      .filter = filter,
                                      .render_target = render_target});
+  track_memory(size, render_target, 1);
   return id;
 }
 
@@ -604,7 +616,10 @@ std::uint32_t SdlGpuRenderer::Impl::record_passes(SDL_GPUCommandBuffer* commands
 void SdlGpuRenderer::Impl::release_destroyed() {
   // SDL defers the actual release until the GPU no longer uses the objects.
   for (const TextureId id : textures_to_destroy) {
-    textures.erase(id.value);
+    if (const auto found = textures.find(id.value); found != textures.end()) {
+      track_memory(found->second.size, found->second.render_target, -1);
+      textures.erase(found);
+    }
   }
   textures_to_destroy.clear();
   for (const ShaderId id : shaders_to_destroy) {
@@ -712,6 +727,8 @@ ShaderId SdlGpuRenderer::create_shader(const ShaderBytecode& fragment) {
   impl_->custom_shaders.emplace(id.value, std::move(shader));
   return id;
 }
+
+TextureMemory SdlGpuRenderer::texture_memory() const { return impl_->memory; }
 
 void SdlGpuRenderer::destroy_texture(TextureId texture) {
   if (impl_->textures.contains(texture.value)) {

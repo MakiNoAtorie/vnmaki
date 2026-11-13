@@ -588,18 +588,40 @@ TEST_CASE("audio: a malformed snapshot is rejected and changes nothing") {
   CHECK(mixer.audio.channel("music").tracks.size() == 1);
 }
 
-TEST_CASE("audio: restoring music whose file is gone throws at the next update") {
+TEST_CASE("audio: restoring music whose file is gone is a failed load and changes nothing") {
   Mixer mixer;
   REQUIRE(mixer.audio.music(music_request("bgm/theme")).empty());
   const std::vector<std::byte> snapshot = mixer.audio.capture();
 
   const vnmaki::Vfs empty = vnmaki::test::memory_vfs({});
   Audio audio{empty};
-  audio.restore(snapshot);
-
-  CHECK_THROWS_AS(audio.update(0), vnmaki::AudioError);
-  CHECK(audio.channel("music").tracks.empty());
+  CHECK_THROWS_AS(audio.restore(snapshot), std::invalid_argument);
+  CHECK(audio.channel("music").music.empty());
   CHECK_NOTHROW(audio.update(0));
+}
+
+TEST_CASE("audio: music that does not decode throws at the next update, or warns") {
+  Mixer mixer;
+  REQUIRE(mixer.audio.music(music_request("bgm/theme")).empty());
+  const std::vector<std::byte> snapshot = mixer.audio.capture();
+
+  const vnmaki::Vfs broken = vnmaki::test::memory_vfs({{"audio/bgm/theme.ogg", "not an Ogg file"}});
+  Audio audio{broken};
+  audio.restore(snapshot);
+  SUBCASE("without a handler") {
+    CHECK_THROWS_AS(audio.update(0), vnmaki::AudioError);
+    CHECK(audio.channel("music").tracks.empty());
+    CHECK_NOTHROW(audio.update(0));
+  }
+  SUBCASE("with a handler the frame goes on") {
+    Lines warnings;
+    audio.set_warning_handler([&](std::string_view message) { warnings.emplace_back(message); });
+    CHECK_NOTHROW(audio.update(0));
+    CHECK(warnings.size() == 1);
+    CHECK(audio.channel("music").tracks.empty());
+    CHECK_NOTHROW(audio.update(0));
+    CHECK(warnings.size() == 1);
+  }
 }
 
 namespace {

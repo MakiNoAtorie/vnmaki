@@ -16,6 +16,7 @@
 #include <mkvparser/mkvparser.h>
 #include <ogg/ogg.h>
 
+#include "engine/core/load_timing.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki {
@@ -356,6 +357,7 @@ MovieData open_movie(std::span<const std::byte> webm) {
 }
 
 std::shared_ptr<const MovieData> load_movie(const Vfs& vfs, std::string_view path) {
+  const LoadTimer timer{path};
   if (!vfs.exists(path)) {
     throw MovieError{quoted_movie(path) + " not found"};
   }

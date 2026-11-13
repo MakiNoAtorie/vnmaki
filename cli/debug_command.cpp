@@ -257,7 +257,7 @@ int debug_command(std::span<const std::string_view> args, std::ostream& out, std
                                 err);
     }
     return run_story_window(vfs, arguments->project_dir, config, std::nullopt, arguments->data_dir,
-                            err, &channel);
+                            err, std::nullopt, &channel);
   } catch (const std::exception& error) {
     err << "vnmaki: " << error.what() << '\n';
     return kExitError;

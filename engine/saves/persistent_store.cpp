@@ -65,7 +65,15 @@ void PersistentStore::load() {
     }
     written_ = runtime_->persistent_snapshot();
   } catch (const std::exception& error) {
-    warn("persistent: " + std::string{error.what()} + "; starting with no saved data");
+    // Keep the unreadable file (a newer game's data, or a repairable one): flush() must not
+    // replace it with defaults.
+    std::filesystem::path bad = file_;
+    bad += ".bad";
+    std::error_code moved;
+    std::filesystem::rename(file_, bad, moved);
+    written_ = runtime_->persistent_snapshot();
+    warn("persistent: " + std::string{error.what()} + "; starting with no saved data" +
+         (moved ? "" : " (the old file is kept as " + bad.filename().string() + ")"));
   }
 }
 

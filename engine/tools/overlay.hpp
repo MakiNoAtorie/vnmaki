@@ -22,6 +22,7 @@ namespace vnmaki {
 
 class Audio;
 class ImguiBackend;
+class Profiler;
 class Scene;
 struct StoreRow;
 
@@ -60,6 +61,10 @@ class DevOverlay {
   /// ObserverChain). `vfs` and `trace` must outlive the overlay.
   void set_story(const Vfs& vfs, const TraceRecorder& trace);
 
+  /// Turns on the "Profiler" window: the frame-time graph, the counters and the slowest loads of
+  /// `profiler`, which must outlive the overlay or be reset first (null).
+  void set_profiler(const Profiler* profiler) { profiler_ = profiler; }
+
   /// Builds this frame's windows and gives them to the renderer, which draws them in its
   /// end_frame() over the last pass. Call it once per frame after the game's passes. Does
   /// nothing while hidden. `window_pixels` is the size of that pass's target.
@@ -77,6 +82,7 @@ class DevOverlay {
   void draw_audio_tab();
   void draw_labels_tab();
   void draw_story_graph();
+  void draw_profiler();
   void run_input();
 
   std::unique_ptr<ImguiBackend> backend_;
@@ -97,6 +103,7 @@ class DevOverlay {
   const TraceRecorder* trace_ = nullptr;
   StoryGraph graph_;
   std::size_t trace_revision_ = 0;
+  const Profiler* profiler_ = nullptr;
 };
 
 }  // namespace vnmaki

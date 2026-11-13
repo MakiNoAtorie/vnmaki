@@ -3,6 +3,8 @@
 // Expected values are written out by hand from the script text.
 
 #include <cstddef>
+#include <cstdint>
+#include <string_view>
 #include <string>
 #include <variant>
 #include <vector>
@@ -123,6 +125,80 @@ TEST_CASE("rollback: a story that has ended or never started has nowhere to go b
   story.runtime.advance();
   REQUIRE(story.runtime.state() == RunState::kFinished);
   CHECK_FALSE(story.runtime.roll_back());
+}
+
+TEST_CASE("rollback: a store write made through a binding is replayed") {
+  Story story{R"(
+label("start", function()
+  narrate("a")
+  narrate("hello " .. tostring(store.name))
+  narrate("c")
+end)
+)"};
+  const auto write = [&](std::string_view key, std::string_view text) {
+    return story.runtime.set_binding("store", key, vnmaki::ScreenValue{std::string{text}});
+  };
+  REQUIRE(story.at() == "a");
+  CHECK(write("name", "Eileen").empty());
+  CHECK(write("name", "Eileen B").empty());
+  CHECK(story.runtime.input_log().size() == 1);  // two writes at one wait are one entry
+  story.runtime.advance();
+  REQUIRE(story.at() == "hello Eileen B");
+  CHECK(write("name", "Lucy").empty());
+  CHECK(story.runtime.input_log().size() == 2);
+  story.runtime.advance();
+  REQUIRE(story.at() == "c");
+
+  CHECK(story.runtime.roll_back());
+  CHECK(story.at() == "hello Eileen B");
+  CHECK(story.runtime.binding("store", "name") == vnmaki::ScreenValue{std::string{"Lucy"}});
+  CHECK(story.runtime.roll_back());
+  CHECK(story.at() == "a");
+  CHECK(story.runtime.binding("store", "name") == vnmaki::ScreenValue{std::string{"Eileen B"}});
+  story.runtime.advance();
+  CHECK(story.at() == "hello Eileen B");
+}
+
+TEST_CASE("rollback: bound store writes are replayed through a call") {
+  Story story{R"(label("start", function()
+  narrate("s1")
+  call("aside")
+  narrate("s2 " .. tostring(store.v))
+end)
+label("aside", function()
+  narrate("a1")
+  narrate("a2 " .. tostring(store.v))
+end)
+)"};
+  const auto write = [&](std::int64_t number) {
+    return story.runtime.set_binding("store", "v", vnmaki::ScreenValue{number});
+  };
+  const auto value = [&] { return story.runtime.binding("store", "v"); };
+  CHECK(write(1).empty());
+  story.runtime.advance();
+  REQUIRE(story.at() == "a1");
+  CHECK(write(2).empty());
+  story.runtime.advance();
+  story.runtime.advance();
+  REQUIRE(story.at() == "s2 2");
+
+  CHECK(story.runtime.roll_back());
+  CHECK(story.at() == "a2 2");
+  CHECK(story.runtime.roll_back());
+  CHECK(story.at() == "a1");
+  CHECK(value() == vnmaki::ScreenValue{std::int64_t{2}});
+  CHECK(story.runtime.roll_back());
+  CHECK(story.at() == "s1");
+  CHECK(value() == vnmaki::ScreenValue{std::int64_t{1}});
+}
+
+TEST_CASE("rollback: only writes to store are logged, not to persistent or prefs") {
+  Story story{kThreeLines};
+  CHECK(story.runtime.set_binding("persistent", "x", true).empty());
+  CHECK(story.runtime.set_binding("prefs", "fullscreen", true).empty());
+  CHECK(story.runtime.set_binding("store", "x", vnmaki::ScreenValue{std::int64_t{1}}).empty());
+  CHECK(story.runtime.set_binding("nowhere", "x", true) != "");
+  CHECK(story.runtime.input_log().size() == 1);
 }
 
 TEST_CASE("rollback: persistent does not change") {
@@ -373,6 +449,22 @@ TEST_CASE("rollback: depth 0 turns it off") {
   CHECK_FALSE(story.runtime.can_roll_back());
   CHECK_FALSE(story.runtime.roll_back());
   CHECK(story.at() == "line 2");
+}
+
+TEST_CASE("rollback: depth 0 gives no rollback at a wait either") {
+  Story story{R"(
+label("start", function()
+  narrate("before")
+  wait_all()
+  narrate("after")
+end)
+)",
+              0};
+  story.runtime.advance();
+  REQUIRE(story.at() == "wait");
+  CHECK_FALSE(story.runtime.can_roll_back());
+  CHECK_FALSE(story.runtime.roll_back());
+  CHECK(story.at() == "wait");
 }
 
 TEST_CASE("rollback: it goes back over a wait to the previous line") {

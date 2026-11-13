@@ -186,6 +186,14 @@ vnmaki_add_fixture_generator(
   check SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/check_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
 
+# Localization (ticket 40): `.po` files, string extraction and the update of translations. The
+# generator writes the projects and the expected files of the `vnmaki extract-strings` CLI tests.
+# The fuzz target shares fuzz/po_properties.hpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/po_test.cpp unit/extract_test.cpp)
+vnmaki_add_fixture_generator(
+  l10n SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/l10n_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
 # Video: WebM, AV1 and Opus, the player and its clocks, `movie` and the movie displayable (ticket
 # 25). clip.webm is the one committed binary fixture; its README has the ffmpeg command.
 target_sources(vnmaki_unit_tests PRIVATE unit/video_test.cpp)
@@ -216,3 +224,7 @@ if(VNMAKI_DEV_TOOLS)
     debug SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/debug_fixtures.py"
     TEST_TARGETS vnmaki_unit_tests)
 endif()
+
+# Profiler: frame phases with a fake clock, the CSV text and the load timing (ticket 33). It needs
+# no ImGui, so it is in every build.
+target_sources(vnmaki_unit_tests PRIVATE unit/profiler_test.cpp)

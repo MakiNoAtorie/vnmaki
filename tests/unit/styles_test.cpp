@@ -369,11 +369,12 @@ end)
   REQUIRE(entered.activation.has_value());
   CHECK(std::get<std::string>(entered.activation->value) == "entered");
 
-  // Tab leaves the input: its focus is lost, so text input goes off and typing is not consumed.
+  // Tab leaves the input: text input goes off and typing no longer edits it. The modal screen
+  // still consumes the events, so the story does not get them.
   CHECK(game.press(Key::kTab).consumed);
   CHECK_FALSE(game.platform.text_input_enabled());
-  CHECK_FALSE(game.type("q").consumed);
-  CHECK_FALSE(game.press(Key::kBackspace).consumed);
+  CHECK(game.type("q").consumed);
+  CHECK(game.press(Key::kBackspace).consumed);
   CHECK(game.text("name") == "x");
 
   // Back to the input: on again. Hiding the screen turns it off.

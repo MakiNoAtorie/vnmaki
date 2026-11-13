@@ -1,10 +1,13 @@
-# Dev tools (docs/SPEC.md section 18). The Lua scan and the story graph need no ImGui and build in
-# every preset, so `vnmaki graph` and `vnmaki check` work in a release build.
+# Dev tools (docs/SPEC.md section 18). The Lua scan, the story graph, `check` and the profiler need
+# no ImGui and build in every preset, so `vnmaki graph`, `vnmaki check` and `vnmaki run --profile`
+# work in a release build.
 target_sources(
   vnmaki_engine
   PRIVATE check.cpp
           check.hpp
           observer_chain.hpp
+          profiler.cpp
+          profiler.hpp
           script_scan.cpp
           script_scan.hpp
           story_graph.cpp

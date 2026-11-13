@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -235,6 +237,58 @@ TEST_CASE("persistent: a damaged file is reported and the game starts empty") {
   REQUIRE(game.warnings.size() == 1);
   CHECK(game.warnings.front().starts_with("persistent:"));
   CHECK(game.runtime.state() == RunState::kWaiting);
+}
+
+namespace {
+
+void write_text(const std::filesystem::path& path, const std::string& text) {
+  std::filesystem::create_directories(path.parent_path());
+  std::ofstream{path, std::ios::binary | std::ios::trunc} << text;
+}
+
+std::string read_text(const std::filesystem::path& path) {
+  std::ifstream stream{path, std::ios::binary};
+  return {std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
+}
+
+// The file is kept as .bad and the first flush does not replace it with defaults.
+void check_bad_file_kept(const std::filesystem::path& dir, const std::string& original) {
+  const std::filesystem::path file = dir / vnmaki::kPersistentFileName;
+  std::filesystem::path bad = file;
+  bad += ".bad";
+  Game game{kStory, dir};
+  REQUIRE(game.warnings.size() == 1);
+  game.persistent.flush();
+  CHECK(read_text(bad) == original);
+  CHECK_FALSE(std::filesystem::exists(file));
+
+  game.persistent.mark_seen({.label = "start", .step = 1});  // a real change still saves
+  game.persistent.flush();
+  CHECK(std::filesystem::exists(file));
+  CHECK(read_text(bad) == original);
+}
+
+}  // namespace
+
+TEST_CASE("persistent: a damaged file is kept as .bad, not overwritten by the first flush") {
+  const TempDir dir{"damaged_kept"};
+  const std::string garbage = "not messagepack";
+  write_text(dir.path() / vnmaki::kPersistentFileName, garbage);
+  check_bad_file_kept(dir.path(), garbage);
+}
+
+TEST_CASE("persistent: a file of a newer format is kept as .bad, not overwritten") {
+  const TempDir dir{"newer_format"};
+  std::vector<std::byte> bytes = vnmaki::encode_persistent({});
+  constexpr std::size_t kFormatValueAt = 8;  // map header, "format" (1 + 6 bytes), then the number
+  REQUIRE(bytes.at(kFormatValueAt) == std::byte{vnmaki::kPersistentFormatVersion});
+  bytes.at(kFormatValueAt) = std::byte{vnmaki::kPersistentFormatVersion + 1};
+  std::string text;
+  for (const std::byte b : bytes) {
+    text.push_back(static_cast<char>(b));
+  }
+  write_text(dir.path() / vnmaki::kPersistentFileName, text);
+  check_bad_file_kept(dir.path(), text);
 }
 
 TEST_CASE("persistent: a load does not change it") {

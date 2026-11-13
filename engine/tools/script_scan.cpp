@@ -399,6 +399,83 @@ void add_table_keys(std::span<const LuaToken> tokens, const Range& range,
   }
 }
 
+// The index after the bracket that closes the one at tokens[open], or tokens.size().
+std::size_t matching_end(std::span<const LuaToken> tokens, std::size_t open) {
+  std::size_t nesting = 0;
+  for (std::size_t i = open; i < tokens.size(); ++i) {
+    if (tokens[i].kind != LuaTokenKind::kSymbol || tokens[i].text.size() != 1) {
+      continue;
+    }
+    const char c = tokens[i].text.front();
+    if (c == '(' || c == '[' || c == '{') {
+      ++nesting;
+    } else if ((c == ')' || c == ']' || c == '}') && nesting > 0 && --nesting == 0) {
+      return i + 1;
+    }
+  }
+  return tokens.size();
+}
+
+// `name =` or `[` at the start of the range: a keyed value of a table.
+bool is_keyed(std::span<const LuaToken> tokens, const Range& range) {
+  if (is_symbol(tokens[range.begin], '[')) {
+    return true;
+  }
+  return range.end >= range.begin + 3 && tokens[range.begin].kind == LuaTokenKind::kName &&
+         is_symbol(tokens[range.begin + 1], '=') && !is_symbol(tokens[range.begin + 2], '=');
+}
+
+// The positional values of the table that starts at tokens[open] (a "{").
+// ponytail: a comma inside a `function ... end` in a table splits it wrongly; real tables hold
+// plain values, and `ScanScreen` reads only the first one.
+std::vector<ScanElement> table_elements(std::span<const LuaToken> tokens, std::size_t open) {
+  std::vector<ScanElement> elements;
+  const std::size_t end = matching_end(tokens, open);
+  const std::size_t last = end > open + 1 && is_symbol(tokens[end - 1], '}') ? end - 1 : end;
+  std::size_t nesting = 0;
+  std::size_t begin = open + 1;
+  const auto add = [&](std::size_t stop) {
+    const Range range{.begin = begin, .end = stop};
+    if (range.begin < range.end && !is_keyed(tokens, range)) {
+      elements.push_back({.text = literal(tokens, range), .line = tokens[range.begin].line});
+    }
+  };
+  for (std::size_t i = open + 1; i < last; ++i) {
+    if (tokens[i].kind != LuaTokenKind::kSymbol || tokens[i].text.size() != 1) {
+      continue;
+    }
+    const char c = tokens[i].text.front();
+    if (c == '(' || c == '[' || c == '{') {
+      ++nesting;
+    } else if ((c == ')' || c == ']' || c == '}') && nesting > 0) {
+      --nesting;
+    } else if ((c == ',' || c == ';') && nesting == 0) {
+      add(i);
+      begin = i + 1;
+    }
+  }
+  add(last);
+  return elements;
+}
+
+// A name or a dotted name (`eileen`, `chars.eileen`) as written, else nothing.
+std::string dotted_name(std::span<const LuaToken> tokens, const Range& range) {
+  std::string name;
+  for (std::size_t i = range.begin; i < range.end; ++i) {
+    const bool expect_name = (i - range.begin) % 2 == 0;
+    if (expect_name ? tokens[i].kind != LuaTokenKind::kName : !is_symbol(tokens[i], '.')) {
+      return {};
+    }
+    name += tokens[i].text;
+  }
+  return (range.end - range.begin) % 2 == 1 && name != "nil" ? name : std::string{};
+}
+
+bool is_member_use(std::span<const LuaToken> tokens, std::size_t i) {
+  return i > 0 && (is_symbol(tokens[i - 1], '.') || is_symbol(tokens[i - 1], ':') ||
+                   is_name(tokens[i - 1], "function"));
+}
+
 bool starts_block(std::string_view name) {
   return name == "function" || name == "if" || name == "do" || name == "repeat";
 }
@@ -442,10 +519,7 @@ std::vector<ScanLabel> scan_tokens(std::span<const LuaToken> tokens) {
       continue;
     }
     const std::optional<ScanCallKind> kind = call_kind(token.text);
-    const bool is_member =
-        i > 0 && (is_symbol(tokens[i - 1], '.') || is_symbol(tokens[i - 1], ':') ||
-                  is_name(tokens[i - 1], "function"));
-    if (!kind || is_member || i + 1 >= tokens.size()) {
+    if (!kind || is_member_use(tokens, i) || i + 1 >= tokens.size()) {
       continue;
     }
     const bool is_label = *kind == ScanCallKind::kLabel;
@@ -458,10 +532,20 @@ std::vector<ScanLabel> scan_tokens(std::span<const LuaToken> tokens) {
         call.arguments.push_back(literal(tokens, range));
         add_table_keys(tokens, range, call.option_keys);
       }
+      if (*kind == ScanCallKind::kSay && !ranges.empty()) {
+        call.speaker = call.arguments.front().value_or(dotted_name(tokens, ranges.front()));
+      }
+      if (*kind == ScanCallKind::kMenu && !ranges.empty() &&
+          is_symbol(tokens[ranges.front().begin], '{')) {
+        call.table = table_elements(tokens, ranges.front().begin);
+      }
     } else if (!is_label && next.kind == LuaTokenKind::kString) {
       call.arguments.emplace_back(next.text);
     } else if (!is_label && is_symbol(next, '{')) {
       call.arguments.emplace_back();
+      if (*kind == ScanCallKind::kMenu) {
+        call.table = table_elements(tokens, i + 1);
+      }
     } else {
       continue;
     }
@@ -494,6 +578,47 @@ std::vector<ScanLabel> scan_tokens(std::span<const LuaToken> tokens) {
 std::vector<ScanLabel> scan_labels(std::string_view source) {
   const std::vector<LuaToken> tokens = tokenize_lua(source);
   return scan_tokens(tokens);
+}
+
+std::vector<ScanScreen> scan_screen_tokens(std::span<const LuaToken> tokens) {
+  std::vector<ScanScreen> screens;
+  for (std::size_t i = 0; i + 1 < tokens.size(); ++i) {
+    if (!is_name(tokens[i], "screen") || is_member_use(tokens, i)) {
+      continue;
+    }
+    ScanScreen screen{.line = tokens[i].line};
+    std::size_t end = 0;  // after the last token of the call
+    if (is_symbol(tokens[i + 1], '(')) {
+      const std::vector<Range> ranges = argument_ranges(tokens, i + 1);
+      if (ranges.empty()) {
+        continue;
+      }
+      screen.name = literal(tokens, ranges.front());
+      end = ranges.back().end;
+    } else if (tokens[i + 1].kind == LuaTokenKind::kString && i + 2 < tokens.size() &&
+               is_symbol(tokens[i + 2], '{')) {
+      screen.name = tokens[i + 1].text;
+      end = matching_end(tokens, i + 2);
+    } else {
+      continue;
+    }
+    for (std::size_t j = i + 2; j + 1 < end; ++j) {
+      const bool node = is_name(tokens[j], "text") || is_name(tokens[j], "button");
+      if (node && !is_member_use(tokens, j) && is_symbol(tokens[j + 1], '{')) {
+        const std::vector<ScanElement> values = table_elements(tokens, j + 1);
+        if (!values.empty()) {
+          screen.texts.push_back(values.front());
+        }
+      }
+    }
+    screens.push_back(std::move(screen));
+  }
+  return screens;
+}
+
+std::vector<ScanScreen> scan_screens(std::string_view source) {
+  const std::vector<LuaToken> tokens = tokenize_lua(source);
+  return scan_screen_tokens(tokens);
 }
 
 }  // namespace vnmaki

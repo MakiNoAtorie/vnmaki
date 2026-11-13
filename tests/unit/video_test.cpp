@@ -676,3 +676,55 @@ end)
   runtime.advance();  // hide
   CHECK(audio.channel("movie").tracks.empty());
 }
+
+namespace {
+
+// A clip that opens but whose pictures do not decode: the clip with its second half scrambled
+// (seeded, so the same bytes every run).
+std::string undecodable_clip() {
+  std::string bytes = read_clip();
+  std::mt19937 random{kSeed};  // NOLINT(bugprone-random-generator-seed)
+  for (std::size_t attempt = 0; attempt < kMutations; ++attempt) {
+    std::string bad = bytes;
+    for (std::size_t f = 0; f < kMaxFlips + attempt; ++f) {
+      const std::size_t at =
+          std::uniform_int_distribution<std::size_t>{bad.size() / 2, bad.size() - 1}(random);
+      bad[at] = static_cast<char>(std::uniform_int_distribution<int>{0, UINT8_MAX}(random));
+    }
+    std::vector<std::byte> raw;
+    for (const char c : bad) {
+      raw.push_back(static_cast<std::byte>(c));
+    }
+    try {
+      auto movie = std::make_shared<const MovieData>(vnmaki::open_movie(raw));
+      VideoDecoder decoder{movie};
+      while (!decoder.at_end()) {
+        static_cast<void>(decoder.decode(kFrameCount));
+      }
+    } catch (const MovieError&) {
+      return bad;
+    }
+  }
+  FAIL("no undecodable clip found");
+  return {};
+}
+
+}  // namespace
+
+TEST_CASE("video: a movie that fails to decode is skipped with a warning, not thrown") {
+  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
+      {{"scripts/main.lua", story(false)}, {std::string{kClipPath}, undecodable_clip()}});
+  vnmaki::ScriptRuntime runtime{vfs, {}};
+  runtime.load_scripts();
+  runtime.start("start");
+  runtime.advance();  // past "before"
+  JobSystem jobs;
+  MoviePresenter movies{runtime, vfs, jobs};
+  Lines warnings;
+  movies.set_warning_handler([&](std::string_view message) { warnings.emplace_back(message); });
+  REQUIRE(movies.waiting());
+
+  settle([&] { movies.update(kPastEnd); }, [&] { return !movies.waiting(); });
+  CHECK(warnings.size() == 1);
+  CHECK(runtime.state() == RunState::kWaiting);  // the story went on to "after"
+}

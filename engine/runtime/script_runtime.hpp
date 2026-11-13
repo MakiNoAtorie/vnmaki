@@ -159,9 +159,19 @@ struct ScreenResult {
   friend bool operator==(const ScreenResult&, const ScreenResult&) = default;
 };
 
+/// A write to `store` that a screen made through a binding (`bind(store, key)`) while the label
+/// waited. A replay makes it again at the same wait, before the answer that follows.
+struct StoreWrite {
+  std::string key;
+  ScreenValue value{};
+  std::uint32_t wait = 0;  // the wait, counted from 1 in the log of the label that holds it
+
+  friend bool operator==(const StoreWrite&, const StoreWrite&) = default;
+};
+
 /// One entry of the input log: an answer the player gave that a replay must
 /// give again. Advancing past a line carries no data, so it is not logged.
-using InputResult = std::variant<MenuChoice, ScreenResult>;
+using InputResult = std::variant<MenuChoice, ScreenResult, StoreWrite>;
 
 /// A table inside a StoreSnapshot, by its index in StoreSnapshot::tables.
 struct StoreTableRef {
@@ -848,6 +858,12 @@ class ScriptRuntime {
   /// Makes the running label the outermost one, so a load does not return into the labels that
   /// called the label it replaced. Call it before replay() when a story is already running.
   void drop_callers();
+  /// drop_callers() that keeps the callers and the history until end_load(), so a load whose
+  /// replay fails can undo them. Call end_load() after the load, whatever its result.
+  void begin_load();
+  /// With `undo`, the callers and the history come back under the running label (it must be
+  /// the label a failed load went back to). Without it they are dropped for good.
+  void end_load(bool undo);
 
   /// Runs the script's `on_load(old_version, store)` hook (if it registered one) on the store of
   /// `snapshot` and puts the result back into `snapshot`. The current `store` is untouched.
