@@ -12,6 +12,7 @@
 // table. Entering a label takes a LabelSnapshot and starts an input log;
 // replay() restores a snapshot and runs the label again, silently, to a step.
 
+#include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -386,6 +387,41 @@ struct ShakeRequest {
   bool replaying = false;
 };
 
+/// A point or a direction in a 3D scene (x, y, z).
+using Vec3Option = std::array<double, 3>;
+
+/// `scene3d`, `model`, `light`, `camera(scene, {...})` and `hide3d` (engine/model3d/scene3d.hpp).
+/// Fields the script left out are empty and keep their values; a new object starts with defaults.
+struct Scene3dRequest {
+  enum class Kind : std::uint8_t {
+    kScene,   ///< `scene3d(scene, { layer })`: makes the scene, or moves it to `layer`.
+    kModel,   ///< `model(name, path, { scene, ... })`.
+    kLight,   ///< `light(scene, name, { kind, ... })`.
+    kCamera,  ///< `camera(scene, { position, look_at, fov })`.
+    kRemove,  ///< `hide3d(scene, name)`: removes a model or a light.
+  };
+
+  Kind kind = Kind::kScene;
+  std::string scene{};  ///< The tag of the 3D scene.
+  std::string name{};   ///< The model's tag, or the light's name.
+  std::optional<std::string> layer{};
+  std::string path{};  ///< The Vfs path of the model file, with its extension.
+  /// "unlit", "toon" or "pbr", or the name of a declared game shader.
+  std::optional<std::string> shader{};
+  std::vector<UniformValue> uniforms{};  ///< Uniforms of the model's game shader.
+  std::optional<std::string> light_kind{};  ///< "directional", "point" or "ambient".
+  std::optional<Vec3Option> position{};   ///< Model, point light, camera.
+  std::optional<Vec3Option> rotation{};   ///< Model, in degrees.
+  std::optional<Vec3Option> direction{};  ///< Directional light: the way the light travels.
+  std::optional<Vec3Option> look_at{};    ///< Camera.
+  std::optional<double> scale{};          ///< Model: uniform scale.
+  std::optional<double> fov{};            ///< Camera: vertical field of view in degrees.
+  std::optional<std::uint32_t> color{};   ///< Light: 0xRRGGBB.
+  std::optional<double> intensity{};      ///< Light.
+  /// Set while the runtime replays: a model file is not parsed again, only checked for.
+  bool replaying = false;
+};
+
 /// What `scene`, `show`, `hide`, `tween` and `wait` do to the engine (engine/scene/scene.hpp
 /// implements it). A call that cannot be done returns why, and the runtime
 /// raises that as a script error at the calling script line; it returns an
@@ -455,6 +491,11 @@ class SceneCommands {
   /// Starts a camera shake. `tweening("@camera")` is true while it runs, and
   /// `finish_tweens("@camera")` ends it. The default does nothing.
   [[nodiscard]] virtual std::string shake(const ShakeRequest& /*request*/) { return {}; }
+
+  /// Makes or changes a 3D scene, a model, a light or a camera. Returns why it cannot (an
+  /// unknown scene, a bad file, a number out of range). The default does nothing, for
+  /// implementations without 3D.
+  [[nodiscard]] virtual std::string scene3d(const Scene3dRequest& /*request*/) { return {}; }
 };
 
 /// What `show_screen`, `hide_screen` and `call_screen` need from the engine (engine/ui/ui_host.hpp

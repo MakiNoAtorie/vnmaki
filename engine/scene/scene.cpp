@@ -14,12 +14,14 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "engine/anim/easing.hpp"
 #include "engine/anim/timeline.hpp"
 #include "engine/core/byte_stream.hpp"
+#include "engine/model3d/scene3d.hpp"
 #include "engine/render/image.hpp"
 #include "engine/render/shader_compiler.hpp"
 #include "engine/vfs/vfs.hpp"
@@ -179,6 +181,11 @@ std::string make_lip_sync(const LayeredRequest::LipSync& sync, LayeredDefinition
 // "camera", only when the camera or a parallax is not the default: f32 pan x, pan y, zoom and
 // rotation; then a u32 count of layers whose parallax is not 1, and for each: u8 layer, f32
 // parallax. The shake is not kept.
+// "scene3d", only when a 3D scene is shown: a u32 count, then for each scene (layer by layer): u8
+// layer, u32 index in the layer (counting every displayable: 3D scenes are put back last), tag,
+// the properties as for "displayables", the 16 f32 of the camera, a u32 count of models and for
+// each its tag, path, u8 style, game shader name ("" for none) and 16 f32; then a u32 count of
+// lights and for each its name, u8 kind and 16 f32.
 
 constexpr std::uint32_t kFormatVersion = 2;
 constexpr std::string_view kDisplayablesPart = "displayables";
@@ -188,6 +195,7 @@ constexpr std::string_view kMoviesPart = "movies";
 constexpr std::string_view kTweensPart = "tweens";
 constexpr std::string_view kShadersPart = "shaders";
 constexpr std::string_view kCameraPart = "camera";
+constexpr std::string_view kScene3dPart = "scene3d";
 
 constexpr std::string_view kShaderDirectory = "shaders/";
 // The uniform that a custom transition declares and the engine sets.
@@ -343,6 +351,54 @@ std::string out_of_time(std::string_view option) {
 using UniformIndex =
     std::function<std::optional<std::size_t>(std::string_view tag, std::string_view name)>;
 
+// The scene and the object of a tween tag "@3d.<scene>.<object>".
+bool split_3d_tag(std::string_view tag, std::string_view& scene, std::string_view& object) {
+  const std::string_view rest = tag.substr(kScene3dTagPrefix.size());
+  const std::size_t dot = rest.find('.');
+  if (dot == std::string_view::npos) {
+    return false;
+  }
+  scene = rest.substr(0, dot);
+  object = rest.substr(dot + 1);
+  return true;
+}
+
+// The 3D scene with this tag in `layers`, or null.
+template <typename Layers>
+auto* find_scene3d(Layers& layers, std::string_view tag) {
+  using Found =
+      std::conditional_t<std::is_const_v<Layers>, const Scene3dDisplayable, Scene3dDisplayable>;
+  Found* found = nullptr;
+  for (auto& shown : layers) {
+    for (auto& entry : shown) {
+      if (entry.tag == tag) {
+        found = dynamic_cast<Found*>(entry.displayable.get());
+      }
+    }
+  }
+  return found;
+}
+
+// The pose of the object that a tween tag "@3d.<scene>.<object>" names, or null.
+template <typename Layers>
+auto* pose_3d(Layers& layers, std::string_view tag) {
+  std::string_view scene;
+  std::string_view object;
+  auto* found = split_3d_tag(tag, scene, object) ? find_scene3d(layers, scene) : nullptr;
+  return found != nullptr ? found->object(object) : nullptr;
+}
+
+// A 3D object has only the channels of its pose to tween.
+std::string check_3d_tween(const TweenNode& node) {
+  for (std::size_t channel = 0; channel < kPropertyChannelCount; ++channel) {
+    if (node.to.at(channel).has_value()) {
+      return "a 3D object has only its own channels to tween (a model: x, y, z, rx, ry, rz, "
+             "scale; a light: x, y, z, r, g, b, intensity; the camera: x, y, z, lx, ly, lz, fov)";
+    }
+  }
+  return {};
+}
+
 // The camera has a pan, a zoom and a rotation to tween, and nothing else; the zoom is above 0.
 std::string check_camera_tween(const TweenNode& node) {
   constexpr std::array kChannels{Channel::kX, Channel::kY, Channel::kScaleX, Channel::kScaleY,
@@ -432,6 +488,9 @@ std::string tween_node(const TweenRequest& request, Size virtual_size,
   for (const auto& [name, value] : request.uniforms) {
     const std::optional<std::size_t> index = uniform_index(request.tag, name);
     if (!index.has_value()) {
+      if (request.tag.starts_with(kScene3dTagPrefix)) {
+        return quoted("'", request.tag, "' has no channel '" + name + "'");
+      }
       return quoted("'", request.tag,
                     "' has no uniform '" + name + "' (set a shader that declares it)");
     }
@@ -442,6 +501,9 @@ std::string tween_node(const TweenRequest& request, Size virtual_size,
   }
   if (problem.empty() && request.tag == kCameraTag) {
     problem = check_camera_tween(node);
+  }
+  if (problem.empty() && request.tag.starts_with(kScene3dTagPrefix)) {
+    problem = check_3d_tween(node);
   }
   return problem;
 }
@@ -458,7 +520,8 @@ std::optional<Layer> layer_from_name(std::string_view name) {
   return kLayerOrder.at(static_cast<std::size_t>(found - kLayerNames.begin()));
 }
 
-Scene::Scene(const Vfs& vfs, Size virtual_size) : vfs_(&vfs), virtual_size_(virtual_size) {}
+Scene::Scene(const Vfs& vfs, Size virtual_size)
+    : vfs_(&vfs), virtual_size_(virtual_size), models_(std::make_shared<ModelLibrary>(vfs)) {}
 
 std::vector<Scene::Entry>& Scene::entries(Layer layer) {
   return layers_.at(static_cast<std::size_t>(layer));
@@ -481,15 +544,17 @@ std::optional<Scene::Slot> Scene::locate(std::string_view tag) const {
 }
 
 Timeline::Lookup Scene::lookup() {
-  return [this](std::string_view tag) {
-    return properties_in(layers_, layer_state_, camera_, tag);
-  };
+  return
+      [this](std::string_view tag) { return properties_in(layers_, layer_state_, camera_, tag); };
 }
 
 DisplayProperties* Scene::properties_in(Layers& layers, LayerState& layer_state,
                                         CameraState& camera, std::string_view tag) {
   if (tag == kCameraTag) {
     return &camera.pose;
+  }
+  if (tag.starts_with(kScene3dTagPrefix)) {
+    return pose_3d(layers, tag);
   }
   if (tag.starts_with(kLayerTagPrefix)) {
     const std::optional<Layer> layer = layer_from_name(tag.substr(kLayerTagPrefix.size()));
@@ -509,6 +574,9 @@ const DisplayProperties* Scene::properties_of(std::string_view tag) const {
   if (tag == kCameraTag) {
     return &camera_.pose;
   }
+  if (tag.starts_with(kScene3dTagPrefix)) {
+    return pose_3d(std::as_const(layers_), tag);
+  }
   if (tag.starts_with(kLayerTagPrefix)) {
     const std::optional<Layer> layer = layer_from_name(tag.substr(kLayerTagPrefix.size()));
     return layer.has_value() ? &layer_state_.at(static_cast<std::size_t>(*layer)) : nullptr;
@@ -518,6 +586,20 @@ const DisplayProperties* Scene::properties_of(std::string_view tag) const {
 }
 
 std::optional<std::size_t> Scene::uniform_index(std::string_view tag, std::string_view name) const {
+  if (tag.starts_with(kScene3dTagPrefix)) {
+    std::string_view scene_tag;
+    std::string_view object;
+    if (!split_3d_tag(tag, scene_tag, object)) {
+      return std::nullopt;
+    }
+    const auto* scene = find_scene3d(std::as_const(layers_), scene_tag);
+    const DisplayProperties* pose = scene != nullptr ? scene->object(object) : nullptr;
+    const GameShader* shader = pose != nullptr ? shader_by_id(pose->shader) : nullptr;
+    static const std::vector<std::string> kNoUniforms;
+    return pose == nullptr
+               ? std::nullopt
+               : scene->channel(object, name, shader != nullptr ? shader->uniforms : kNoUniforms);
+  }
   const DisplayProperties* properties = properties_of(tag);
   const GameShader* shader = properties != nullptr ? shader_by_id(properties->shader) : nullptr;
   if (shader == nullptr) {
@@ -683,6 +765,9 @@ std::string Scene::show(const ShowRequest& request) {
   }
   if (request.tag == kCameraTag) {
     return quoted("the tag '", kCameraTag, "' is reserved for the camera");
+  }
+  if (request.tag.starts_with(kScene3dTagPrefix)) {
+    return quoted("tags that start with '", kScene3dTagPrefix, "' are reserved for 3D objects");
   }
   const auto width = static_cast<float>(virtual_size_.width);
   const auto height = static_cast<float>(virtual_size_.height);
@@ -858,8 +943,8 @@ std::string Scene::reload_image(const std::string& path, JobSystem& jobs) {
   return {};
 }
 
-std::string Scene::declare_shader_impl(std::string_view name,
-                                       std::span<const std::string> uniforms, bool force) {
+std::string Scene::declare_shader_impl(std::string_view name, std::span<const std::string> uniforms,
+                                       bool force) {
   const std::string label = quoted("shader '", name, "'");
   if (uniforms.size() > kMaxUniforms) {
     return label + " declares more than " + std::to_string(kMaxUniforms) + " uniforms";
@@ -1031,6 +1116,297 @@ std::string Scene::set_parallax(std::string_view layer, double factor) {
   return {};
 }
 
+namespace {
+
+// The largest coordinate, in world units, that a script may give.
+constexpr double kMaxWorldCoordinate = 1'000'000.0;
+
+// A name for a 3D scene or one of its objects: not empty, no '.', no leading '@'.
+bool valid_3d_name(std::string_view name) {
+  return !name.empty() && name.front() != '@' && name.find('.') == std::string_view::npos;
+}
+
+std::string bad_3d_name(std::string_view name) {
+  return quoted("'", name, "' is not a name (use letters and digits: no '.', no leading '@')");
+}
+
+// Sets the three channels from `first` to a point. Returns why it cannot.
+std::string set_point(DisplayProperties& pose, std::size_t first, const Vec3Option& point,
+                      std::string_view option) {
+  if (!std::ranges::all_of(point,
+                           [](double value) { return std::abs(value) <= kMaxWorldCoordinate; })) {
+    return out_of_range(option);
+  }
+  for (std::size_t i = 0; i < point.size(); ++i) {
+    pose.uniforms.at(first + i) = static_cast<float>(point.at(i));
+  }
+  return {};
+}
+
+std::string set_number(DisplayProperties& pose, std::size_t channel, double value, double low,
+                       double high, std::string_view option) {
+  if (!(value >= low && value <= high)) {
+    return out_of_range(option);
+  }
+  pose.uniforms.at(channel) = static_cast<float>(value);
+  return {};
+}
+
+// Makes or changes the light `request.name` of `scene`. Returns why it cannot.
+std::string set_light_3d(Scene3dDisplayable& scene, const Scene3dRequest& request) {
+  const std::string& name = request.name;
+  if (!valid_3d_name(name) || name == kCameraName) {
+    return bad_3d_name(name);
+  }
+  if (std::ranges::any_of(scene.models(),
+                          [&](const Model3d& model) { return model.tag == name; })) {
+    return quoted("'", name, "' is a model of this scene");
+  }
+  const auto found = std::ranges::find(scene.lights(), name, &Light3d::name);
+  const bool made = found == scene.lights().end();
+  Light3d light = made ? Light3d{.name = name,
+                                 .kind = LightKind::kDirectional,
+                                 .properties = default_light_pose(LightKind::kDirectional)}
+                       : *found;
+  if (request.light_kind.has_value()) {
+    if (!light_kind_from_name(*request.light_kind, light.kind)) {
+      return quoted("unknown light kind '", *request.light_kind,
+                    "' (use directional, point or ambient)");
+    }
+    if (made) {
+      light.properties = default_light_pose(light.kind);
+    }
+  }
+  const auto lights = [&](const Light3d& other) {
+    return other.kind != LightKind::kAmbient && other.name != name;
+  };
+  if (light.kind != LightKind::kAmbient &&
+      static_cast<std::size_t>(std::ranges::count_if(scene.lights(), lights)) >= kMaxLights) {
+    return "a 3D scene has at most " + std::to_string(kMaxLights) +
+           " lights besides the ambient ones";
+  }
+  if (made && scene.lights().size() >= kMaxSceneObjects) {
+    return "a 3D scene has too many lights";
+  }
+  if (request.position.has_value()) {
+    if (light.kind != LightKind::kPoint) {
+      return "only a point light has a position (a directional light has a direction)";
+    }
+    if (std::string problem =
+            set_point(light.properties, kPointChannel, *request.position, "position");
+        !problem.empty()) {
+      return problem;
+    }
+  }
+  if (request.direction.has_value()) {
+    if (light.kind != LightKind::kDirectional) {
+      return "only a directional light has a direction (a point light has a position)";
+    }
+    if (std::string problem =
+            set_point(light.properties, kPointChannel, *request.direction, "direction");
+        !problem.empty()) {
+      return problem;
+    }
+  }
+  if (request.color.has_value()) {
+    const std::array<unsigned, 3> shifts{kRedShift, kGreenShift, 0};
+    for (std::size_t i = 0; i < shifts.size(); ++i) {
+      light.properties.uniforms.at(kSecondChannels + i) =
+          tint_channel(*request.color, shifts.at(i));
+    }
+  }
+  if (request.intensity.has_value()) {
+    if (std::string problem = set_number(light.properties, kLastChannel, *request.intensity, 0,
+                                         kMaxWorldCoordinate, "intensity");
+        !problem.empty()) {
+      return problem;
+    }
+  }
+  if (made) {
+    scene.lights().push_back(std::move(light));
+  } else {
+    *std::ranges::find(scene.lights(), name, &Light3d::name) = std::move(light);
+  }
+  return {};
+}
+
+// Changes the camera of `scene`. Returns why it cannot.
+std::string set_camera_3d(Scene3dDisplayable& scene, const Scene3dRequest& request) {
+  DisplayProperties pose = scene.camera();
+  if (request.position.has_value()) {
+    if (std::string problem = set_point(pose, kPointChannel, *request.position, "position");
+        !problem.empty()) {
+      return problem;
+    }
+  }
+  if (request.look_at.has_value()) {
+    if (std::string problem = set_point(pose, kSecondChannels, *request.look_at, "look_at");
+        !problem.empty()) {
+      return problem;
+    }
+  }
+  if (request.fov.has_value()) {
+    if (std::string problem = set_number(pose, kLastChannel, *request.fov, kMinFov, kMaxFov, "fov");
+        !problem.empty()) {
+      return problem;
+    }
+  }
+  scene.camera() = pose;
+  return {};
+}
+
+}  // namespace
+
+std::string Scene::set_model_3d(Scene3dDisplayable& scene, const Scene3dRequest& request) {
+  const std::string& tag = request.name;
+  if (!valid_3d_name(tag) || tag == kCameraName) {
+    return bad_3d_name(tag);
+  }
+  if (std::ranges::any_of(scene.lights(),
+                          [&](const Light3d& light) { return light.name == tag; })) {
+    return quoted("'", tag, "' is a light of this scene");
+  }
+  // A replay shows what the script showed before, so it checks only that the file is there.
+  if (std::string problem = request.replaying && vfs_->exists(request.path)
+                                ? std::string{}
+                                : models_->check(request.path);
+      !problem.empty()) {
+    return problem;
+  }
+  const auto found = std::ranges::find(scene.models(), tag, &Model3d::tag);
+  const bool made = found == scene.models().end();
+  if (made && scene.models().size() >= kMaxSceneObjects) {
+    return "a 3D scene has too many models";
+  }
+  Model3d model = made ? Model3d{.tag = tag, .properties = default_model_pose()} : *found;
+  model.path = request.path;
+  if (request.shader.has_value()) {
+    std::uint32_t id = 0;
+    if (!style_from_name(*request.shader, model.style)) {
+      id = shader_id(*request.shader);
+      if (id == 0) {
+        return quoted("shader '", *request.shader,
+                      "' is not declared (use shader(name, { uniforms }) first, or one of unlit, "
+                      "toon and pbr)");
+      }
+      if (shader_by_id(id)->uniforms.size() > kMaxModelShaderUniforms) {
+        return "a shader of a model may declare at most " +
+               std::to_string(kMaxModelShaderUniforms) + " uniforms";
+      }
+    }
+    if (id != model.properties.shader) {
+      // The shader's uniforms follow the pose channels; they start from zero for a new shader.
+      std::fill(model.properties.uniforms.begin() + kPoseChannels, model.properties.uniforms.end(),
+                0.0F);
+      model.properties.shader = id;
+    }
+  }
+  for (const auto& [name, value] : request.uniforms) {
+    const GameShader* shader = shader_by_id(model.properties.shader);
+    if (shader == nullptr) {
+      return "uniforms need a shader of your own (shader = \"name\")";
+    }
+    const auto uniform = std::ranges::find(shader->uniforms, name);
+    if (uniform == shader->uniforms.end()) {
+      return quoted("shader '", shader->name, "' has no uniform '" + name + "'");
+    }
+    if (std::string problem =
+            set_number(model.properties,
+                       kPoseChannels + static_cast<std::size_t>(uniform - shader->uniforms.begin()),
+                       value, -static_cast<double>(std::numeric_limits<float>::max()),
+                       static_cast<double>(std::numeric_limits<float>::max()), "uniforms." + name);
+        !problem.empty()) {
+      return problem;
+    }
+  }
+  if (request.position.has_value()) {
+    if (std::string problem =
+            set_point(model.properties, kPointChannel, *request.position, "position");
+        !problem.empty()) {
+      return problem;
+    }
+  }
+  if (request.rotation.has_value()) {
+    if (std::string problem =
+            set_point(model.properties, kSecondChannels, *request.rotation, "rotation");
+        !problem.empty()) {
+      return problem;
+    }
+  }
+  if (request.scale.has_value()) {
+    if (std::string problem = set_number(model.properties, kLastChannel, *request.scale,
+                                         -kMaxWorldCoordinate, kMaxWorldCoordinate, "scale");
+        !problem.empty()) {
+      return problem;
+    }
+  }
+  if (made) {
+    scene.models().push_back(std::move(model));
+  } else {
+    *std::ranges::find(scene.models(), tag, &Model3d::tag) = std::move(model);
+  }
+  return {};
+}
+
+std::string Scene::scene3d(const Scene3dRequest& request) {
+  using Kind = Scene3dRequest::Kind;
+  capture_old_frame();
+  if (!valid_3d_name(request.scene)) {
+    return bad_3d_name(request.scene);
+  }
+  if (request.kind == Kind::kScene) {
+    Layer layer = Layer::k3d;
+    if (request.layer.has_value()) {
+      const std::optional<Layer> named = layer_from_name(*request.layer);
+      if (!named.has_value()) {
+        return unknown_layer(*request.layer);
+      }
+      layer = *named;
+    }
+    const std::optional<Slot> shown = locate(request.scene);
+    if (shown.has_value()) {
+      std::vector<Entry>& old_layer = entries(shown->layer);
+      if (dynamic_cast<Scene3dDisplayable*>(old_layer.at(shown->index).displayable.get()) ==
+          nullptr) {
+        return quoted("the tag '", request.scene, "' is already used by another displayable");
+      }
+      if (!request.layer.has_value() || layer == shown->layer) {
+        return {};
+      }
+      Entry moved = std::move(old_layer.at(shown->index));
+      old_layer.erase(old_layer.begin() + static_cast<std::ptrdiff_t>(shown->index));
+      entries(layer).push_back(std::move(moved));
+      return {};
+    }
+    entries(layer).push_back(Entry{.tag = request.scene,
+                                   .displayable = std::make_unique<Scene3dDisplayable>(
+                                       virtual_size_, models_, retired_textures_)});
+    return {};
+  }
+
+  auto* scene = find_scene3d(layers_, request.scene);
+  if (scene == nullptr) {
+    return quoted("no 3D scene '", request.scene, "' is shown (make it with scene3d first)");
+  }
+  switch (request.kind) {
+    case Kind::kModel:
+      return set_model_3d(*scene, request);
+    case Kind::kLight:
+      return set_light_3d(*scene, request);
+    case Kind::kCamera:
+      return set_camera_3d(*scene, request);
+    case Kind::kRemove:
+      if (!scene->remove(request.name)) {
+        return quoted("scene '", request.scene, "' has no model or light '" + request.name + "'");
+      }
+      timeline_.prune(lookup());
+      return {};
+    case Kind::kScene:
+      break;
+  }
+  return {};
+}
+
 std::string Scene::shake(const ShakeRequest& request) {
   if (!(request.strength >= 0 && request.strength <= 1)) {
     return "option 'strength' must be a number from 0 to 1";
@@ -1116,8 +1492,11 @@ std::vector<std::byte> Scene::capture() const {
       const auto* sprite = dynamic_cast<const LayeredSprite*>(shown[index].displayable.get());
       if (sprite == nullptr) {
         movies_before +=
-            dynamic_cast<const MovieDisplayable*>(shown[index].displayable.get()) != nullptr ? 1
-                                                                                             : 0;
+            dynamic_cast<const MovieDisplayable*>(shown[index].displayable.get()) != nullptr ||
+                    dynamic_cast<const Scene3dDisplayable*>(shown[index].displayable.get()) !=
+                        nullptr
+                ? 1
+                : 0;
         continue;
       }
       layered.u8(static_cast<std::uint8_t>(layer));
@@ -1181,14 +1560,17 @@ std::vector<std::byte> Scene::capture() const {
   movies.u32(movie_count);
   for (const Layer layer : kLayerOrder) {
     const std::vector<Entry>& shown = entries(layer);
+    std::size_t scenes_before = 0;  // 3D scenes are put back after the movies: they do not count.
     for (std::size_t index = 0; index < shown.size(); ++index) {
       const Entry& entry = shown.at(index);
       const auto* movie = dynamic_cast<const MovieDisplayable*>(entry.displayable.get());
       if (movie == nullptr) {
+        scenes_before +=
+            dynamic_cast<const Scene3dDisplayable*>(entry.displayable.get()) != nullptr ? 1 : 0;
         continue;
       }
       movies.u8(static_cast<std::uint8_t>(layer));
-      movies.u32(static_cast<std::uint32_t>(index));
+      movies.u32(static_cast<std::uint32_t>(index - scenes_before));
       movies.string(entry.tag);
       movies.string(movie->path());
       movies.u8(movie->loop() ? 1 : 0);
@@ -1202,6 +1584,60 @@ std::vector<std::byte> Scene::capture() const {
     }
   }
 
+  // The 3D scenes, with the poses their tweens would leave.
+  Writer scene3ds;
+  std::uint32_t scene3d_count = 0;
+  for (const Layer layer : kLayerOrder) {
+    scene3d_count +=
+        static_cast<std::uint32_t>(std::ranges::count_if(entries(layer), [](const Entry& entry) {
+          return dynamic_cast<const Scene3dDisplayable*>(entry.displayable.get()) != nullptr;
+        }));
+  }
+  scene3ds.u32(scene3d_count);
+  for (const Layer layer : kLayerOrder) {
+    const std::vector<Entry>& shown = entries(layer);
+    for (std::size_t index = 0; index < shown.size(); ++index) {
+      const Entry& entry = shown.at(index);
+      const auto* scene = dynamic_cast<const Scene3dDisplayable*>(entry.displayable.get());
+      if (scene == nullptr) {
+        continue;
+      }
+      scene3ds.u8(static_cast<std::uint8_t>(layer));
+      scene3ds.u32(static_cast<std::uint32_t>(index));
+      scene3ds.string(entry.tag);
+      const auto adjusted = resting.find(entry.tag);
+      const DisplayProperties& properties =
+          adjusted != resting.end() ? adjusted->second : scene->properties();
+      scene3ds.properties(properties);
+      if (properties.shader != 0) {
+        shaded.emplace_back(entry.tag, &properties);
+      }
+      const auto pose = [&](std::string_view name,
+                            const DisplayProperties& live) -> const DisplayProperties& {
+        const auto settled =
+            resting.find(std::string{kScene3dTagPrefix} + entry.tag + "." + std::string{name});
+        return settled != resting.end() ? settled->second : live;
+      };
+      scene3ds.uniforms(pose(kCameraName, scene->camera()).uniforms);
+      scene3ds.u32(static_cast<std::uint32_t>(scene->models().size()));
+      for (const Model3d& model : scene->models()) {
+        const DisplayProperties& resting_pose = pose(model.tag, model.properties);
+        const GameShader* shader = shader_by_id(model.properties.shader);
+        scene3ds.string(model.tag);
+        scene3ds.string(model.path);
+        scene3ds.u8(static_cast<std::uint8_t>(model.style));
+        scene3ds.string(shader != nullptr ? shader->name : std::string{});
+        scene3ds.uniforms(resting_pose.uniforms);
+      }
+      scene3ds.u32(static_cast<std::uint32_t>(scene->lights().size()));
+      for (const Light3d& light : scene->lights()) {
+        scene3ds.string(light.name);
+        scene3ds.u8(static_cast<std::uint8_t>(light.kind));
+        scene3ds.uniforms(pose(light.name, light.properties).uniforms);
+      }
+    }
+  }
+
   std::map<std::string, std::vector<std::byte>> parts{
       {std::string{kDisplayablesPart}, displayables.take()},
       {std::string{kLayeredPart}, layered.take()},
@@ -1209,6 +1645,9 @@ std::vector<std::byte> Scene::capture() const {
       {std::string{kMoviesPart}, movies.take()},
       {std::string{kTweensPart}, timeline_.capture()},
   };
+  if (scene3d_count != 0) {
+    parts.emplace(std::string{kScene3dPart}, scene3ds.take());
+  }
   if (!shaded.empty() || !shaded_layers.empty()) {
     Writer shaders;
     shaders.u32(static_cast<std::uint32_t>(shaded.size()));
@@ -1450,6 +1889,68 @@ void Scene::read_movies(std::span<const std::byte> bytes, Layers& layers,
   }
 }
 
+void Scene::read_scene3d(std::span<const std::byte> bytes, Layers& layers) const {
+  const auto checked_name = [](std::string name) {
+    if (!valid_3d_name(name)) {
+      throw std::invalid_argument{"scene state: a 3D name is not valid"};
+    }
+    return name;
+  };
+  Reader reader{bytes};
+  const std::uint32_t count = reader.u32();
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const std::size_t layer = reader.u8();
+    if (layer >= layers.size()) {
+      throw std::invalid_argument{"scene state: unknown layer"};
+    }
+    const std::uint32_t index = reader.u32();
+    std::string tag = checked_name(reader.string());
+    auto scene = std::make_unique<Scene3dDisplayable>(virtual_size_, models_, retired_textures_);
+    scene->properties() = reader.properties();
+    scene->camera().uniforms = reader.uniforms();
+    const std::uint32_t model_count = reader.u32();
+    if (model_count > kMaxSceneObjects) {
+      throw std::invalid_argument{"scene state: too many 3D models"};
+    }
+    for (std::uint32_t m = 0; m < model_count; ++m) {
+      Model3d model;
+      model.tag = checked_name(reader.string());
+      model.path = reader.string();
+      const std::uint8_t style = reader.u8();
+      if (style > static_cast<std::uint8_t>(ShadingStyle::kPbr)) {
+        throw std::invalid_argument{"scene state: unknown shading style"};
+      }
+      model.style = static_cast<ShadingStyle>(style);
+      model.properties.shader = shader_id(reader.string());  // an undeclared shader is ignored
+      model.properties.uniforms = reader.uniforms();
+      scene->models().push_back(std::move(model));
+    }
+    const std::uint32_t light_count = reader.u32();
+    if (light_count > kMaxSceneObjects) {
+      throw std::invalid_argument{"scene state: too many 3D lights"};
+    }
+    for (std::uint32_t l = 0; l < light_count; ++l) {
+      Light3d light;
+      light.name = checked_name(reader.string());
+      const std::uint8_t kind = reader.u8();
+      if (kind > static_cast<std::uint8_t>(LightKind::kAmbient)) {
+        throw std::invalid_argument{"scene state: unknown light kind"};
+      }
+      light.kind = static_cast<LightKind>(kind);
+      light.properties.uniforms = reader.uniforms();
+      scene->lights().push_back(std::move(light));
+    }
+    // Scenes come in the order of their positions, so each goes back where it was.
+    std::vector<Entry>& shown = layers.at(layer);
+    const auto position = static_cast<std::ptrdiff_t>(std::min<std::size_t>(index, shown.size()));
+    shown.insert(shown.begin() + position,
+                 Entry{.tag = std::move(tag), .displayable = std::move(scene)});
+  }
+  if (!reader.at_end()) {
+    throw std::invalid_argument{"scene state: unexpected data after the last 3D scene"};
+  }
+}
+
 void Scene::restore(std::span<const std::byte> state) {
   Layers layers;
   LayerState layer_state;
@@ -1485,6 +1986,10 @@ void Scene::restore(std::span<const std::byte> state) {
     }
     if (const auto found = parts.find(kMoviesPart); found != parts.end()) {
       read_movies(found->second, layers, retired_textures_);
+    }
+    // The 3D scenes go back after the other displayables, so they keep their positions.
+    if (const auto found = parts.find(kScene3dPart); found != parts.end()) {
+      read_scene3d(found->second, layers);
     }
     // After every displayable is back: it finds them by tag.
     if (const auto found = parts.find(kShadersPart); found != parts.end()) {
@@ -1568,9 +2073,9 @@ void Scene::update(double seconds) {
         }
       }
       if (auto* sprite = dynamic_cast<LayeredSprite*>(entry.displayable.get())) {
-        sprite->set_voice_level(voice_level_ != nullptr ? voice_level_->voice_level(
-                                                              sprite->lip_voice_tag())
-                                                        : std::nullopt);
+        sprite->set_voice_level(voice_level_ != nullptr
+                                    ? voice_level_->voice_level(sprite->lip_voice_tag())
+                                    : std::nullopt);
       }
     }
   }
@@ -1633,6 +2138,10 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
         }
         continue;
       }
+      if (auto* scene = dynamic_cast<Scene3dDisplayable*>(entry.displayable.get())) {
+        scene->prepare(renderer);
+        continue;
+      }
       if (auto* animation = dynamic_cast<FrameAnimation*>(entry.displayable.get())) {
         for (const std::string& path : animation->missing_paths()) {
           if (const Texture* texture = texture_of(path)) {
@@ -1679,6 +2188,18 @@ void Scene::prepare_shaders(IRenderer& renderer) {
                                     shader != nullptr ? shader->uniform_floats : 0);
     }
   }
+  // The game shaders of models (they draw in the 3D passes, not through draw_state).
+  for (std::vector<Entry>& shown : layers_) {
+    for (Entry& entry : shown) {
+      if (auto* scene = dynamic_cast<Scene3dDisplayable*>(entry.displayable.get())) {
+        for (Model3d& model : scene->models()) {
+          const GameShader* shader = gpu_shader(model.properties.shader);
+          model.gpu_shader = shader != nullptr ? *shader->gpu : ShaderId{};
+          model.shader_floats = shader != nullptr ? shader->uniform_floats : 0;
+        }
+      }
+    }
+  }
   for (const Layer layer : kLayerOrder) {
     const auto index = static_cast<std::size_t>(layer);
     if (!entries(layer).empty() && gpu_shader(layer_state_.at(index).shader) != nullptr &&
@@ -1708,6 +2229,18 @@ void Scene::draw_layers(IRenderer& renderer, std::size_t first, std::size_t last
     const DisplayProperties& state = layer_state_.at(index);
     const GameShader* shader = shader_by_id(state.shader);
     const TextureId buffer = layer_targets_.at(index);
+    // The 3D scenes of the layer render in passes of their own, and then the pass of `target` goes
+    // on.
+    bool rendered = false;
+    for (const Entry& entry : entries(layer)) {
+      if (const auto* scene = dynamic_cast<const Scene3dDisplayable*>(entry.displayable.get())) {
+        scene->render(renderer);
+        rendered = true;
+      }
+    }
+    if (rendered) {
+      renderer.begin_pass({.target = target});
+    }
     // A layer with a shader draws into its own target, which then draws with the shader.
     const bool shaded = shader != nullptr && shader->gpu.has_value() && buffer != TextureId{} &&
                         !entries(layer).empty();
