@@ -48,6 +48,14 @@ class UiHost final : public ScreenCommands {
   explicit UiHost(Size canvas);
 
   void set_text_measure(TextMeasure measure);
+  /// Multiplies the text of every screen, shown now or later, by `scale` (the `text_scale`
+  /// preference; 1 is the size the screen says). The layout is done again. A tree given to show()
+  /// has the sizes the screen says; the host scales it.
+  void set_text_scale(float scale);
+  [[nodiscard]] float text_scale() const { return text_scale_; }
+  /// Lays the screens out again at the next use: call it when the fonts that the measure uses
+  /// changed.
+  void relayout() { dirty_ = true; }
   /// Where toggles, sliders and bars with a `bind` read and write their data (ScriptRuntime::
   /// binding() and set_binding()). Without it they keep their own value. `runtime` must outlive
   /// the host; null unsets it.
@@ -122,6 +130,7 @@ class UiHost final : public ScreenCommands {
   [[nodiscard]] UiEventResult activate_focused(Screen& screen);
 
   Size canvas_;
+  float text_scale_ = 1;
   ScriptRuntime* bindings_ = nullptr;
   Platform* platform_ = nullptr;
   bool text_input_on_ = false;

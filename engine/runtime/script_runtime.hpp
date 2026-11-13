@@ -484,12 +484,18 @@ struct MusicRequest {
   double fade = 0;                     ///< Seconds the old and new music cross-fade.
   std::optional<double> loop_start{};  ///< Seconds into the file; overrides the file's tags.
   std::optional<double> loop_end{};    ///< Seconds into the file; overrides the file's tags.
+  /// What the captions screen says while the music starts (docs/SPEC.md section 17); empty for
+  /// none. The runtime leaves it empty during a replay.
+  std::string caption{};
 };
 
 /// `sound(name, options)`: `name` plays once on `channel`, over whatever plays there.
 struct SoundRequest {
   std::string name{};
   std::string channel{"sound"};
+  /// What the captions screen says for the length of the sound; empty for none. The runtime does
+  /// not call `sound` during a replay.
+  std::string caption{};
 };
 
 /// What `music`, `sound`, `voice`, `stop` and `volume` do to the engine (engine/audio/audio.hpp
