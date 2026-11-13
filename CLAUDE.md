@@ -8,7 +8,8 @@ The main session orchestrates. It selects the model and effort for each subagent
 
 - Sonnet, medium or high effort: tasks with written acceptance criteria. No limit on the count.
 - Opus, medium effort: tasks without written acceptance criteria, and the final code review at the end of a session.
-- Haiku, high effort: documentation-only updates. A code change updates its own documentation.
+- Haiku, high effort: small documentation edits, a few lines at a time. Do not use Haiku to rewrite or restructure a full document. Use Sonnet or Opus for that.
+- A code change updates its own documentation.
 - Do not use Fable models. Only the user uses them.
 
 Give each writing subagent its own worktree and its own set of files. Two subagents must not change the same file.
