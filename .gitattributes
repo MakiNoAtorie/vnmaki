@@ -1,0 +1,2 @@
+# The dav1d patch must apply to the LF source of dav1d, also on Windows checkouts.
+tools/vcpkg-overlay/** text eol=lf
