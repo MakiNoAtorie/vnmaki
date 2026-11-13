@@ -105,5 +105,8 @@ target_sources(vnmaki_unit_tests PRIVATE unit/playback_test.cpp)
 # Rollback: history, labels, menus, depth, the inputs (ticket 13).
 target_sources(vnmaki_unit_tests PRIVATE unit/rollback_test.cpp)
 
+# Preferences and the default screens: bind, toggle, slider, bar, grid, prefs, actions (ticket 18).
+target_sources(vnmaki_unit_tests PRIVATE unit/screens_test.cpp)
+
 # Backlog: entries from the step log, voice replay, the scrolling screen (ticket 15).
 target_sources(vnmaki_unit_tests PRIVATE unit/backlog_test.cpp)

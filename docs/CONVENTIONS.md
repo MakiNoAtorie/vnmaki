@@ -104,6 +104,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Pointer positions are in window pixels. Convert them with `window_to_virtual(compute_viewport(...), pos)`.
 - Clicks in the letterbox bars are outside the virtual area.
 - Text input is off when no text field has the focus.
+- `set_fullscreen(bool)` and `set_window_opacity(float)` apply the player's preferences. `HeadlessPlatform` only records them (`fullscreen()`, `window_opacity()`).
 - `user_data_directory(organization, application)` (`sdl_platform.hpp`) is SDL's per-user preference path. Saves go there.
 - Only one `SdlPlatform` can exist. Other SDL users call `SDL_InitSubSystem` and `SDL_QuitSubSystem`. They do not call `SDL_Quit`.
 
@@ -219,7 +220,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `Playback` (`playback.hpp`) does skip and auto. Make it after the presenter. Each frame call `presenter.update(dt)`, then `playback.update(dt)`.
   - Skip `kSeen` goes on while the line is in the seen set. It stops at the first unseen line, and at any menu or screen. `kAll` stops at menus and screens only. `PlaybackOptions::skip_wait` ends a `wait` for tweens (`WaitPresenter::skip`) and skip goes on.
   - Auto waits `auto_base_delay + auto_seconds_per_glyph × glyphs × auto_multiplier` after the line is fully shown. While `PlaybackOptions::voice_playing` returns true it waits, and after a line that had a voice it waits only `auto_base_delay`.
-  - `Playback` marks each line it sees in the `PersistentStore`. It takes the script's `skip` and `auto` calls. `vnmaki run`: `A` toggles auto, `S` cycles skip (off, seen, all), and an advance input turns skip off.
+  - `Playback` marks each line it sees in the `PersistentStore`. It takes the script's `skip` and `auto` calls. `vnmaki run`: `A` toggles auto, `S` toggles skip (`toggle_skip`: off, or `kSeen`, or `kAll` when the preference `skip_unseen` is on), and an advance input turns skip off.
+  - Preferences: `DialoguePresenter::set_characters_per_second` (text speed) and `Playback::set_auto_base_delay` (auto delay). See Default screens and preferences.
   - `DialoguePresenter::line_serial()` changes when line() shows another line. The presenter also follows a story that moved by itself (a load).
 - `PlaybackIndicator` (`engine/ui/playback_indicator.hpp`) shows the screen `vnmaki:playback` ("SKIP", "SKIP ALL", "AUTO", ...) while a mode is on. Call `sync(skip, automatic)` every frame.
 - The default font of a project is `fonts/default.ttf` in its VFS. The engine has no font.
@@ -236,11 +238,17 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 
 ### UI (`engine/ui/`)
 
-- A screen is a `UiNode` tree with a name. Kinds: `box`, `hbox`, `vbox`, `text`, `image`, `button`. The Lua constructors have the same names.
+- A screen is a `UiNode` tree with a name. Kinds: `box`, `hbox`, `vbox`, `text`, `image`, `button`, `toggle`, `slider`, `bar`. The Lua constructors have the same names, and `grid { columns = n, ... }` (`build_ui_tree` makes it a `vbox` of `hbox` rows; give the cells one width).
 - Lua: `screen "name" { nodes }`, or `screen("name", function(args) return nodes end)`. A table of several nodes is wrapped in a `box`. `show_screen`, `hide_screen` and `call_screen` take the screen name and an `args` table for the function form.
 - `build_ui_tree` documents the options (`width`, `padding`, `bg`, `returns`, ...). An unknown option is an error that names the node.
 - A text or button string is the first string in the table: `button { "Save", returns = "save" }`. A button hands `returns` to its screen when activated.
-- A screen is built when it is shown. It does not update when `store` changes. `bind` is a later task.
+- A screen is built when it is shown. Only bound nodes follow data (see the next rules).
+- `bind(table, key)` is the option `bind` of a `toggle`, `slider` or `bar`. `table` is `store`, `persistent` or `prefs`. The prelude turns it into the options `bind_table` and `bind_key`.
+  - `UiHost::set_bindings(&runtime)` connects them. `UiHost` reads each bound node's datum (`ScriptRuntime::binding`) every time it lays out, draws or handles an event. It writes the datum (`set_binding`) when the player flips the toggle or moves the slider. Without it the node keeps its own value.
+  - A toggle follows a boolean. A slider or bar follows a number between its `min` and `max` (default 0 and 1). A `step` snaps a slider. A click or a drag on a slider sets it. Left and Right (also the d-pad) move it by `step` (a twentieth of the range if unset).
+  - A write to `store` is not in the input log, so a rollback or a load takes it back. `persistent` and `prefs` are not rolled back.
+- A screen root can have `modal = true` (`show_screen` then shows it modal) and `cancel = value`. Esc or the gamepad's east button give the screen that value, like a button's `returns`.
+- Tab or the gamepad's west button give the keyboard to the top non-modal screen that has a focusable node (`UiHost`). It keeps the keys until the player presses Esc or the east button.
 - Yoga does the layout (`layout_tree`). Only `ui_layout.cpp` includes it, and it is linked PRIVATE.
   - The root fills the canvas. Lengths are virtual pixels. A node with `x` or `y` is positioned absolutely in its parent.
   - Give `layout_tree` a `TextMeasure`. `UiRenderer::text_measure()` measures with the fonts. `estimate_text_size` is for tests.
@@ -254,7 +262,34 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `UiRenderer` draws trees through `IRenderer`. Call `prepare(root, scale)` before `begin_frame`. Draw into a screen-resolution pass with the viewport scale and origin, like `SayBoxView`.
   - It has one glyph atlas for each text size. A node with `markup = true` uses text tags.
   - An image node draws `images/<name>.png` (else `.jpg`) from the VFS. It needs `width` and `height`.
-- The say box is a screen: `make_say_screen` builds it, and `SayBoxView` lays it out and draws it with a `UiRenderer`. A Lua replacement is task 18.
+- The say box is a screen: `make_say_screen` builds it, and `SayBoxView` lays it out and draws it with a `UiRenderer`.
+  - `SayBoxView::set_screen_source` replaces the built-in tree with one from a script. The story window gives it the Lua screen `say`.
+  - The tree needs a text node with `reveal = true`: the line. Its size, width and position give the layout, the reveal and `link_at`. If the source gives nothing, the built-in box is used.
+- `UiRenderer::set_generated_images` makes the pixels of an image node named `gen:...` (save thumbnails). The texture is kept under the name, so a changed image needs a new name.
+
+### Default screens and preferences
+
+- `engine/runtime/default_screens.cpp` is a Lua chunk. `load_scripts()` runs it before the game's scripts, so a game replaces a screen by defining `screen "name"` again.
+  - The screens: `title`, `say`, `choice`, `confirm`, `save`, `load`, `preferences`, `quick_menu`, and the placeholders `nvl` and `gallery`.
+  - The backlog is the C++ `BacklogScreen` (`vnmaki:backlog`).
+- Screens size themselves by the read-only global `canvas` (`canvas.width`, `canvas.height`). `ScriptRuntimeOptions::canvas_width` and `canvas_height` set it (default 1920 by 1080). Write a screen as a function: `screen("x", function(args) ... end)`.
+- `ScriptRuntime::build_screen(name, args, tree)` runs the screen function for the engine. `args` is a `ScreenNodeDef`: its `props` are the named fields of the Lua table, and its `children` are the list (each a table of the same form). The arguments:
+  - `say`: `speaker`, `text` (with tags), `color` (`"#rrggbb"`, if the character has one). The `reveal` text node is the line.
+  - `choice`: a list of `{ text }`. A button returns the number of its option, from 1. `ScreenPresenter` shows it as `vnmaki:menu`. If the screen fails, it shows `make_menu_screen`.
+  - `confirm`: `message`, `yes`, `no`. Esc returns `no`.
+  - `save` and `load`: `mode` and a list of `{ slot, title, time, empty, broken, thumbnail }`. The list has the slots 1 to `kScreenSlotCount` (12). `load` also lists `auto` and `quick` if they exist, and disables the slots that are empty or damaged. `thumbnail` is an image name `gen:save:<slot>@<time>`, or `""`.
+  - `title`: what `call_screen("title", { title = ... })` gives. Start returns `"start"`.
+- A button that returns a string starting with `@` is an engine action. `ScreenActions` (`engine/ui/screen_actions.hpp`) does it:
+  - `@open:<screen>` (modal; `save` and `load` get the slot list from `Saves::list()`), `@close`, `@save:<slot>` (a slot in use asks `confirm` first), `@load:<slot>`, `@auto`, `@skip`, `@backlog`, `@quit` (asks `confirm`).
+  - `@save!<slot>` and `@quit!` are the confirmed forms.
+  - `ScreenPresenter::set_action_handler` gives the activations to it first, so a script's own `call_screen` values must not start with `@`.
+- `prefs` is a view of `persistent.prefs` with defaults. A key the player never set reads as its default. `prefs.x = v` writes `persistent.prefs`. A value of the wrong type is a script error.
+  - Keys: `text_speed` (characters a second, 40), `auto_delay` (seconds, 1), `volume_music`, `volume_sound`, `volume_voice`, `volume_ambient`, `volume_ui` (0 to 1, 1), `fullscreen` (false), `skip_unseen` (false), `window_opacity` (0.3 to 1, 1), `reduce_motion` (false).
+  - The defaults are also in the struct `Preferences`. A test checks that they agree.
+- `PreferenceApplier` (`engine/ui/preferences.hpp`) reads the preferences each frame and applies what changed:
+  - Text speed to the `DialoguePresenter`, auto delay to `Playback`, volumes to `Audio::set_preference_volume`, fullscreen and window opacity to the `Platform`. A null target is skipped.
+  - `reduce_motion` has no target yet. Task 23 reads it through `read_preferences`.
+- The story window shows `quick_menu` (top right, not modal) at the start and gives every activation to `ScreenActions`. Auto and skip wait while a modal screen is open.
 
 ### Audio (`engine/audio/`)
 
@@ -271,6 +306,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - The snapshot has each channel's volume and music. `restore()` stops sounds and voices.
 - Music tracks change at the next `update()`. A replay then gives the same music, so it does not stop.
 - The runtime does not pass `sound` and `voice` on during replay.
+- `set_preference_volume(channel, level)` is the player's volume for a channel. It multiplies the script's `volume` and the ducking. It is not in the snapshot, so a load or rollback leaves it.
 - `voice_playing()` is true while a voice plays. `Playback` (Dialogue) waits for it: set `PlaybackOptions::voice_playing`. `voice(name)` also replays a backlog voice.
 - `AudioCommands` calls return an error string. The prelude raises it at the script line.
 - Decoders are in `audio_decoder.hpp`. A bad file throws `AudioError`.
@@ -308,6 +344,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
   - A slot is an integer from 1. `load` with a number is a slot. With a string or function it is Lua's `load`.
 - `on_load(function(old_version, store) ... end)` registers the migration hook while the scripts load. `run_on_load(snapshot, old_version)` runs it on the store of a snapshot, not on the live `store`.
+- `bind`, `prefs`, `canvas`, `toggle`, `slider`, `bar` and `grid` are in the prelude (the part after `local persistent` is its own raw literal; MSVC limits one literal to 16380 bytes). `ScriptRuntime::binding(table, key)` and `set_binding(table, key, value)` read and write a bound datum for the UI.
 - `persistent` is a second Lua table, like `store`, but it is not in any snapshot or save. Rollback and load never change it.
   - `persistent_snapshot()` and `restore_persistent()` give the host the data. Call `restore_persistent` before `load_scripts()`.
   - A replay runs script code again, so code that writes to `persistent` must be idempotent (`persistent.won = true`, not `persistent.n = persistent.n + 1`).
@@ -353,7 +390,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Thumbnails are RGBA8 with premultiplied alpha, at most `kThumbnailWidth` wide (`thumbnail.hpp`).
   - `capture_thumbnail(renderer, target)` reads the target with `read_pixels`. Call it between frames. Set it as `SavesOptions::thumbnail`.
   - Without a thumbnail function, saves get `stub_thumbnail()`. Headless runs and tests use it.
-- This module has no UI. Task 18 shows the slot list (`Saves::list()`).
+- This module has no UI. The `save` and `load` screens show the slot list (`Saves::list()`); see Default screens and preferences.
 - `PersistentStore` (`persistent_store.hpp`) keeps `persistent` and the seen steps in `<directory>/persistent.vnpersist`, in the same directory as the saves.
   - The file is plain MessagePack (`encode_persistent`, `decode_persistent` in `save_file.hpp`). A bad file is reported through `on_warning`, and the game starts with no data.
   - `load()` runs before `load_scripts()`. `flush()` writes the file only if `persistent` or the seen set changed. Call it whenever the story waits. The destructor calls it too.
