@@ -46,9 +46,9 @@ msgstr "これは3Dモデルです。関節が二つある腕です。"
 
 #. speaker: eileen
 #: scripts/content.lua:32
-msgctxt "content/8a25b94c"
-msgid "It plays the clip bend of its file."
-msgstr "ファイルのクリップ bend を再生します。"
+msgctxt "content/091fb75e"
+msgid "It plays the clip slide of its file."
+msgstr "ファイルのクリップ slide を再生します。"
 
 #. speaker: eileen
 #: scripts/content.lua:37

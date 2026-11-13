@@ -169,7 +169,8 @@ target_compile_definitions(vnmaki_unit_tests
                            PRIVATE VNMAKI_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/templates")
 vnmaki_add_fixture_generator(
   template SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
-  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/shader_fixtures.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
@@ -178,8 +179,19 @@ vnmaki_add_fixture_generator(
 # tools/generators/presentation_fixtures.py from the template's pictures.
 vnmaki_add_fixture_generator(
   presentation SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/presentation_fixtures.py"
-  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/shader_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
+# The Phase 5 demo (ticket 49): GPU goldens of three frames of the label content (the arm at rest
+# and sliding, the flash of the Lua plugin), drawn by tools/generators/content_fixtures.py.
+vnmaki_add_fixture_generator(
+  content SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/content_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_render_tests)
@@ -188,7 +200,8 @@ vnmaki_add_fixture_generator(
 # tools/generators/template_vertical_fixtures.py.
 vnmaki_add_fixture_generator(
   template_vertical SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/template_vertical_fixtures.py"
-  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_render_tests)

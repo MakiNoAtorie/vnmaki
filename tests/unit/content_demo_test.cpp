@@ -279,7 +279,7 @@ constexpr Texts kEnglishTexts{
     .same = "The story is the same in both languages. Prefs also has a language button.",
     .captions = "Captions name the sounds. A chime rang, and its caption is at the top left.",
     .model = "This is a 3D model, an arm with two joints.",
-    .clip = "It plays the clip bend of its file.",
+    .clip = "It plays the clip slide of its file.",
     .plugin = "A plugin adds the next transition.",
     .last = "That was the content demo. Edit scripts/content.lua to change it.",
     .end = "The end. Open scripts/main.lua to write your own story."};
@@ -292,7 +292,7 @@ constexpr Texts kJapaneseTexts{
     .same = "物語はどちらの言語でも同じです。設定にも言語のボタンがあります。",
     .captions = "字幕は音の名前を表示します。チャイムが鳴り、その字幕は左上にあります。",
     .model = "これは3Dモデルです。関節が二つある腕です。",
-    .clip = "ファイルのクリップ bend を再生します。",
+    .clip = "ファイルのクリップ slide を再生します。",
     .plugin = "次の場面転換はプラグインが追加したものです。",
     .last = "コンテンツのデモは以上です。scripts/content.lua を編集して変えてください。",
     .end = "おわり。あなたの物語を書こう。"};

@@ -22,14 +22,14 @@ label("content", function()
   sound("sfx/chime", { caption = "a chime rings" })
   say(eileen, "Captions name the sounds. A chime rang, and its caption is at the top left.")
 
-  -- A 3D model with a clip of its glTF file. The camera looks at the joint of the arm.
+  -- A 3D model with a clip of its glTF file. The arm slides to the right.
   hide("eileen")
   scene3d("stage")
   camera("stage", { position = { 0, 2, 6 }, look_at = { 0, 2, 0 }, fov = 90 })
   model("arm", "models/arm.gltf", { scene = "stage", scale = 2 })
   say(eileen, "This is a 3D model, an arm with two joints.")
-  play("@3d.stage.arm", "bend")
-  say(eileen, "It plays the clip bend of its file.")
+  play("@3d.stage.arm", "slide")
+  say(eileen, "It plays the clip slide of its file.")
   wait("@3d.stage.arm")
 
   -- A transition from a Lua plugin: "flash" is defined in plugins/flash/.
