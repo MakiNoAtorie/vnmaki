@@ -375,6 +375,26 @@ TEST_CASE("hot reload: an error while the scripts run keeps the old scripts") {
   CHECK(game.log.entries().back().text.find("scripts/main.lua:1: boom") != std::string::npos);
 }
 
+TEST_CASE("hot reload: a reload that fails keeps the save and playback requests") {
+  Game game{"requests", R"(
+label("start", function()
+  save(2)
+  skip("seen")
+  narrate("one")
+end)
+)"};
+  // The new `start` fails at run time, so no replay can come back: the old scripts stay.
+  game.edit("label('start', function() error('boom') end)\n");
+  REQUIRE(game.logged_error());
+
+  const std::vector<vnmaki::SaveRequest> saves = game.runtime.take_save_requests();
+  REQUIRE(saves.size() == 1);
+  CHECK(saves[0] == vnmaki::SaveRequest{.load = false, .slot = "2"});
+  const std::vector<vnmaki::PlaybackRequest> playback = game.runtime.take_playback_requests();
+  REQUIRE(playback.size() == 1);
+  CHECK(playback[0].skip == vnmaki::SkipMode::kSeen);
+}
+
 TEST_CASE("hot reload: with no start label the reload fails and the story stays") {
   Game game{"no_start", std::string{kThreeLines}};
   game.edit(R"(

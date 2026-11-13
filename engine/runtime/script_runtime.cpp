@@ -4072,9 +4072,13 @@ std::unique_ptr<ScriptRuntime::Impl> ScriptRuntime::Impl::reload(std::string& pr
   if (!problem.empty()) {
     return nullptr;
   }
-  fresh->save_requests_ = std::move(save_requests_);
-  fresh->playback_requests_ = std::move(playback_requests_);
+  // The queues move only on success: a failed reload keeps this Impl, and its requests.
+  const auto adopt_requests = [&] {
+    fresh->save_requests_ = std::move(save_requests_);
+    fresh->playback_requests_ = std::move(playback_requests_);
+  };
   if (frames_.empty()) {
+    adopt_requests();
     return fresh;  // not started, or the story ended: nothing to come back to
   }
 
@@ -4119,6 +4123,7 @@ std::unique_ptr<ScriptRuntime::Impl> ScriptRuntime::Impl::reload(std::string& pr
     }
     return nullptr;
   }
+  adopt_requests();
   return fresh;
 }
 
