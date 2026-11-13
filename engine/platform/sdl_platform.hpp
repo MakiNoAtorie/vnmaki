@@ -40,6 +40,10 @@ struct WindowConfig {
 [[nodiscard]] std::filesystem::path user_data_directory(std::string_view organization,
                                                         std::string_view application);
 
+/// The folder of the running executable (SDL's base path). Needs no SdlPlatform. Throws
+/// PlatformError if the OS gives none.
+[[nodiscard]] std::filesystem::path executable_directory();
+
 /// Opens a resizable, high-density-aware window and turns SDL events (keyboard, mouse, gamepad,
 /// window) into InputEvents. Gamepads are opened as they connect.
 ///

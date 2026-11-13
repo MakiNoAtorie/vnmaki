@@ -108,6 +108,14 @@ std::filesystem::path user_data_directory(std::string_view organization,
   return result;
 }
 
+std::filesystem::path executable_directory() {
+  const char* path = SDL_GetBasePath();  // owned by SDL, not to be freed
+  if (path == nullptr) {
+    throw PlatformError{std::string{"no executable directory: "} + SDL_GetError()};
+  }
+  return std::filesystem::path{path};
+}
+
 SDL_Window* SdlPlatform::sdl_window() const { return window_.get(); }
 
 }  // namespace vnmaki

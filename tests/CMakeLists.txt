@@ -115,6 +115,17 @@ target_sources(vnmaki_unit_tests PRIVATE unit/ui_test.cpp)
 # Saves: file format, slots, quick save, auto save, on_load (ticket 12).
 target_sources(vnmaki_unit_tests PRIVATE unit/saves_test.cpp)
 
+# `vnmaki new` and the default template: the copy, the sample game played end to end, and the
+# generator of its assets (ticket 19).
+target_sources(vnmaki_unit_tests PRIVATE unit/new_project_test.cpp)
+target_compile_definitions(vnmaki_unit_tests
+                           PRIVATE VNMAKI_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/templates")
+vnmaki_add_fixture_generator(
+  template SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
 # Persistent store, seen text, skip and auto-advance (ticket 14).
 target_sources(vnmaki_unit_tests PRIVATE unit/playback_test.cpp)
 

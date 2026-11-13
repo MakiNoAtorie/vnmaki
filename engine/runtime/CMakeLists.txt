@@ -6,6 +6,8 @@ target_sources(
           default_screens.hpp
           headless_runner.cpp
           headless_runner.hpp
+          new_project.cpp
+          new_project.hpp
           project_config.cpp
           project_config.hpp
           script_runtime.cpp
