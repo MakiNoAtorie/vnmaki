@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <string>
@@ -22,6 +23,7 @@
 #include "engine/tools/inspect.hpp"
 #include "engine/tools/profiler.hpp"
 #include "engine/tools/repl.hpp"
+#include "engine/tools/screen_editor.hpp"
 
 namespace vnmaki {
 
@@ -54,6 +56,13 @@ constexpr float kPlotHeight = 70;
 constexpr std::size_t kSlowestLoads = 8;
 constexpr double kMillisecondsPerSecond = 1000.0;
 constexpr double kBytesPerMebibyte = 1024.0 * 1024.0;
+constexpr float kEditorX = 700;  // over the story graph and the profiler; drag it away
+constexpr float kEditorY = 120;
+constexpr float kEditorWidth = 540;
+constexpr float kEditorHeight = 380;
+constexpr float kOutlineWidth = 2;
+constexpr ImU32 kOutlineColor = 0xFF33FF33;
+constexpr std::size_t kFieldBytes = 1024;  // the longest string that the window edits
 
 double to_ms(Duration time) {
   return std::chrono::duration<double>(time).count() * kMillisecondsPerSecond;
@@ -145,6 +154,8 @@ int to_imgui_button(MouseButton button) {
   }
   return ImGuiMouseButton_Left;
 }
+
+ImVec2 to_imgui_point(PointF point) { return ImVec2{point.x, point.y}; }
 
 std::string label_state(const GraphLabel& label) {
   std::string state;
@@ -239,6 +250,15 @@ bool DevOverlay::handle_event(const InputEvent& event) {
   if (const auto* button = std::get_if<PointerButtonEvent>(&event)) {
     io.AddMousePosEvent(button->position.x, button->position.y);
     io.AddMouseButtonEvent(to_imgui_button(button->button), button->pressed);
+    if (pick_ && screen_editor_ != nullptr && viewport_ && button->button == MouseButton::kLeft &&
+        !io.WantCaptureMouse) {
+      if (button->pressed) {
+        editor_message_.clear();
+        static_cast<void>(
+            screen_editor_->select_at(window_to_virtual(viewport_(), button->position)));
+      }
+      return true;  // the click and its release are for the editor
+    }
     return io.WantCaptureMouse;
   }
   if (const auto* wheel = std::get_if<WheelEvent>(&event)) {
@@ -263,6 +283,9 @@ void DevOverlay::draw(Size window_pixels) {
   }
   if (profiler_ != nullptr) {
     draw_profiler();
+  }
+  if (screen_editor_ != nullptr) {
+    draw_screen_editor();
   }
   const bool wants_text = ImGui::GetIO().WantTextInput;
   if (wants_text != text_input_) {
@@ -596,6 +619,84 @@ void DevOverlay::draw_labels_tab() {
     ImGui::SameLine();
     ImGui::Text("%s%s", label.name.c_str(), label.current ? "  (current)" : "");
     ImGui::PopID();
+  }
+}
+
+void DevOverlay::set_screen_editor(ScreenEditor* editor, std::function<Viewport()> viewport) {
+  screen_editor_ = editor;
+  viewport_ = std::move(viewport);
+}
+
+void DevOverlay::draw_screen_editor() {
+  ImGui::SetNextWindowPos(ImVec2{kEditorX, kEditorY}, ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2{kEditorWidth, kEditorHeight}, ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("Screen editor")) {
+    ImGui::Checkbox("Pick: click a node of a screen in the game", &pick_);
+    ScreenEditor& editor = *screen_editor_;
+    const UiNode* node = editor.node();
+    if (!editor.has_selection() || node == nullptr) {
+      ImGui::TextUnformatted("No node is selected.");
+    } else {
+      const RectF& rect = node->rect;
+      ImGui::Text("Screen '%s', node %s", editor.screen_name().c_str(),
+                  editor.source_kind().empty() ? "(no source)" : editor.source_kind().c_str());
+      ImGui::Text("Rectangle: x %.1f  y %.1f  width %.1f  height %.1f (canvas pixels)", rect.x,
+                  rect.y, rect.width, rect.height);
+      if (!editor.problem().empty()) {
+        colored_cell("Read-only: " + editor.problem(), kWarningColor);
+      } else {
+        ImGui::Text("Source: %s", editor.location().c_str());
+        draw_editor_fields(editor);
+      }
+      const ImVec2 first = to_imgui_point(virtual_to_window(viewport_(), {rect.x, rect.y}));
+      const ImVec2 last = to_imgui_point(
+          virtual_to_window(viewport_(), {rect.x + rect.width, rect.y + rect.height}));
+      ImGui::GetForegroundDrawList()->AddRect(first, last, kOutlineColor, 0, 0, kOutlineWidth);
+    }
+    if (!editor_message_.empty()) {
+      colored_cell(editor_message_, kErrorColor);
+    }
+  }
+  ImGui::End();
+}
+
+void DevOverlay::draw_editor_fields(ScreenEditor& editor) {
+  std::size_t index = 0;
+  for (ScreenEditor::Field& field : editor.fields()) {
+    ImGui::PushID(static_cast<int>(index++));
+    const std::string name = field.key.empty() ? "text" : field.key;
+    if (!field.editable) {
+      ImGui::Text("%s = %s  (read-only)", name.c_str(), field.original.c_str());
+    } else if (field.kind == ScanValueKind::kBoolean) {
+      bool on = field.value == "true";
+      if (ImGui::Checkbox(name.c_str(), &on)) {
+        field.value = on ? "true" : "false";
+      }
+    } else {
+      std::array<char, kFieldBytes> buffer{};
+      field.value.copy(buffer.data(), buffer.size() - 1);
+      if (ImGui::InputText(name.c_str(), buffer.data(), buffer.size())) {
+        field.value = buffer.data();
+      }
+      if (const std::string problem = field.problem(); !problem.empty()) {
+        ImGui::SameLine();
+        colored_cell(problem, kErrorColor);
+      }
+    }
+    ImGui::PopID();
+  }
+  if (ImGui::Button("Save")) {
+    editor_message_ = editor.save();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Revert")) {
+    editor.revert();
+    editor_message_.clear();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Deselect")) {
+    editor.clear();
+    editor_message_.clear();
   }
 }
 

@@ -12,6 +12,7 @@
 #include "engine/jobs/job_system.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
+#include "engine/render/shader_compiler.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/vfs/vfs.hpp"
@@ -35,6 +36,10 @@ TEST_CASE("presentation: the crossfade, the camera and blink, and the sepia laye
   vnmaki::Vfs vfs;
   REQUIRE(vfs.mount(
       vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_TEMPLATES_DIR} / "default")));
+  if (!vnmaki::shader_compiler_available()) {
+    // A release build cannot compile the sepia shader; it loads the build's precompiled file.
+    REQUIRE(vfs.mount(vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_PRECOMPILED_DIR})));
+  }
   vnmaki::JobSystem jobs;
   vnmaki::Scene scene{vfs, kVirtualSize};
   vnmaki::Audio audio{vfs};
