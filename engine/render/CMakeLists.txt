@@ -56,6 +56,10 @@ vnmaki_add_shaders(
           "${PROJECT_SOURCE_DIR}/shaders/transition_mask.frag.hlsl"
   INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/shaders")
 
+# libwebp decodes WebP. vcpkg and Debian/Ubuntu (libwebp-dev) both ship a CMake config.
+find_package(WebP CONFIG REQUIRED)
+target_link_libraries(vnmaki_engine PRIVATE WebP::webp)
+
 # stb_image decodes PNG and JPEG. vcpkg's stb installs stb_image.h at the top of its include
 # directory, Debian/Ubuntu's libstb-dev under stb/.
 find_path(VNMAKI_STB_INCLUDE_DIR stb_image.h PATH_SUFFIXES stb REQUIRED)

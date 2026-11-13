@@ -24,6 +24,7 @@
     { "name": "freetype", "default-features": false },
     { "name": "harfbuzz", "default-features": false },
     "libunibreak",
+    "libwebp",
     "libvorbis",
     "lua",
     "miniaudio",

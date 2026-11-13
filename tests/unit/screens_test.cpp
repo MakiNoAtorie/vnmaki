@@ -284,7 +284,8 @@ TEST_CASE("ui nodes: a toggle, a slider and a bar follow store and write it back
 
   UiNode* toggle = game.node("panel", "Fast");
   UiNode* slider = game.node("panel", "Volume");
-  REQUIRE((toggle != nullptr && slider != nullptr));
+  REQUIRE(toggle != nullptr);
+  REQUIRE(slider != nullptr);
   CHECK_FALSE(toggle->checked);
   CHECK(slider->value == doctest::Approx(kSliderStart));
 
@@ -373,7 +374,9 @@ TEST_CASE("preferences screen: a change is applied to the text, auto, audio and 
   UiNode* music = game.node("preferences", "Music volume");
   UiNode* speed = game.node("preferences", "Text speed");
   UiNode* delay = game.node("preferences", "Auto-advance delay");
-  REQUIRE((music != nullptr && speed != nullptr && delay != nullptr));
+  REQUIRE(music != nullptr);
+  REQUIRE(speed != nullptr);
+  REQUIRE(delay != nullptr);
   // The middle of each slider.
   const auto middle = [](const UiNode& slider) {
     return PointF{.x = slider.rect.x + (slider.rect.width / 2),

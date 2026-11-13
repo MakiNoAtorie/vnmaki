@@ -32,10 +32,10 @@ constexpr std::array<std::string_view, kLayerOrder.size()> kLayerNames{
     "background", "master", "characters", "3d", "overlay", "ui", "transient",
 };
 
-// The image-name convention: image name N is the file "images/N.png", or "images/N.jpg" when
-// there is no such PNG. A name may hold "/": "bg/classroom" is "images/bg/classroom.png".
+// The image-name convention: image name N is the file "images/N.png", else "images/N.jpg", else
+// "images/N.webp". A name may hold "/": "bg/classroom" is "images/bg/classroom.png".
 constexpr std::string_view kImageDirectory = "images/";
-constexpr std::array<std::string_view, 2> kImageExtensions{".png", ".jpg"};
+constexpr std::array<std::string_view, 3> kImageExtensions{".png", ".jpg", ".webp"};
 
 std::string image_path(std::string_view name, std::string_view extension) {
   std::string path{kImageDirectory};
@@ -58,9 +58,11 @@ std::string missing_image(std::string_view name) {
   std::string message = "image '";
   message += name;
   message += "' not found (no ";
-  message += image_path(name, kImageExtensions.front());
+  message += image_path(name, kImageExtensions[0]);
+  message += ", ";
+  message += image_path(name, kImageExtensions[1]);
   message += " or ";
-  message += image_path(name, kImageExtensions.back());
+  message += image_path(name, kImageExtensions[2]);
   message += ")";
   return message;
 }

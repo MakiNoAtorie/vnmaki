@@ -102,7 +102,13 @@ void JobSystem::shutdown(ShutdownMode mode) {
 #endif
 }
 
-bool JobSystem::threads_supported() noexcept { return VNMAKI_JOBS_THREADS != 0; }
+bool JobSystem::threads_supported() noexcept {
+#if VNMAKI_JOBS_THREADS
+  return true;
+#else
+  return false;
+#endif
+}
 
 std::size_t JobSystem::worker_count() const noexcept { return impl_->worker_count(); }
 

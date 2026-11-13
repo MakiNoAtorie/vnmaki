@@ -481,8 +481,8 @@ end)
 
 TEST_CASE("frame animation: a bad definition fails at the script line") {
   const std::string bad_image = at_line() +
-                                "image 'nope' not found (no images/nope.png or "
-                                "images/nope.jpg)";
+                                "image 'nope' not found (no images/nope.png, "
+                                "images/nope.jpg or images/nope.webp)";
   CHECK(line_error(R"(animation("x", { frames = { "rain", "nope" }, fps = 4 }))") == bad_image);
   CHECK(line_error(R"(animation("x", { sheet = "nope", columns = 1, rows = 1, fps = 4 }))") ==
         bad_image);

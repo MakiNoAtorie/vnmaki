@@ -36,6 +36,10 @@ vnmaki_add_fixture_generator(
   render SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
   DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
+# WebP images for the image decoder (ticket 31).
+vnmaki_add_fixture_generator(
+  webp SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/webp_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
 # Script runtime (ticket 06).
 target_sources(vnmaki_unit_tests PRIVATE unit/headless_runner_test.cpp
                                          unit/script_sandbox_test.cpp

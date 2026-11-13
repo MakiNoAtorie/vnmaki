@@ -44,6 +44,18 @@ else()
       $<$<CONFIG:Debug>:_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG>)
 endif()
 
+# MSVC static analysis. `/analyze:external-` skips the headers that CMake passes as SYSTEM
+# includes (vcpkg packages, stb, Lua), so only first-party code is analyzed. The analyzer's
+# warnings are errors through /WX above. Slow, so it is off by default; the Windows debug CI job
+# turns it on.
+option(VNMAKI_MSVC_ANALYZE "Run MSVC /analyze on first-party code" OFF)
+if(VNMAKI_MSVC_ANALYZE)
+  if(NOT MSVC)
+    message(FATAL_ERROR "VNMAKI_MSVC_ANALYZE needs MSVC")
+  endif()
+  target_compile_options(vnmaki_options INTERFACE /analyze /analyze:external-)
+endif()
+
 if(VNMAKI_SANITIZERS)
   if("thread" IN_LIST VNMAKI_SANITIZERS AND "address" IN_LIST VNMAKI_SANITIZERS)
     message(FATAL_ERROR "ThreadSanitizer cannot be combined with AddressSanitizer")

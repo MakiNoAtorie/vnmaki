@@ -29,7 +29,7 @@ inline constexpr std::string_view kGeneratedImagePrefix = "gen:";
 class UiRenderer {
  public:
   /// `renderer` and the fonts must outlive this object. `vfs` (may be null, then image nodes draw
-  /// nothing) reads `images/<name>.png` or `.jpg` for image nodes; it must outlive this too.
+  /// nothing) reads `images/<name>.png`, `.jpg` or `.webp` for image nodes; it must outlive this too.
   UiRenderer(IRenderer& renderer, FontSet fonts, const Vfs* vfs = nullptr);
   /// One font, no fallbacks.
   UiRenderer(IRenderer& renderer, const Font& font, const Vfs* vfs = nullptr);

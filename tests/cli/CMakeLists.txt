@@ -226,7 +226,7 @@ vnmaki_add_cli_test(
   ARGS run "${vnmaki_run_fixtures}/missing_image" --headless
   EXIT 1
   STDERR_REGEX
-    "vnmaki: scripts/start.lua:3: image 'ghost' not found .no images/ghost.png or images/ghost.jpg.")
+    "vnmaki: scripts/start.lua:3: image 'ghost' not found .no images/ghost.png, images/ghost.jpg or images/ghost.webp.")
 
 vnmaki_add_cli_test(
   run_headless_stops_at_the_step_limit
