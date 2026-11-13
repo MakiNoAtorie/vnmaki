@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "engine/platform/input.hpp"
+#include "engine/platform/input_map.hpp"
 #include "engine/platform/viewport.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/ui/ui_host.hpp"
@@ -41,6 +42,10 @@ class ScreenPresenter {
     actions_ = std::move(handler);
   }
 
+  /// The controls that roll back (InputAction::kRollback). Without a map, the defaults. `map` must
+  /// outlive the presenter.
+  void set_input_map(const InputMap* map) { input_map_ = map; }
+
   /// Passes `event` to the host. A button of the shown screen that is activated answers the
   /// script: a menu button chooses its option (the screen returns its number, from 1), and
   /// `call_screen` returns the button's `returns` value. Returns whether the event was for the UI.
@@ -53,6 +58,7 @@ class ScreenPresenter {
   ScriptRuntime* runtime_;
   UiHost* host_;
   std::function<bool(const ScreenActivation&)> actions_;
+  const InputMap* input_map_ = nullptr;
   // The screen shown for a request, and where the script waited when it was shown.
   struct Shown {
     std::string name;
