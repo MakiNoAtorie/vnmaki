@@ -330,7 +330,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `bind(table, key)` is the option `bind` of a `toggle`, `slider` or `bar`. `table` is `store`, `persistent` or `prefs`. The prelude turns it into the options `bind_table` and `bind_key`.
   - `UiHost::set_bindings(&runtime)` connects them. `UiHost` reads each bound node's datum (`ScriptRuntime::binding`) every time it lays out, draws or handles an event. It writes the datum (`set_binding`) when the player flips the toggle or moves the slider. Without it the node keeps its own value.
   - A toggle follows a boolean. A slider or bar follows a number between its `min` and `max` (default 0 and 1). A `step` snaps a slider. A click or a drag on a slider sets it. Left and Right (also the d-pad) move it by `step` (a twentieth of the range if unset).
-  - A write to `store` is not in the input log, so a rollback or a load takes it back. `persistent` and `prefs` are not rolled back.
+  - A write to `store` through `set_binding` while a label waits goes in the input log (`StoreWrite`: key, value and the number of the wait). A rollback or a load makes it again at the same wait, before the answer. Writes to one key at one wait make one entry, so a slider drag stays small. `persistent` and `prefs` are not rolled back and not logged.
 - Styles (SPEC §15): `style(name, { font, size, color, background, padding, gap, margin, width, height, grow, align, justify, fill, border = { width, color }, focus = { background, color, border }, hover = { ... }, extends = "other" })` declares a named style. A node takes `style = "name"`.
   - Merge order, lowest first: the built-in look of the node kind (`build_ui_tree`), the styles in the `extends` chain (base first), the style, the node's own options.
   - The prelude does the merge when the node is made. `style` is not an option that reaches C++. A style is flat node options (`background` is `bg`, `border = {...}` is `border_width` and `border_color`, `focus = {...}` is `focus_bg`, `focus_color` and `focus_border`, `hover` is `hover_*`). A style option that does not fit the kind is left out: only a button, toggle, slider or input gets `focus_*`. So one style can serve a text node and a button.
@@ -429,13 +429,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `eval(code)` runs Lua for the dev REPL (see Tools) and `set_observer(observer)` changes the observer after the runtime was made.
   - `eval` runs in the sandbox of the scripts, with the instruction and memory limits. It tries `return <code>` first, then `code` as statements. It returns `EvalResult` (`ok`, and `text`: the values separated by tabs, or the error). It never throws. A table is listed one level deep.
   - A blocking call (`say`, `menu`, ...) in `eval` is an error, because no label is running.
-  - A change to `store` stays until the next rollback or load, because neither is in the input log. `persistent` and `prefs` keep it.
+  - A change to `store` by `eval` stays until the next rollback or load, because it is not in the input log. `persistent` and `prefs` keep it.
 - `ScriptRuntime::replaying()` is the only replay flag.
   - Subsystems update their state during replay.
   - They check the flag only for effects that the player can see or hear.
 - `replay(LabelSnapshot, inputs, step)` restores the label-entry snapshot and replays the top label only.
   - It does not make the callers again.
-  - Only menu choices and `call_screen` results go into the input log. A save writes both: `[0, index]` and `[1, value]` (nil, boolean, integer, float or string, as MessagePack types). A reader rejects any other tag.
+  - Only menu choices, `call_screen` results and bound `store` writes (`StoreWrite`) go into the input log. A replay makes the writes of a wait when it reaches that wait, then gives the answer. A save writes both: `[0, index]` and `[1, value]` (nil, boolean, integer, float or string, as MessagePack types). `[2, [wait, key, value]]` is a store write. A reader rejects any other tag.
 - Scene state goes into snapshots through `SceneState` (`capture()` and `restore(bytes)`) in `ScriptRuntimeOptions::scene_state`.
 - `menu { "a", "b" }` returns a 1-based number. C++ gives the answer with `choose(index)`, which is 0-based. `ScreenPresenter` (`engine/ui/`) shows the menu and calls `choose`.
 - `call_screen(name, args)` is a blocking call (`CallScreenRequest`). C++ gives the value with `return_screen(value)`. The value is nil, a boolean, a number or a string.

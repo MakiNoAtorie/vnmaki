@@ -156,9 +156,19 @@ struct ScreenResult {
   friend bool operator==(const ScreenResult&, const ScreenResult&) = default;
 };
 
+/// A write to `store` that a screen made through a binding (`bind(store, key)`) while the label
+/// waited. A replay makes it again at the same wait, before the answer that follows.
+struct StoreWrite {
+  std::string key;
+  ScreenValue value{};
+  std::uint32_t wait = 0;  // the wait, counted from 1 in the log of the label that holds it
+
+  friend bool operator==(const StoreWrite&, const StoreWrite&) = default;
+};
+
 /// One entry of the input log: an answer the player gave that a replay must
 /// give again. Advancing past a line carries no data, so it is not logged.
-using InputResult = std::variant<MenuChoice, ScreenResult>;
+using InputResult = std::variant<MenuChoice, ScreenResult, StoreWrite>;
 
 /// A table inside a StoreSnapshot, by its index in StoreSnapshot::tables.
 struct StoreTableRef {

@@ -484,6 +484,8 @@ constexpr std::size_t kThumbnailFields = 3;
 constexpr std::size_t kInputFields = 2;
 constexpr std::uint64_t kMenuChoiceTag = 0;
 constexpr std::uint64_t kScreenResultTag = 1;
+constexpr std::uint64_t kStoreWriteTag = 2;
+constexpr std::size_t kStoreWriteFields = 3;
 
 std::string_view key_name(Key key) { return kKeyNames.at(static_cast<std::size_t>(key)); }
 
@@ -618,6 +620,16 @@ std::vector<InputResult> read_inputs(Reader& in) {
                          std::numeric_limits<std::uint32_t>::max(), "a menu choice"))});
     } else if (tag == kScreenResultTag) {
       inputs.emplace_back(ScreenResult{.value = read_screen_value(in)});
+    } else if (tag == kStoreWriteTag) {
+      if (in.array() != kStoreWriteFields) {
+        fail("a store write has the wrong size");
+      }
+      StoreWrite write;
+      write.wait = static_cast<std::uint32_t>(
+          in.bounded(std::numeric_limits<std::uint32_t>::max(), "a store write wait"));
+      write.key = in.str();
+      write.value = read_screen_value(in);
+      inputs.emplace_back(std::move(write));
     } else {
       fail("an input log entry has an unknown kind");
     }
@@ -683,9 +695,16 @@ std::vector<std::byte> encode_save_payload(const SaveData& data) {
     if (const auto* choice = std::get_if<MenuChoice>(&input)) {
       out.unsigned_integer(kMenuChoiceTag);
       out.unsigned_integer(choice->index);
-    } else {
+    } else if (const auto* result = std::get_if<ScreenResult>(&input)) {
       out.unsigned_integer(kScreenResultTag);
-      write_screen_value(out, std::get<ScreenResult>(input).value);
+      write_screen_value(out, result->value);
+    } else {
+      const auto& write = std::get<StoreWrite>(input);
+      out.unsigned_integer(kStoreWriteTag);
+      out.array(kStoreWriteFields);
+      out.unsigned_integer(write.wait);
+      out.str(write.key);
+      write_screen_value(out, write.value);
     }
   }
   out.str(key_name(Key::kPersistent));

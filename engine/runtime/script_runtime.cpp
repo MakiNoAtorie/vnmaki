@@ -2183,6 +2183,10 @@ class ScriptRuntime::Impl {
   void run(std::optional<ScreenValue> resume_value = std::nullopt);
   [[nodiscard]] bool replay_answer(std::optional<ScreenValue>& resume_value);
   void record(const InputResult& input);
+  void record_store_write(const StoreWrite& write);
+  [[nodiscard]] bool replay_store_writes();
+  [[nodiscard]] std::string write_binding(std::string_view table, std::string_view key,
+                                          ScreenValue value);
   void begin_replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
                     std::uint32_t step, std::uint32_t ordinal);
   [[nodiscard]] bool at_replay_target() const;
@@ -2971,6 +2975,19 @@ ScreenValue ScriptRuntime::Impl::binding(std::string_view table, std::string_vie
 
 std::string ScriptRuntime::Impl::set_binding(std::string_view table, std::string_view key,
                                              ScreenValue value) {
+  std::string problem = write_binding(table, key, value);
+  if (problem.empty() && table == "store" && state_ == RunState::kWaiting && !replaying_) {
+    record_store_write({.key = std::string{key}, .value = value});
+    // The step of this wait stands alone, so it takes the write too. A wait is no step.
+    if (!is_pause(request_) && !rollback_.empty()) {
+      rollback_.back().inputs = frames_.front().inputs;
+    }
+  }
+  return problem;
+}
+
+std::string ScriptRuntime::Impl::write_binding(std::string_view table, std::string_view key,
+                                               ScreenValue value) {
   reset_instruction_budget();
   sol::object lua_value;
   {
@@ -3174,6 +3191,46 @@ void ScriptRuntime::Impl::record(const InputResult& input) {
   for (Frame& frame : frames_) {
     frame.inputs.push_back(input);
   }
+}
+
+// A bound write to `store` while the label waits: it goes in the log like an answer, so a
+// rollback or a load makes it again. `wait` is the number of the wait in each label's own log.
+// Writes to one key at one wait (a slider drag) are one entry.
+void ScriptRuntime::Impl::record_store_write(const StoreWrite& write) {
+  for (Frame& frame : frames_) {
+    StoreWrite entry = write;
+    entry.wait = frame.stops;
+    auto* last = frame.inputs.empty() ? nullptr : std::get_if<StoreWrite>(&frame.inputs.back());
+    if (last != nullptr && last->key == entry.key && last->wait == entry.wait) {
+      last->value = entry.value;
+    } else {
+      frame.inputs.emplace_back(std::move(entry));
+    }
+  }
+}
+
+// Makes again the writes the log has for the wait the replay just reached, before its answer.
+bool ScriptRuntime::Impl::replay_store_writes() {
+  const std::string where = "replay: label '" + frames_.back().label + "', step " +
+                            std::to_string(frames_.back().step) + ": ";
+  while (replay_.next_input < replay_.inputs.size()) {
+    const auto* write = std::get_if<StoreWrite>(&replay_.inputs[replay_.next_input]);
+    if (write == nullptr || write->wait > frames_.front().stops) {
+      break;
+    }
+    if (write->wait < frames_.front().stops) {
+      fail(where + "the input log has a store write for an earlier wait");
+      return false;
+    }
+    const StoreWrite entry = *write;
+    ++replay_.next_input;
+    if (std::string problem = write_binding("store", entry.key, entry.value); !problem.empty()) {
+      fail(where + "a logged store write failed (" + problem + ")");
+      return false;
+    }
+    record_store_write(entry);
+  }
+  return true;
 }
 
 void ScriptRuntime::Impl::replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
@@ -3390,11 +3447,16 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
     if (yielded && std::holds_alternative<BlockingRequest>(*pending_)) {
       Frame& frame = frames_.back();
       ++frame.step;
-      ++frames_.front().stops;
+      for (Frame& waiting : frames_) {
+        ++waiting.stops;
+      }
       request_ = std::get<BlockingRequest>(std::move(*pending_));
       std::string voice;
       if (!is_pause(request_)) {
         voice = std::exchange(pending_voice_, std::string{});
+      }
+      if (replaying_ && !replay_store_writes()) {
+        return;
       }
       if (replaying_ && !at_replay_target()) {
         // Not the target yet: answer from the log and go on, with a fresh

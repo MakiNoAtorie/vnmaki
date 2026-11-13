@@ -41,6 +41,7 @@ using vnmaki::ScreenResult;
 using vnmaki::ScreenValue;
 using vnmaki::ScriptPosition;
 using vnmaki::StoreSnapshot;
+using vnmaki::StoreWrite;
 using vnmaki::StoreTable;
 using vnmaki::StoreTableRef;
 using vnmaki::StoreValue;
@@ -212,6 +213,16 @@ TEST_CASE("save file: the answers of call_screen read back with their types") {
   data.inputs = {ScreenResult{.value = ScreenValue{std::int64_t{1}}}};
   CHECK(vnmaki::decode_save_payload(vnmaki::encode_save_payload(data)) == data);
   data.inputs = {ScreenResult{.value = ScreenValue{1.0}}};
+  CHECK(vnmaki::decode_save_payload(vnmaki::encode_save_payload(data)) == data);
+}
+
+TEST_CASE("save file: the store writes of the input log read back") {
+  SaveData data = sample_save();
+  data.inputs = {StoreWrite{.key = "name", .value = ScreenValue{std::string{"Eileen"}}, .wait = 1},
+                 StoreWrite{.key = "volume", .value = ScreenValue{kSomeNumber}, .wait = 1},
+                 StoreWrite{.key = "on", .value = ScreenValue{true}, .wait = 2},
+                 StoreWrite{.key = "gone", .value = ScreenValue{}, .wait = 7},
+                 MenuChoice{.index = 1}};
   CHECK(vnmaki::decode_save_payload(vnmaki::encode_save_payload(data)) == data);
 }
 
@@ -701,6 +712,64 @@ end)
   CHECK(game.saves.load("1").empty());
   CHECK(game.narrated() == "got a");
   CHECK(game.warnings.empty());
+}
+
+TEST_CASE("saves: a store write made through a binding survives a save and a load") {
+  constexpr std::string_view kBoundStory = R"(
+label("start", function()
+  narrate("a")
+  narrate("hello " .. tostring(store.name))
+end)
+)";
+  const TempDir dir{"bound_store"};
+  Game game{std::string{kBoundStory}, dir.path()};
+  game.runtime.start("start");
+  CHECK(game.runtime.set_binding("store", "name", ScreenValue{std::string{"Eileen"}}).empty());
+  CHECK(game.saves.save("1").empty());
+  game.runtime.advance();
+  REQUIRE(game.narrated() == "hello Eileen");
+  CHECK(game.saves.save("2").empty());
+
+  Game fresh{std::string{kBoundStory}, dir.path()};
+  CHECK(fresh.saves.load("1").empty());  // the write was made at this very wait
+  CHECK(fresh.narrated() == "a");
+  CHECK(fresh.runtime.binding("store", "name") == ScreenValue{std::string{"Eileen"}});
+  CHECK(fresh.saves.load("2").empty());  // the write was made before the line that reads it
+  CHECK(fresh.narrated() == "hello Eileen");
+}
+
+TEST_CASE("saves: a bound store write in a called label survives a save and a load") {
+  const TempDir dir{"bound_store_call"};
+  Game game{R"(label("start", function()
+  narrate("s1")
+  call("aside")
+  narrate("s2 " .. tostring(store.v))
+end)
+label("aside", function()
+  narrate("a1")
+  narrate("a2 " .. tostring(store.v))
+end)
+)", dir.path()};
+  game.runtime.start("start");
+  game.runtime.advance();
+  REQUIRE(game.narrated() == "a1");
+  CHECK(game.runtime.set_binding("store", "v", ScreenValue{std::int64_t{2}}).empty());
+  game.runtime.advance();
+  REQUIRE(game.narrated() == "a2 2");
+  CHECK(game.saves.save("1").empty());
+
+  Game fresh{R"(label("start", function()
+  narrate("s1")
+  call("aside")
+  narrate("s2 " .. tostring(store.v))
+end)
+label("aside", function()
+  narrate("a1")
+  narrate("a2 " .. tostring(store.v))
+end)
+)", dir.path()};
+  CHECK(fresh.saves.load("1").empty());
+  CHECK(fresh.narrated() == "a2 2");
 }
 
 TEST_CASE("saves: a load drops the labels that called the running label") {
