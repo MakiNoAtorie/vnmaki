@@ -362,3 +362,75 @@ vnmaki_add_cli_test(
   EXIT 1
   STDERR_REGEX
     "vnmaki: scripts/start.lua:3: audio 'bgm/ghost' not found .no audio/bgm/ghost.opus, .ogg, .flac or .wav.")
+
+# vnmaki graph (ticket 34), on the projects tools/generators/graph_fixtures.py writes: the CSV and
+# the DOT text, with the lines of the calls and the unreachable labels and dead ends that the
+# generator works out for itself.
+set(vnmaki_graph_fixtures "${VNMAKI_FIXTURES_DIR}/graph")
+vnmaki_add_cli_stdout_file_test(
+  graph_prints_the_csv_of_a_project
+  ARGS graph "${vnmaki_graph_fixtures}/story" --format csv
+  EXIT 0
+  STDOUT_FILE "${vnmaki_graph_fixtures}/story.csv")
+vnmaki_add_cli_stdout_file_test(
+  graph_prints_dot_by_default
+  ARGS graph "${vnmaki_graph_fixtures}/story"
+  EXIT 0
+  STDOUT_FILE "${vnmaki_graph_fixtures}/story.dot")
+vnmaki_add_cli_stdout_file_test(
+  graph_prints_dot_when_asked
+  ARGS graph --format dot "${vnmaki_graph_fixtures}/story"
+  EXIT 0
+  STDOUT_FILE "${vnmaki_graph_fixtures}/story.dot")
+vnmaki_add_cli_stdout_file_test(
+  graph_prints_the_csv_of_a_random_project
+  ARGS graph "${vnmaki_graph_fixtures}/random" --format csv
+  EXIT 0
+  STDOUT_FILE "${vnmaki_graph_fixtures}/random.csv")
+
+# A folder with no scripts/ folder has no labels.
+vnmaki_add_cli_test(
+  graph_of_a_folder_without_scripts_has_only_the_header
+  ARGS graph "${vnmaki_graph_fixtures}/story/scripts/extra" --format csv
+  EXIT 0
+  STDOUT_LINE "type,from,to,script,line,flags")
+
+vnmaki_add_cli_test(
+  graph_reports_a_missing_folder
+  ARGS graph "${vnmaki_graph_fixtures}/does_not_exist"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: .*does_not_exist.* is not a directory")
+
+vnmaki_add_cli_test(
+  graph_needs_a_folder
+  ARGS graph
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki graph <dir> .--format dot.csv.")
+
+vnmaki_add_cli_test(
+  graph_rejects_an_unknown_format
+  ARGS graph "${vnmaki_graph_fixtures}/story" --format xml
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki graph")
+
+vnmaki_add_cli_test(
+  graph_rejects_a_second_folder
+  ARGS graph "${vnmaki_graph_fixtures}/story" "${vnmaki_graph_fixtures}/random"
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki graph")
+
+# vnmaki graph never opens a window or waits for input, so a hang is a bug.
+set_tests_properties(
+  cli.graph_prints_the_csv_of_a_project
+  cli.graph_prints_dot_by_default
+  cli.graph_prints_dot_when_asked
+  cli.graph_prints_the_csv_of_a_random_project
+  cli.graph_of_a_folder_without_scripts_has_only_the_header
+  cli.graph_reports_a_missing_folder
+  cli.graph_needs_a_folder
+  cli.graph_rejects_an_unknown_format
+  cli.graph_rejects_a_second_folder PROPERTIES TIMEOUT 60)

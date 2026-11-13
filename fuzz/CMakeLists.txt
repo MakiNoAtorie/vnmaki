@@ -85,3 +85,10 @@ set(vnmaki_video_corpus "${CMAKE_CURRENT_BINARY_DIR}/corpus/video")
 file(MAKE_DIRECTORY "${vnmaki_video_corpus}")
 add_test(NAME fuzz.video.seeded COMMAND fuzz_video -runs=10000 -seed=1 "${vnmaki_video_corpus}"
                                         "${PROJECT_SOURCE_DIR}/tests/fixtures/video")
+
+# Lua scan (ticket 34). Random bytes rarely form a label call, so a dictionary gives libFuzzer the
+# pieces.
+vnmaki_add_fuzzer(script_scan script_scan_fuzzer.cpp script_scan_properties.hpp)
+add_test(NAME fuzz.script_scan.dictionary
+         COMMAND fuzz_script_scan -runs=10000 -seed=1
+                 "-dict=${CMAKE_CURRENT_SOURCE_DIR}/script_scan.dict")

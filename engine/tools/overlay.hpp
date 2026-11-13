@@ -13,13 +13,16 @@
 #include "engine/render/sdl_gpu_renderer.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/tools/log_buffer.hpp"
+#include "engine/tools/story_graph.hpp"
+#include "engine/vfs/vfs.hpp"
 
 namespace vnmaki {
 
 class ImguiBackend;
 
-/// The overlay: a log console with a Lua REPL. F12 shows and hides it. Construct it after the
-/// renderer and destroy it before; `platform`, `runtime` and `log` must outlive it.
+/// The overlay: a log console with a Lua REPL, and the story graph. F12 shows and hides it.
+/// Construct it after the renderer and destroy it before; `platform`, `runtime` and `log` must
+/// outlive it.
 ///
 /// The game keeps running under the overlay. While the pointer is over an overlay window, or a
 /// text field of the overlay has the keyboard, handle_event() takes the event, so the game gets
@@ -41,6 +44,11 @@ class DevOverlay {
   /// wants.
   [[nodiscard]] bool handle_event(const InputEvent& event);
 
+  /// Turns on the "Story graph" window: the labels and edges of the scripts in `vfs`, with the
+  /// edges that `trace` saw in a second color. The trace must be heard by the runtime (see
+  /// ObserverChain). `vfs` and `trace` must outlive the overlay.
+  void set_story(const Vfs& vfs, const TraceRecorder& trace);
+
   /// Builds this frame's windows and gives them to the renderer, which draws them in its
   /// end_frame() over the last pass. Call it once per frame after the game's passes. Does
   /// nothing while hidden. `window_pixels` is the size of that pass's target.
@@ -51,6 +59,7 @@ class DevOverlay {
   static constexpr std::size_t kLevels = 3;
 
   void draw_console();
+  void draw_story_graph();
   void run_input();
 
   std::unique_ptr<ImguiBackend> backend_;
@@ -64,6 +73,10 @@ class DevOverlay {
   std::size_t shown_total_ = 0;
   std::array<bool, kLevels> show_level_{true, true, true};
   std::array<char, kInputBytes> input_{};
+  const Vfs* vfs_ = nullptr;
+  const TraceRecorder* trace_ = nullptr;
+  StoryGraph graph_;
+  std::size_t trace_revision_ = 0;
 };
 
 }  // namespace vnmaki
