@@ -564,3 +564,54 @@ set_tests_properties(
   cli.extract_strings_reports_a_missing_folder
   cli.extract_strings_needs_a_folder
   cli.extract_strings_rejects_a_second_folder PROPERTIES TIMEOUT 60)
+
+# vnmaki import (ticket 44), on the projects tools/generators/import_fixtures.py writes. The shader
+# is only imported by a build that has the shader compiler (VNMAKI_SHADER_COMPILER).
+set(vnmaki_import_fixtures "${VNMAKI_FIXTURES_DIR}/import")
+if(VNMAKI_SHADER_COMPILER)
+  set(vnmaki_import_shaders ON)
+else()
+  set(vnmaki_import_shaders OFF)
+endif()
+add_test(
+  NAME cli.import_writes_the_outputs_and_uses_the_cache
+  COMMAND
+    ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> "-DPROJECT=${vnmaki_import_fixtures}/project"
+    "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/work/import" -DSHADERS=${vnmaki_import_shaders} -P
+    "${CMAKE_CURRENT_SOURCE_DIR}/run_import.cmake")
+
+vnmaki_add_cli_test(
+  import_reports_a_missing_buffer_and_texture
+  ARGS import "${vnmaki_import_fixtures}/project_broken"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "models/missing.gltf: buffer 0 'nothing.bin' not found.*texture image 0 'nothing.png' not found")
+
+vnmaki_add_cli_test(
+  import_reports_a_missing_folder
+  ARGS import "${vnmaki_import_fixtures}/does_not_exist"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "does_not_exist.* is not a directory")
+
+vnmaki_add_cli_test(
+  import_needs_a_folder
+  ARGS import
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki import <dir>")
+
+vnmaki_add_cli_test(
+  import_rejects_a_second_folder
+  ARGS import "${vnmaki_import_fixtures}/project" "${vnmaki_import_fixtures}/project_broken"
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki import")
+
+# vnmaki import never opens a window or waits for input, so a hang is a bug.
+set_tests_properties(
+  cli.import_writes_the_outputs_and_uses_the_cache
+  cli.import_reports_a_missing_buffer_and_texture
+  cli.import_reports_a_missing_folder
+  cli.import_needs_a_folder
+  cli.import_rejects_a_second_folder PROPERTIES TIMEOUT 120)

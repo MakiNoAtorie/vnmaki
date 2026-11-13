@@ -10,3 +10,4 @@ target_sources(vnmaki PRIVATE run_command.cpp run_command.hpp story_window.cpp s
 target_sources(vnmaki PRIVATE graph_command.cpp graph_command.hpp)
 target_sources(vnmaki PRIVATE check_command.cpp check_command.hpp)
 target_sources(vnmaki PRIVATE extract_command.cpp extract_command.hpp)
+target_sources(vnmaki PRIVATE import_command.cpp import_command.hpp)

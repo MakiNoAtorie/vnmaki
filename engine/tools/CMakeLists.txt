@@ -20,6 +20,8 @@ if(VNMAKI_DEV_TOOLS)
     vnmaki_engine
     PRIVATE file_watcher.cpp
             file_watcher.hpp
+            hot_import.cpp
+            hot_import.hpp
             hot_reload.cpp
             hot_reload.hpp
             imgui_backend.cpp

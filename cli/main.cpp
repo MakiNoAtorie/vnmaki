@@ -7,6 +7,7 @@
 #include "cli/check_command.hpp"
 #include "cli/extract_command.hpp"
 #include "cli/graph_command.hpp"
+#include "cli/import_command.hpp"
 #include "cli/new_command.hpp"
 #include "cli/run_command.hpp"
 #include "cli/window_command.hpp"
@@ -53,6 +54,10 @@ int main(int argc, char* argv[]) {
     return vnmaki::cli::extract_command(std::span{args}.subspan(1), std::cout, std::cerr);
   }
 
+  if (!args.empty() && args.front() == "import") {
+    return vnmaki::cli::import_command(std::span{args}.subspan(1), std::cout, std::cerr);
+  }
+
   if (!args.empty() && args.front() == "window") {
     return vnmaki::cli::window_command(std::span{args}.subspan(1), std::cerr);
   }
@@ -62,6 +67,6 @@ int main(int argc, char* argv[]) {
   }
   std::cerr << usage << vnmaki::cli::kNewUsage << vnmaki::cli::kRunUsage
             << vnmaki::cli::kWindowUsage << vnmaki::cli::kGraphUsage << vnmaki::cli::kCheckUsage
-            << vnmaki::cli::kExtractUsage;
+            << vnmaki::cli::kExtractUsage << vnmaki::cli::kImportUsage;
   return exit_usage_error;
 }

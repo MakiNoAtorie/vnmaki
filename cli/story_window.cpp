@@ -40,6 +40,7 @@
 #include "engine/tools/profiler.hpp"
 #if VNMAKI_DEV_TOOLS
 #include "engine/tools/file_watcher.hpp"
+#include "engine/tools/hot_import.hpp"
 #include "engine/tools/hot_reload.hpp"
 #include "engine/tools/log_buffer.hpp"
 #include "engine/tools/observer_chain.hpp"
@@ -245,6 +246,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     HotReload hot_reload{runtime, scene, jobs, ui, dev_log};
     hot_reload.set_on_scripts_reloaded(
         [&] { static_cast<void>(actions.open("quick_menu", {}, false)); });
+    HotImport hot_import{vfs, project_dir, dev_log};  // changed assets go through the importers
     std::optional<FileWatcher> watcher;
     try {
       watcher.emplace(project_dir);
@@ -319,6 +321,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       if (watcher) {
         if (const std::vector<std::string> changed = watcher->poll(); !changed.empty()) {
           hot_reload.apply(changed);
+          hot_import.apply(changed);
         }
       }
 #endif

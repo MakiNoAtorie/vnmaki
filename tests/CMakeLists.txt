@@ -216,7 +216,8 @@ target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)
 # Dev tools: the REPL and the log buffer (ticket 30), hot reload (ticket 32). They exist only in
 # builds with the tools.
 if(VNMAKI_DEV_TOOLS)
-  target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp unit/hot_reload_test.cpp)
+  target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp unit/hot_reload_test.cpp
+                                           unit/hot_import_test.cpp)
 endif()
 
 # Dev tools: the row functions of the inspectors, on the default template (ticket 31).
