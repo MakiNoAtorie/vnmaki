@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <span>
 #include <sstream>
@@ -128,11 +129,9 @@ class Demo {
     voicing_ = std::make_unique<vnmaki::SelfVoicing>(tts, runtime_, *presenter_, *playback_, host_);
     voicing_->set_translator(&translator_);
     applier_ = std::make_unique<vnmaki::PreferenceApplier>(
-        runtime_,
-        vnmaki::PreferenceTargets{.self_voicing = voicing_.get(),
-                                  .language = [this](const std::string& code) {
-                                    apply_language(code);
-                                  }});
+        runtime_, vnmaki::PreferenceTargets{
+                      .self_voicing = voicing_.get(),
+                      .language = [this](const std::string& code) { apply_language(code); }});
     // The player turns self-voicing on in the preferences.
     REQUIRE(runtime_.set_binding("prefs", "self_voicing", true).empty());
     settle();
@@ -150,9 +149,9 @@ class Demo {
     presenter_->update(kReveal);
     screens_->sync();
     voicing_->update();
-    for (vnmaki::AudioCaption& caption : audio_.take_captions()) {
-      captions.push_back(std::move(caption));
-    }
+    std::vector<vnmaki::AudioCaption> fresh = audio_.take_captions();
+    captions.insert(captions.end(), std::make_move_iterator(fresh.begin()),
+                    std::make_move_iterator(fresh.end()));
   }
 
   // Ends the waits (the clip, the flash) as a click does, then shows the next request.
@@ -173,9 +172,7 @@ class Demo {
     settle();
   }
 
-  [[nodiscard]] bool finished() const {
-    return runtime_.state() == vnmaki::RunState::kFinished;
-  }
+  [[nodiscard]] bool finished() const { return runtime_.state() == vnmaki::RunState::kFinished; }
   [[nodiscard]] vnmaki::ScriptRuntime& runtime() { return runtime_; }
   [[nodiscard]] vnmaki::Scene& scene() { return scene_; }
   [[nodiscard]] const vnmaki::Translator& translator() const { return translator_; }
@@ -268,7 +265,17 @@ Strings transcript(const std::string& language, std::size_t choice) {
 // The lines of the label in one language, in order (templates/default/scripts/content.lua and
 // translations/ja.po). The story is the same in both languages, so one table type has both.
 struct Texts {
-  std::string_view intro, ask, english, japanese, same, captions, model, clip, plugin, last, end;
+  std::string_view intro{};
+  std::string_view ask{};
+  std::string_view english{};
+  std::string_view japanese{};
+  std::string_view same{};
+  std::string_view captions{};
+  std::string_view model{};
+  std::string_view clip{};
+  std::string_view plugin{};
+  std::string_view last{};
+  std::string_view end{};
 };
 
 constexpr Texts kEnglishTexts{
@@ -297,9 +304,7 @@ constexpr Texts kJapaneseTexts{
     .last = "コンテンツのデモは以上です。scripts/content.lua を編集して変えてください。",
     .end = "おわり。あなたの物語を書こう。"};
 
-std::string said(std::string_view text) {
-  return "Eileen: " + std::string{text};
-}
+std::string said(std::string_view text) { return "Eileen: " + std::string{text}; }
 
 // What self-voicing says until the menu is answered: two lines and the options.
 Strings spoken_to_menu(const Texts& texts) {
@@ -309,7 +314,7 @@ Strings spoken_to_menu(const Texts& texts) {
 
 // ... and after it: the lines of the second half, and the narration, which has no speaker.
 Strings spoken_after_menu(const Texts& texts) {
-  return {said(texts.same),   said(texts.captions), said(texts.model), said(texts.clip),
+  return {said(texts.same),   said(texts.captions), said(texts.model),     said(texts.clip),
           said(texts.plugin), said(texts.last),     std::string{texts.end}};
 }
 
@@ -366,8 +371,7 @@ TEST_CASE("content: from packs in English, self-voicing speaks the lines and the
   play(demo, kEnglish);
 
   CHECK_MESSAGE(demo.finished(), demo.runtime().error());
-  CHECK(demo.tts.spoken ==
-        joined(spoken_to_menu(kEnglishTexts), spoken_after_menu(kEnglishTexts)));
+  CHECK(demo.tts.spoken == joined(spoken_to_menu(kEnglishTexts), spoken_after_menu(kEnglishTexts)));
   CHECK(demo.tts.stops == 0);
   check_captions(demo);
   CHECK(vnmaki::read_preferences(demo.runtime()).captions);  // the script turned them on
@@ -403,4 +407,3 @@ TEST_CASE("content: the headless transcript from packs, in both languages") {
   CHECK(transcript("en", kEnglish) == transcript_of(kEnglishTexts));
   CHECK(transcript("ja", kJapanese) == transcript_of(kJapaneseTexts));
 }
-

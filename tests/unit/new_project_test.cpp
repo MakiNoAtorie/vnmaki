@@ -436,9 +436,8 @@ TEST_CASE("template: the assets are the files of tools/generators/template_asset
   std::size_t committed = 0;
   for (const fs::directory_entry& entry : fs::recursive_directory_iterator(default_template())) {
     const std::string folder = fs::relative(entry.path(), default_template()).begin()->string();
-    if (entry.is_regular_file() &&
-        (folder == "images" || folder == "audio" || folder == "fonts" || folder == "shaders" ||
-         folder == "models")) {
+    if (entry.is_regular_file() && (folder == "images" || folder == "audio" || folder == "fonts" ||
+                                    folder == "shaders" || folder == "models")) {
       ++committed;
     }
   }

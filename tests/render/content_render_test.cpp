@@ -101,7 +101,7 @@ TEST_CASE("content: the arm at rest, the arm sliding and the flash of the plugin
   check("content_slide");
   next();  // The wait for the clip ends it, and the story reaches "A plugin adds the transition".
   REQUIRE(std::holds_alternative<vnmaki::SayRequest>(*runtime.request()));
-  draw();  // the frame that the player saw before the step: the classroom, nothing else
+  draw();             // the frame that the player saw before the step: the classroom, nothing else
   runtime.advance();  // the new scene and the sprite show with the plugin transition
   settle(true);
   const auto* wait = std::get_if<vnmaki::WaitRequest>(runtime.request());
