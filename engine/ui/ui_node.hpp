@@ -16,10 +16,20 @@
 
 namespace vnmaki {
 
-enum class NodeKind : std::uint8_t { kBox, kHbox, kVbox, kText, kImage, kButton };
+enum class NodeKind : std::uint8_t {
+  kBox,
+  kHbox,
+  kVbox,
+  kText,
+  kImage,
+  kButton,
+  kToggle,
+  kSlider,
+  kBar
+};
 
 /// What a node is to assistive technology (docs/SPEC.md section 17).
-enum class NodeRole : std::uint8_t { kGroup, kText, kImage, kButton };
+enum class NodeRole : std::uint8_t { kGroup, kText, kImage, kButton, kToggle, kSlider, kProgress };
 
 /// Where children sit across the main axis' perpendicular, and along it.
 enum class Align : std::uint8_t { kStretch, kStart, kCenter, kEnd };
@@ -33,6 +43,10 @@ struct NodeState {
 
   bool operator==(const NodeState&) const = default;
 };
+
+/// A toggle's caption sits this many text sizes right of its left padding edge; its mark (a
+/// square one text size wide) is in the space.
+inline constexpr float kToggleMarkEm = 1.5F;
 
 /// The text size of a node that has none, in virtual pixels.
 inline constexpr float kDefaultTextSize = 28;
@@ -57,7 +71,18 @@ struct UiStyle {
   std::optional<Color> focus_background{};
   /// The colour of text and button captions.
   Color color = kWhite;
+  /// The filled part of a slider or bar, and the mark of a checked toggle.
+  Color fill = kWhite;
   float text_size = kDefaultTextSize;
+};
+
+/// The datum a toggle, slider or bar shows and changes: `table` is "store", "persistent" or
+/// "prefs", `key` a field of it (see UiHost::set_bindings).
+struct NodeBinding {
+  std::string table{};
+  std::string key{};
+
+  bool operator==(const NodeBinding&) const = default;
 };
 
 struct UiNode {
@@ -72,10 +97,30 @@ struct UiNode {
   /// `text` has text tags (docs/TEXT_TAGS.md) that the renderer applies; a bad tag draws as plain
   /// text.
   bool markup = false;
+  /// A text node that the typewriter reveals: the host sets `visible_glyphs` of it (the say box
+  /// screen's line). The first such node of a tree is the one.
+  bool reveal = false;
   /// A button hands this to its screen when activated; unset, activating does nothing.
   std::optional<ScreenValue> returns{};
+  /// Root of a screen only: what Esc or the gamepad's east button hands to the screen (the same
+  /// as a button's `returns`) while the screen has the keyboard; unset, they do nothing.
+  std::optional<ScreenValue> cancel{};
+  /// Root of a screen only: `show_screen` shows the screen as modal (it takes the keyboard and
+  /// the clicks).
+  bool modal = false;
   /// A text node shows only its first glyphs (a typewriter reveal); unset shows all.
   std::optional<std::size_t> visible_glyphs{};
+  /// A toggle, slider or bar that follows a datum; UiHost refreshes `checked` and `value` from it
+  /// and writes it when the player changes the node.
+  std::optional<NodeBinding> bind{};
+  /// A toggle is on.
+  bool checked = false;
+  /// A slider's or bar's value, from `min` to `max`. A slider moves by `step` for a key press
+  /// (0: a twentieth of the range).
+  double value = 0;
+  double min = 0;
+  double max = 1;
+  double step = 0;
   std::vector<UiNode> children{};
   /// Set by layout_tree(): the node's rectangle in virtual pixels, from the canvas' top-left.
   RectF rect{};
@@ -84,7 +129,7 @@ struct UiNode {
 /// A node of `kind` with the role that fits it.
 [[nodiscard]] UiNode make_node(NodeKind kind);
 
-/// Whether a button can take the focus.
+/// Whether a button, toggle or slider can take the focus.
 [[nodiscard]] bool is_focusable(const UiNode& node);
 
 }  // namespace vnmaki

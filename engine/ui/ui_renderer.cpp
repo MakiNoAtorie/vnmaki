@@ -19,9 +19,12 @@ namespace {
 // Layouts are kept between frames; past this many the cache starts again.
 constexpr std::size_t kMaxCachedLayouts = 256;
 constexpr float kMinWrapWidth = 1;
+const Color kHollowMark = rgba8(16, 18, 36);  // the inside of an unchecked toggle's mark
 
 bool shows_text(const UiNode& node) {
-  return (node.kind == NodeKind::kText || node.kind == NodeKind::kButton) && !node.text.empty();
+  return (node.kind == NodeKind::kText || node.kind == NodeKind::kButton ||
+          node.kind == NodeKind::kToggle) &&
+         !node.text.empty();
 }
 
 float content_width(const UiNode& node) {
@@ -99,7 +102,12 @@ std::optional<TextureId> UiRenderer::image_texture(const std::string& name) {
     return found->second;
   }
   std::optional<TextureId> texture;
-  if (vfs_ != nullptr) {
+  if (name.starts_with(kGeneratedImagePrefix)) {
+    const std::optional<Image> generated = generated_ ? generated_(name) : std::nullopt;
+    if (generated) {
+      texture = renderer_->create_texture(*generated, TextureFilter::kLinear);
+    }
+  } else if (vfs_ != nullptr) {
     std::string path = "images/" + name + ".png";
     if (!vfs_->exists(path)) {
       path = "images/" + name + ".jpg";
@@ -151,6 +159,8 @@ void UiRenderer::draw_text(const UiNode& node, float scale, PointF origin) {
   float indent = 0;
   if (node.kind == NodeKind::kButton) {
     indent = std::max((content_width(node) - widest_line(text)) / 2, 0.0F);  // centred caption
+  } else if (node.kind == NodeKind::kToggle) {
+    indent = node.style.text_size * kToggleMarkEm;  // room for the mark
   }
   const PointF at{.x = origin.x + ((node.rect.x + node.style.padding + indent) * scale),
                   .y = origin.y + ((node.rect.y + node.style.padding) * scale)};
@@ -161,18 +171,47 @@ void UiRenderer::draw_text(const UiNode& node, float scale, PointF origin) {
   }
 }
 
+// The square before a toggle's caption: filled with the node's `fill` colour when on, a hollow
+// frame when off.
+void UiRenderer::draw_toggle_mark(const UiNode& node, float scale, PointF origin) {
+  constexpr float kFrameShare = 0.12F;  // frame width, as a share of the mark
+  const float size = node.style.text_size * scale;
+  const RectF mark{.x = origin.x + ((node.rect.x + node.style.padding) * scale),
+                   .y = origin.y + ((node.rect.y + node.style.padding) * scale),
+                   .width = size,
+                   .height = size};
+  draw_fill(mark, node.style.fill);
+  if (!node.checked) {
+    const float frame = size * kFrameShare;
+    draw_fill({.x = mark.x + frame,
+               .y = mark.y + frame,
+               .width = size - (2 * frame),
+               .height = size - (2 * frame)},
+              kHollowMark);
+  }
+}
+
 void UiRenderer::draw_node(const UiNode& node, float scale, PointF origin) {
   const RectF rect{.x = origin.x + (node.rect.x * scale),
                    .y = origin.y + (node.rect.y * scale),
                    .width = node.rect.width * scale,
                    .height = node.rect.height * scale};
   std::optional<Color> fill = node.style.background;
-  if (node.kind == NodeKind::kButton && (node.state.focused || node.state.hovered) &&
-      node.style.focus_background) {
+  const bool highlighted = node.state.focused || node.state.hovered;
+  if (node.kind != NodeKind::kBox && highlighted && node.style.focus_background &&
+      is_focusable(node)) {
     fill = node.style.focus_background;
   }
   if (fill) {
     draw_fill(rect, *fill);
+  }
+  if (node.kind == NodeKind::kToggle) {
+    draw_toggle_mark(node, scale, origin);
+  } else if (node.kind == NodeKind::kSlider || node.kind == NodeKind::kBar) {
+    const double span = node.max - node.min;
+    const auto share = static_cast<float>(std::clamp((node.value - node.min) / span, 0.0, 1.0));
+    draw_fill({.x = rect.x, .y = rect.y, .width = rect.width * share, .height = rect.height},
+              node.style.fill);
   }
   if (shows_text(node)) {
     draw_text(node, scale, origin);

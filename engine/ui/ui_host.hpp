@@ -4,13 +4,17 @@
 // input that moves the focus and activates buttons. It needs no window or GPU.
 //
 // A screen is a UI tree with a name. Showing a screen with a name that is already shown replaces
-// it. The last screen shown is on top. A modal screen (a menu, a `call_screen`) takes the
-// keyboard and gamepad and swallows pointer clicks; other screens take the pointer only, so a
-// quick menu cannot steal the keys that advance the dialogue.
+// it. The last screen shown is on top. A modal screen (a menu, a `call_screen`, a screen whose
+// root has `modal = true`) takes the keyboard and gamepad and swallows pointer clicks; other
+// screens take the pointer only, so a quick menu cannot steal the keys that advance the dialogue.
+// The player can still reach a non-modal screen with the keyboard: Tab or the gamepad's west
+// button gives it the keys until Esc or the east button takes them back.
 
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/platform/geometry.hpp"
@@ -42,6 +46,10 @@ class UiHost final : public ScreenCommands {
   explicit UiHost(Size canvas);
 
   void set_text_measure(TextMeasure measure);
+  /// Where toggles, sliders and bars with a `bind` read and write their data (ScriptRuntime::
+  /// binding() and set_binding()). Without it they keep their own value. `runtime` must outlive
+  /// the host; null unsets it.
+  void set_bindings(ScriptRuntime* runtime) { bindings_ = runtime; }
   [[nodiscard]] Size canvas() const { return canvas_; }
 
   /// ScreenCommands, for the scripts' `show_screen` and `hide_screen`: builds the tree with
@@ -65,8 +73,11 @@ class UiHost final : public ScreenCommands {
 
   /// Handles one input. Pointer positions are in window pixels; `viewport` maps them to the
   /// canvas. Moving the pointer hovers (and focuses) the button under it. A left click on a
-  /// button activates it. On the top modal screen: Tab and Shift+Tab, the arrow keys and the
-  /// d-pad move the focus; Enter, Space and the south gamepad button activate the focused button.
+  /// button activates it, flips a toggle, and sets a slider (dragging moves it). On the screen that
+  /// has the keyboard (the top modal screen, or the one Tab gave it to): Tab and Shift+Tab, the
+  /// arrow keys and the d-pad move the focus; Enter, Space and the south gamepad button activate
+  /// the focused button or toggle; Left and Right move the focused slider. Esc and the east
+  /// button give the root's `cancel` value, or take the keys back from a non-modal screen.
   [[nodiscard]] UiEventResult handle_event(const InputEvent& event, const Viewport& viewport);
 
  private:
@@ -77,11 +88,22 @@ class UiHost final : public ScreenCommands {
   };
 
   void ensure_layout();
+  void refresh_bindings();
+  void write_value(UiNode& node, ScreenValue value);
+  void set_slider(UiNode& node, double value);
+  void drag_slider(PointF point);
   [[nodiscard]] Screen* top_modal();
+  [[nodiscard]] Screen* keyboard_screen();
+  [[nodiscard]] UiEventResult key_event(const InputEvent& event);
   [[nodiscard]] UiEventResult pointer_event(PointF point, bool click);
-  [[nodiscard]] UiEventResult activate_focused();
+  [[nodiscard]] UiEventResult activate_focused(Screen& screen);
 
   Size canvas_;
+  ScriptRuntime* bindings_ = nullptr;
+  // The non-modal screen the player gave the keyboard to (Tab); empty for none.
+  std::string captured_;
+  // A slider the pointer drags: its screen and its place among the screen's focusable nodes.
+  std::optional<std::pair<std::string, std::size_t>> drag_;
   TextMeasure measure_;
   std::vector<Screen> screens_;
   bool dirty_ = false;

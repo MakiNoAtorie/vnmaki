@@ -29,6 +29,12 @@ constexpr float kButtonPadding = 12;
 const Color kButtonColor = rgba8(40, 44, 72);
 const Color kButtonFocusColor = rgba8(96, 112, 200);
 
+// The look of sliders and bars.
+constexpr float kSliderHeight = 24;
+const Color kTrackColor = rgba8(40, 44, 72);
+const Color kFillColor = rgba8(150, 170, 255);
+constexpr double kMaxGridColumns = 64;
+
 // The look of the choice menu, as fractions of the canvas.
 constexpr int kMenuWidthDivisor = 2;  // button width: width / 2
 constexpr int kMenuTextDivisor = 24;  // text size: height / 24
@@ -63,6 +69,18 @@ std::optional<NodeKind> kind_from_name(std::string_view name) {
   }
   if (name == "button") {
     return NodeKind::kButton;
+  }
+  if (name == "toggle") {
+    return NodeKind::kToggle;
+  }
+  if (name == "slider") {
+    return NodeKind::kSlider;
+  }
+  if (name == "bar") {
+    return NodeKind::kBar;
+  }
+  if (name == "grid") {
+    return NodeKind::kVbox;  // build() makes the rows
   }
   return std::nullopt;
 }
@@ -165,10 +183,74 @@ Justify read_justify(const ScreenNodeDef& def, const std::string& name, const Sc
   bad_option(def, name, kExpected);
 }
 
+// What the options of one node ask for that the node itself does not hold.
+struct Pending {
+  PointF position{};
+  bool has_position = false;
+  std::string bind_table{};
+  std::string bind_key{};
+  std::size_t columns = 0;
+};
+
+double read_number(const ScreenNodeDef& def, const std::string& name, const ScreenValue& value) {
+  const std::optional<double> number = as_number(value);
+  if (!number || !std::isfinite(*number)) {
+    bad_option(def, name, "a number");
+  }
+  return *number;
+}
+
+bool read_flag(const ScreenNodeDef& def, const std::string& name, const ScreenValue& value) {
+  const auto* flag = std::get_if<bool>(&value);
+  if (flag == nullptr) {
+    bad_option(def, name, "a boolean");
+  }
+  return *flag;
+}
+
+// The options only toggles, sliders, bars and grids have. Returns whether `name` was one.
+bool apply_widget_option(const ScreenNodeDef& def, UiNode& node, const std::string& name,
+                         const ScreenValue& value, Pending& pending) {
+  const bool is_range = node.kind == NodeKind::kSlider || node.kind == NodeKind::kBar;
+  const bool is_bound = is_range || node.kind == NodeKind::kToggle;
+  if (is_bound && name == "bind_table") {
+    pending.bind_table = read_string(def, name, value, "a string");
+  } else if (is_bound && name == "bind_key") {
+    pending.bind_key = read_string(def, name, value, "a string");
+  } else if (node.kind == NodeKind::kToggle && name == "checked") {
+    node.checked = read_flag(def, name, value);
+  } else if (is_range && name == "min") {
+    node.min = read_number(def, name, value);
+  } else if (is_range && name == "max") {
+    node.max = read_number(def, name, value);
+  } else if (is_range && name == "value") {
+    node.value = read_number(def, name, value);
+  } else if (node.kind == NodeKind::kSlider && name == "step") {
+    node.step = read_number(def, name, value);
+    if (!(node.step > 0)) {
+      bad_option(def, name, "a number above 0");
+    }
+  } else if (def.kind == "grid" && name == "columns") {
+    const double columns = read_number(def, name, value);
+    if (columns < 1 || columns > kMaxGridColumns || columns != std::floor(columns)) {
+      bad_option(def, name, "a whole number from 1 to 64");
+    }
+    pending.columns = static_cast<std::size_t>(columns);
+  } else {
+    return false;
+  }
+  return true;
+}
+
 void apply_option(const ScreenNodeDef& def, UiNode& node, const std::string& name,
-                  const ScreenValue& value, PointF& position, bool& has_position) {
+                  const ScreenValue& value, Pending& pending) {
   UiStyle& style = node.style;
   const bool is_button = node.kind == NodeKind::kButton;
+  const bool takes_focus_style =
+      is_button || node.kind == NodeKind::kToggle || node.kind == NodeKind::kSlider;
+  if (apply_widget_option(def, node, name, value, pending)) {
+    return;
+  }
   if (name == "width") {
     style.width = read_length(def, name, value);
   } else if (name == "height") {
@@ -186,15 +268,17 @@ void apply_option(const ScreenNodeDef& def, UiNode& node, const std::string& nam
   } else if (name == "justify") {
     style.justify = read_justify(def, name, value);
   } else if (name == "x") {
-    position.x = read_offset(def, name, value);
-    has_position = true;
+    pending.position.x = read_offset(def, name, value);
+    pending.has_position = true;
   } else if (name == "y") {
-    position.y = read_offset(def, name, value);
-    has_position = true;
+    pending.position.y = read_offset(def, name, value);
+    pending.has_position = true;
   } else if (name == "bg") {
     style.background = read_color(def, name, value);
   } else if (name == "color") {
     style.color = read_color(def, name, value);
+  } else if (name == "fill") {
+    style.fill = read_color(def, name, value);
   } else if (name == "size") {
     const std::optional<double> size = as_number(value);
     if (!size || !(*size > 0) || *size > kMaxTextSize) {
@@ -203,19 +287,42 @@ void apply_option(const ScreenNodeDef& def, UiNode& node, const std::string& nam
     style.text_size = static_cast<float>(*size);
   } else if (name == "label") {
     node.label = read_string(def, name, value, "a string");
+  } else if (node.kind == NodeKind::kText && name == "markup") {
+    node.markup = read_flag(def, name, value);
+  } else if (node.kind == NodeKind::kText && name == "reveal") {
+    node.reveal = read_flag(def, name, value);
+  } else if (name == "cancel") {
+    node.cancel = value;
+  } else if (name == "modal") {
+    node.modal = read_flag(def, name, value);
   } else if (is_button && name == "returns") {
     node.returns = value;
-  } else if (is_button && name == "focus_bg") {
+  } else if (takes_focus_style && name == "focus_bg") {
     style.focus_background = read_color(def, name, value);
-  } else if (is_button && name == "disabled") {
-    const auto* flag = std::get_if<bool>(&value);
-    if (flag == nullptr) {
-      bad_option(def, name, "a boolean");
-    }
-    node.state.disabled = *flag;
+  } else if (takes_focus_style && name == "disabled") {
+    node.state.disabled = read_flag(def, name, value);
   } else {
     throw UiBuildError(describe(def) + ": unknown option '" + name + "'");
   }
+}
+
+// A grid is a column of rows: the children in order, `columns` to a row. Cells keep their own
+// sizes, so give them all one width to line the columns up.
+UiNode make_grid_rows(UiNode grid, std::size_t columns) {
+  std::vector<UiNode> cells = std::move(grid.children);
+  grid.children.clear();
+  for (std::size_t first = 0; first < cells.size(); first += columns) {
+    UiNode row = make_node(NodeKind::kHbox);
+    row.style.gap = grid.style.gap;
+    row.style.align = Align::kStart;
+    const std::size_t last = std::min(first + columns, cells.size());
+    row.children.reserve(last - first);
+    for (std::size_t i = first; i < last; ++i) {
+      row.children.push_back(std::move(cells[i]));
+    }
+    grid.children.push_back(std::move(row));
+  }
+  return grid;
 }
 
 UiNode build(const ScreenNodeDef& def) {
@@ -226,18 +333,36 @@ UiNode build(const ScreenNodeDef& def) {
   UiNode node = make_node(*kind);
   node.text = def.text;
   node.label = def.text;
-  if (*kind == NodeKind::kButton) {
+  if (*kind == NodeKind::kButton || *kind == NodeKind::kToggle) {
     node.style.background = kButtonColor;
     node.style.focus_background = kButtonFocusColor;
     node.style.padding = kButtonPadding;
+  } else if (*kind == NodeKind::kSlider || *kind == NodeKind::kBar) {
+    node.style.background = kTrackColor;
+    node.style.fill = kFillColor;
+    node.style.height = kSliderHeight;
+    if (*kind == NodeKind::kSlider) {
+      node.style.focus_background = kButtonFocusColor;
+    }
   }
-  PointF position;
-  bool has_position = false;
+  Pending pending;
   for (const auto& [name, value] : def.props) {
-    apply_option(def, node, name, value, position, has_position);
+    apply_option(def, node, name, value, pending);
   }
-  if (has_position) {
-    node.style.position = position;
+  if (pending.has_position) {
+    node.style.position = pending.position;
+  }
+  if (!pending.bind_table.empty() || !pending.bind_key.empty()) {
+    if (pending.bind_table.empty() || pending.bind_key.empty()) {
+      throw UiBuildError(describe(def) + ": a binding needs a table and a key");
+    }
+    node.bind = NodeBinding{.table = pending.bind_table, .key = pending.bind_key};
+  }
+  if ((*kind == NodeKind::kSlider || *kind == NodeKind::kBar) && !(node.min < node.max)) {
+    throw UiBuildError(describe(def) + ": 'min' must be below 'max'");
+  }
+  if (def.kind == "grid" && pending.columns == 0) {
+    throw UiBuildError(describe(def) + ": a grid needs the option columns");
   }
   if (*kind == NodeKind::kImage && (!node.style.width || !node.style.height)) {
     throw UiBuildError(describe(def) + ": an image needs the options width and height");
@@ -245,6 +370,9 @@ UiNode build(const ScreenNodeDef& def) {
   node.children.reserve(def.children.size());
   for (const ScreenNodeDef& child : def.children) {
     node.children.push_back(build(child));
+  }
+  if (def.kind == "grid") {
+    return make_grid_rows(std::move(node), pending.columns);
   }
   return node;
 }
@@ -264,7 +392,7 @@ UiNode make_menu_screen(const std::vector<std::string>& options, Size canvas) {
     UiNode button = make_node(NodeKind::kButton);
     button.text = options[i];
     button.label = options[i];
-    button.returns = static_cast<std::int64_t>(i);
+    button.returns = static_cast<std::int64_t>(i + 1);
     button.style.width = static_cast<float>(canvas.width / kMenuWidthDivisor);
     button.style.padding = static_cast<float>(canvas.height / kMenuPadDivisor);
     button.style.text_size = static_cast<float>(canvas.height / kMenuTextDivisor);

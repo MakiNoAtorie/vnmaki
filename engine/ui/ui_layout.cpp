@@ -34,7 +34,10 @@ YGSize measure_node(YGNodeConstRef yoga, float width, YGMeasureMode width_mode, 
                     YGMeasureMode height_mode) {
   const auto* context = static_cast<const MeasureContext*>(YGNodeGetContext(yoga));
   const float max_width = width_mode == YGMeasureModeUndefined ? kNoLimit : width;
-  const MeasuredSize size = (*context->measure)(*context->node, max_width);
+  MeasuredSize size = (*context->measure)(*context->node, max_width);
+  if (context->node->kind == NodeKind::kToggle) {
+    size.width += context->node->style.text_size * kToggleMarkEm;
+  }
   const auto fit = [](float natural, float limit, YGMeasureMode mode) {
     if (mode == YGMeasureModeExactly) {
       return limit;
@@ -97,7 +100,8 @@ YGNodeRef build(const UiNode& node, std::deque<MeasureContext>& contexts,
     YGNodeStyleSetPosition(yoga, YGEdgeLeft, style.position->x);
     YGNodeStyleSetPosition(yoga, YGEdgeTop, style.position->y);
   }
-  const bool shows_text = node.kind == NodeKind::kText || node.kind == NodeKind::kButton;
+  const bool shows_text = node.kind == NodeKind::kText || node.kind == NodeKind::kButton ||
+                          node.kind == NodeKind::kToggle;
   if (shows_text && node.children.empty()) {
     contexts.push_back({.node = &node, .measure = &measure});
     YGNodeSetContext(yoga, &contexts.back());
