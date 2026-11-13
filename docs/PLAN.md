@@ -357,12 +357,12 @@ Files: new `engine/tools/check.*`, `cli/`, `tools/generators/check_fixtures.py`.
 
 Files: new `engine/tools/debugger.*`, `engine/tools/dap.*`, `engine/runtime/script_runtime.*`, `cli/`, `vcpkg.json`.
 
-- [ ] `vnmaki debug <dir>` speaks the Debug Adapter Protocol on stdin and stdout and opens the game window. nlohmann-json (vcpkg) reads and writes the messages.
-- [ ] Requests: initialize, launch, setBreakpoints (file and line), configurationDone, threads, stackTrace, scopes (locals, `store`), variables, evaluate (watches), continue, next, stepIn, stepOut, pause, disconnect.
-- [ ] The custom request `vnmaki/goto { label, step }` goes to that position through replay.
-- [ ] Breakpoints use a Lua line hook. Only this module uses `lua_sethook` and `lua_getlocal`. Add this exception to CONVENTIONS.
-- [ ] While stopped, the window draws and handles OS events. The step count does not change. Replay does not stop at breakpoints.
-- [ ] Tests: a CLI test sends a fixed DAP message file and compares the responses (breakpoint hit, locals, `store` value, step over, goto).
+- [x] `vnmaki debug <dir>` speaks the Debug Adapter Protocol on stdin and stdout and opens the game window. nlohmann-json (vcpkg) reads and writes the messages.
+- [x] Requests: initialize, launch, setBreakpoints (file and line), configurationDone, threads, stackTrace, scopes (locals, `store`), variables, evaluate (watches), continue, next, stepIn, stepOut, pause, disconnect.
+- [x] The custom request `vnmaki/goto { label, step }` goes to that position through replay.
+- [x] Breakpoints use a Lua line hook. Only this module uses `lua_sethook` and `lua_getlocal`. Add this exception to CONVENTIONS.
+- [x] While stopped, the window draws and handles OS events. The step count does not change. Replay does not stop at breakpoints.
+- [x] Tests: a CLI test sends a fixed DAP message file and compares the responses (breakpoint hit, locals, `store` value, step over, goto).
 
 ### 37: Tools demo (SPEC §22)
 
