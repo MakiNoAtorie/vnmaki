@@ -108,7 +108,14 @@ struct DrawState {
   /// them. Required by a shader that declares the buffer, which reads as many bytes as it
   /// declares (HLSL packs constants in 16-byte rows); must be empty otherwise.
   std::span<const std::byte> uniforms{};
+  /// The textures of sampler slots 1 and 2 (`sample_texture1` and `sample_texture2` in
+  /// shaders/vnmaki.hlsli), for a custom shader that reads more than one texture, e.g. a
+  /// transition. An id of zero binds `texture` there. Ignored by the built-in sprite shader.
+  std::array<TextureId, 2> more_textures{};
 };
+
+/// The most textures a custom fragment shader may read: `texture` and `DrawState::more_textures`.
+inline constexpr std::uint32_t kMaxShaderTextures = 3;
 
 /// One render pass: a run of draws into one target.
 struct RenderPass {

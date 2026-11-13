@@ -35,6 +35,7 @@ inline constexpr std::array<std::uint32_t, kIndicesPerQuad> kQuadIndices{0, 1, 2
 /// Quads sharing a draw state, drawn with one draw call.
 struct Batch {
   TextureId texture{};
+  std::array<TextureId, 2> more_textures{};
   ShaderId shader{};
   BlendMode blend = BlendMode::kAlpha;
   /// The batch's uniform bytes: a range of FrameRecorder::uniform_bytes().

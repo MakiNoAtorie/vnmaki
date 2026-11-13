@@ -555,12 +555,19 @@ std::uint32_t SdlGpuRenderer::Impl::record_passes(SDL_GPUCommandBuffer* commands
         SDL_BindGPUGraphicsPipeline(pass, wanted);
         bound = wanted;
       }
-      const Texture& source = texture(batch.texture);
-      const SDL_GPUTextureSamplerBinding binding{.texture = source.texture.get(),
-                                                 .sampler = source.filter == TextureFilter::kNearest
-                                                                ? nearest_sampler.get()
+      // Every slot is bound, used or not: vnmaki.hlsli declares them all, so every shader has them.
+      std::array<SDL_GPUTextureSamplerBinding, kMaxShaderTextures> bindings{};
+      const std::array<TextureId, kMaxShaderTextures> wanted_textures{
+          batch.texture, batch.more_textures.at(0), batch.more_textures.at(1)};
+      for (std::uint32_t slot = 0; slot < kMaxShaderTextures; ++slot) {
+        const TextureId id = wanted_textures.at(slot);
+        const Texture& source = texture(id == TextureId{} ? batch.texture : id);
+        bindings.at(slot) = SDL_GPUTextureSamplerBinding{
+            .texture = source.texture.get(),
+            .sampler = source.filter == TextureFilter::kNearest ? nearest_sampler.get()
                                                                 : linear_sampler.get()};
-      SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
+      }
+      SDL_BindGPUFragmentSamplers(pass, 0, bindings.data(), kMaxShaderTextures);
       if (batch.uniform_size != 0) {
         const std::span<const std::byte> uniforms =
             uniform_bytes.subspan(batch.uniform_offset, batch.uniform_size);
@@ -679,14 +686,15 @@ TextureId SdlGpuRenderer::create_render_target(Size size, TextureFilter filter) 
 }
 
 ShaderId SdlGpuRenderer::create_shader(const ShaderBytecode& fragment) {
-  if (fragment.samplers > 1 || fragment.uniform_buffers > 1) {
+  if (fragment.samplers > kMaxShaderTextures || fragment.uniform_buffers > 1) {
     throw RenderError{
-        "a custom fragment shader may use one texture and one constant buffer, as declared in "
-        "shaders/vnmaki.hlsli"};
+        "a custom fragment shader may use up to three textures and one constant buffer, as "
+        "declared in shaders/vnmaki.hlsli"};
   }
-  // Every fragment shader gets the drawn texture in slot 0, used or not.
+  // Every shader includes vnmaki.hlsli, which declares all the slots, and every draw binds them
+  // (record_passes).
   ShaderBytecode bytecode = fragment;
-  bytecode.samplers = 1;
+  bytecode.samplers = kMaxShaderTextures;
   Impl::Shader shader{.shader = impl_->make_shader(bytecode, SDL_GPU_SHADERSTAGE_FRAGMENT),
                       .takes_uniforms = fragment.uniform_buffers == 1};
   const ShaderId id{impl_->next_shader++};
@@ -750,8 +758,17 @@ void SdlGpuRenderer::draw(std::span<const Quad> quads, const DrawState& state) {
     throw RenderError{"draw() outside a render pass"};
   }
   static_cast<void>(impl_->texture(state.texture));
-  if (state.texture == impl_->recorder.current_pass().target) {
+  const TextureId pass_target = impl_->recorder.current_pass().target;
+  if (state.texture == pass_target) {
     throw RenderError{"a pass cannot draw its own target"};
+  }
+  for (const TextureId extra : state.more_textures) {
+    if (extra != TextureId{}) {
+      static_cast<void>(impl_->texture(extra));
+      if (extra == pass_target) {
+        throw RenderError{"a pass cannot draw its own target"};
+      }
+    }
   }
   bool takes_uniforms = false;
   if (state.shader != kSpriteShader) {

@@ -585,8 +585,9 @@ std::string Scene::declare_shader(std::string_view name, std::span<const std::st
   } catch (const ShaderCompileError& error) {
     return error.what();
   }
-  if (shader.compiled.samplers > 1 || shader.compiled.uniform_buffers > 1) {
-    return path + ": a shader may use one texture and one constant buffer (see vnmaki.hlsli)";
+  if (shader.compiled.samplers > kMaxShaderTextures || shader.compiled.uniform_buffers > 1) {
+    return path +
+           ": a shader may use up to three textures and one constant buffer (see vnmaki.hlsli)";
   }
   if (!shader.uniforms.empty() && shader.compiled.uniform_buffers == 0) {
     return path + ": the shader has uniforms but no constant buffer at register(b0, space3)";

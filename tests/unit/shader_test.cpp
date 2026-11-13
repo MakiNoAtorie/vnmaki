@@ -12,6 +12,7 @@
 #include <doctest/doctest.h>
 
 #include "engine/platform/geometry.hpp"
+#include "engine/render/renderer.hpp"
 #include "engine/render/shader_compiler.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/scene/scene.hpp"
@@ -135,7 +136,7 @@ TEST_CASE("shader compiler: a fragment shader compiles to every format") {
   }
   const vnmaki::CompiledShader shader =
       vnmaki::compile_fragment_shader("shaders/sepia.frag.hlsl", kSepia);
-  CHECK(shader.samplers == 1);
+  CHECK(shader.samplers == vnmaki::kMaxShaderTextures);  // vnmaki.hlsli declares every slot
   CHECK(shader.uniform_buffers == 1);
   REQUIRE(shader.spirv.size() > sizeof(kSpirvMagic));
   CHECK(shader.spirv.at(0) == (kSpirvMagic & 0xFF));
