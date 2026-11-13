@@ -5,6 +5,12 @@
 #include <iostream>
 #include <memory>
 
+#ifdef _WIN32
+#include <windows.h>
+
+#include <sapi.h>
+#endif
+
 #include <doctest/doctest.h>
 
 #include "engine/platform/tts.hpp"
@@ -40,3 +46,19 @@ TEST_CASE("tts: the system backend speaks one short line and finishes") {
   tts->stop();
   CHECK(tts->wait_until_done(kTimeout));
 }
+
+#ifdef _WIN32
+TEST_CASE("tts: the text is plain, not SAPI XML") {
+  CHECK((vnmaki::sapi_speak_flags() & SPF_IS_NOT_XML) != 0);
+  CHECK((vnmaki::sapi_speak_flags() & SPF_ASYNC) != 0);
+
+  // A line that starts with `<` (a tag, an emoticon) is spoken as text and ends.
+  const std::unique_ptr<vnmaki::TtsBackend> tts = vnmaki::make_system_tts(kQuiet);
+  REQUIRE(tts != nullptr);
+  if (!tts->available()) {
+    return;
+  }
+  tts->speak("<3 <b>x");
+  CHECK(tts->wait_until_done(kTimeout));
+}
+#endif

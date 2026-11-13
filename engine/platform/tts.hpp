@@ -44,4 +44,9 @@ class NullTts final : public TtsBackend {
 /// never throws; a machine without a voice gives a backend with available() false.
 [[nodiscard]] std::unique_ptr<TtsBackend> make_system_tts(unsigned volume_percent = 100);
 
+#ifdef _WIN32
+/// The SAPI flags of every speak(); a test checks that the text is not read as SAPI XML.
+[[nodiscard]] unsigned long sapi_speak_flags();
+#endif
+
 }  // namespace vnmaki

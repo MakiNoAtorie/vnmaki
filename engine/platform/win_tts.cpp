@@ -70,7 +70,7 @@ class SapiTts final : public TtsBackend {
   void speak(std::string_view utf8) override {
     if (voice_ != nullptr) {
       // Asynchronous; the purge ends the speech in progress.
-      voice_->Speak(widen(utf8).c_str(), SPF_ASYNC | SPF_PURGEBEFORESPEAK, nullptr);
+      voice_->Speak(widen(utf8).c_str(), sapi_speak_flags(), nullptr);
     }
   }
 
@@ -92,6 +92,9 @@ class SapiTts final : public TtsBackend {
 };
 
 }  // namespace
+
+// SPF_IS_NOT_XML: without it SAPI reads text that starts with `<` as markup and drops or garbles it.
+unsigned long sapi_speak_flags() { return SPF_ASYNC | SPF_PURGEBEFORESPEAK | SPF_IS_NOT_XML; }
 
 std::unique_ptr<TtsBackend> make_system_tts(unsigned volume_percent) {
   return std::make_unique<SapiTts>(volume_percent);
