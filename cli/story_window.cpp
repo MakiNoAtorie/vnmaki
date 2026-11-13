@@ -110,15 +110,18 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                       {.enabled = VNMAKI_DEV_TOOLS != 0 || profile_csv.has_value(),
                        .max_frames = profile_csv ? 0 : Profiler::kGraphFrames}};
     // Everything that needs no window comes first, so a broken project fails before one opens.
-    const Font font = load_font(vfs, kDefaultFontPath);
-    // The fallback chain of the source language (the first in project.toml).
+    // The source language (the first in project.toml) has the font subsets of a pack.
+    const std::string_view language =
+        config.languages.empty() ? std::string_view{} : std::string_view{config.languages.front()};
+    const Font font = load_font_for_language(vfs, kDefaultFontPath, language);
+    // The fallback chain of that language.
     std::vector<Font> fallback_fonts;
     if (!config.languages.empty()) {
       if (const auto chain = config.font_fallbacks.find(config.languages.front());
           chain != config.font_fallbacks.end()) {
         fallback_fonts.reserve(chain->second.size());
         for (const std::string& path : chain->second) {
-          fallback_fonts.push_back(load_font(vfs, path));
+          fallback_fonts.push_back(load_font_for_language(vfs, path, language));
         }
       }
     }
@@ -128,8 +131,9 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     }
     const FontSet plain_fonts = fonts;
     std::optional<Font> dyslexia_font;
-    if (vfs.exists(kDyslexiaFontPath)) {
-      dyslexia_font.emplace(load_font(vfs, kDyslexiaFontPath));
+    if (const std::string dyslexia_path = font_path_for_language(vfs, kDyslexiaFontPath, language);
+        vfs.exists(dyslexia_path)) {
+      dyslexia_font.emplace(load_font(vfs, dyslexia_path));
     }
     // The audio comes first, so that it outlives the scene: a movie stops its audio when it goes.
     const std::unique_ptr<Audio> audio = make_audio(vfs, err);

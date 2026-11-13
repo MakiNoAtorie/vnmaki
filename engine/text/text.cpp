@@ -1,6 +1,7 @@
 #include "engine/text/text.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <array>
 #include <bit>
 #include <climits>
@@ -811,6 +812,27 @@ Font load_font(const Vfs& vfs, std::string_view path) {
   } catch (const FontError& error) {
     throw FontError{"cannot load font '" + std::string{path} + "': " + error.what()};
   }
+}
+
+std::string font_path_for_language(const Vfs& vfs, std::string_view path,
+                                   std::string_view language) {
+  const std::size_t dot = path.rfind('.');
+  const std::size_t slash = path.rfind('/');
+  if (language.empty() || dot == std::string_view::npos ||
+      (slash != std::string_view::npos && dot < slash)) {
+    return std::string{path};
+  }
+  std::string subset{path.substr(0, dot)};
+  subset += '.';
+  subset += language;
+  for (const char c : path.substr(dot)) {
+    subset += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return vfs.exists(subset) ? subset : std::string{path};
+}
+
+Font load_font_for_language(const Vfs& vfs, std::string_view path, std::string_view language) {
+  return load_font(vfs, font_path_for_language(vfs, path, language));
 }
 
 TextLayout layout_text(const Font& font, std::string_view text, float pixel_size,
