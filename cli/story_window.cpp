@@ -191,6 +191,9 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     ScreenPresenter screens{runtime, ui};
     WaitPresenter waits{runtime, scene};
     MoviePresenter movies{runtime, vfs, jobs, audio.get()};
+    scene.set_warning_handler(warn);  // a file that fails to load or play must not end the game
+    audio->set_warning_handler(warn);
+    movies.set_warning_handler(warn);
     DialoguePresenter presenter{runtime,
                                 [&](const DialogueLine& line) { return say_box.glyph_count(line); },
                                 kDefaultCharactersPerSecond,

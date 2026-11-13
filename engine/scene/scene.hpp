@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -171,6 +172,13 @@ class Scene final : public SceneState, public SceneCommands {
   /// then stay closed. It must outlive the scene.
   void set_voice_level(const VoiceLevel* levels) { voice_level_ = levels; }
 
+  /// Where prepare() and update() report a file that cannot be loaded or played (an image that
+  /// does not decode, a movie that fails). That displayable stays in the scene and draws nothing,
+  /// and the frame goes on. Without a handler the errors are thrown.
+  void set_warning_handler(std::function<void(std::string_view)> handler) {
+    warn_ = std::move(handler);
+  }
+
   /// The tags on `layer`, back to front.
   [[nodiscard]] std::vector<std::string> tags(Layer layer) const;
   [[nodiscard]] std::optional<Layer> layer_of(std::string_view tag) const;
@@ -192,8 +200,9 @@ class Scene final : public SceneState, public SceneCommands {
   /// Advances the tweens and every displayable by `seconds`.
   void update(double seconds);
   /// Loads and uploads the images of displayables that have no texture yet. Call it on the main
-  /// thread before draw(), always with the same renderer (the scene keeps its textures). Rethrows
-  /// ImageError for a file that cannot be decoded and RenderError.
+  /// thread before draw(), always with the same renderer (the scene keeps its textures). A file
+  /// that cannot be decoded (ImageError, MovieError) goes to the warning handler once and its
+  /// displayable draws nothing; without a handler it is thrown. RenderError is always thrown.
   void prepare(IRenderer& renderer, JobSystem& jobs);
   /// Draws every layer, back to front, into the renderer's current pass, whose target is
   /// `target`. A layer with a shader draws in passes of its own, and then the scene goes on in a
@@ -266,6 +275,8 @@ class Scene final : public SceneState, public SceneCommands {
   // Draws the old frame (the scene before the first change since the last draw()) into
   // frames_[0], in a frame of its own. It does nothing unless that is due.
   void capture_old_frame();
+  // Throws std::invalid_argument if a file that `layers` show is not in the Vfs.
+  void check_assets(const Layers& layers) const;
   // Reads the "layered" part into `layers`. Throws std::invalid_argument.
   void read_layered(std::span<const std::byte> bytes, Layers& layers) const;
   // Reads the "animations" part into `layers`. Throws std::invalid_argument.
@@ -288,6 +299,8 @@ class Scene final : public SceneState, public SceneCommands {
   std::vector<ShaderId> retired_shaders_;  // GPU shaders of redeclared shaders, to destroy
   std::map<std::string, Texture, std::less<>> textures_;
   MovieAudio* movie_audio_ = nullptr;
+  std::function<void(std::string_view)> warn_;
+  std::set<std::string, std::less<>> failed_paths_;  // images that did not load: not tried again
   const VoiceLevel* voice_level_ = nullptr;
   // Textures of movies that went away, for prepare() to destroy.
   std::shared_ptr<std::vector<TextureId>> retired_textures_ =
