@@ -135,6 +135,10 @@ vnmaki_add_fixture_generator(
 
 # Audio: decoders, mixer state, script commands, snapshots (ticket 16).
 target_sources(vnmaki_unit_tests PRIVATE unit/audio_decoder_test.cpp unit/audio_test.cpp)
+
+# Accessibility options: text scale, high contrast, dyslexia font, captions, reduced motion and
+# remappable controls (task 42).
+target_sources(vnmaki_unit_tests PRIVATE unit/accessibility_test.cpp)
 vnmaki_add_fixture_generator(
   audio SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/audio_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
@@ -192,6 +196,8 @@ target_sources(vnmaki_unit_tests PRIVATE unit/script_scan_test.cpp unit/story_gr
 # The projects and expected CSV and DOT text of the `vnmaki graph` CLI tests.
 vnmaki_add_fixture_generator(
   graph SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/graph_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/templates/default/scripts/main.lua"
+          "${PROJECT_SOURCE_DIR}/templates/default/scripts/presentation.lua"
   TEST_TARGETS vnmaki_unit_tests)
 
 # `vnmaki check` (ticket 35): the findings of a project, with the template as one input. The
@@ -240,6 +246,33 @@ if(VNMAKI_DEV_TOOLS)
   target_sources(vnmaki_unit_tests PRIVATE unit/inspect_test.cpp)
 endif()
 
+# Dev tools: the DAP transport and the script debugger (ticket 36).
+if(VNMAKI_DEV_TOOLS)
+  find_package(nlohmann_json CONFIG REQUIRED)
+  target_sources(vnmaki_unit_tests PRIVATE unit/debugger_test.cpp)
+  target_link_libraries(vnmaki_unit_tests PRIVATE nlohmann_json::nlohmann_json)
+  # The project and the DAP sessions of the `vnmaki debug --headless` CLI tests.
+  vnmaki_add_fixture_generator(
+    debug SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/debug_fixtures.py"
+    DEPENDS "${PROJECT_SOURCE_DIR}/templates/default/scripts/main.lua"
+    TEST_TARGETS vnmaki_unit_tests)
+endif()
+
+# Dev tools demo (ticket 37): hot reload on the template. The DAP, check, graph and profile parts
+# are CLI tests.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/tools_demo_test.cpp)
+endif()
+
 # Profiler: frame phases with a fake clock, the CSV text and the load timing (ticket 33). It needs
 # no ImGui, so it is in every build.
 target_sources(vnmaki_unit_tests PRIVATE unit/profiler_test.cpp)
+
+# 3D scenes (ticket 46): the glTF loader, the maths, the script calls, tweens, the snapshot, and
+# the GPU cases (unlit golden, toon and PBR probes, a custom shader) of the generated cubes.
+target_sources(vnmaki_unit_tests PRIVATE unit/model3d_test.cpp)
+vnmaki_add_fixture_generator(
+  model3d SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)

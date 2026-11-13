@@ -27,29 +27,33 @@ std::vector<LabelRow> inspect_labels(const ScriptRuntime& runtime) {
   return rows;
 }
 
-std::string jump_to_label(ScriptRuntime& runtime, std::string_view label) {
+std::string jump_to_label(ScriptRuntime& runtime, std::string_view label, std::uint32_t step) {
   if (!runtime.has_label(label)) {
     return "no label '" + std::string{label} + "'";
   }
+  if (step < kFirstStep) {
+    return "a step starts at 1";
+  }
   // Where the story is now, to go back to it if the label cannot reach step 1.
   const LabelSnapshot* entry = runtime.label_snapshot();
-  const bool can_go_back = entry != nullptr && runtime.state() == RunState::kWaiting;
+  const bool can_go_back = entry != nullptr;
   LabelSnapshot before = can_go_back ? *entry : LabelSnapshot{};
   const std::vector<InputResult> inputs{runtime.input_log().begin(), runtime.input_log().end()};
-  const std::uint32_t step = runtime.position().step;
+  const std::uint32_t step_before = runtime.position().step;
 
   LabelSnapshot target{.label = std::string{label},
                        .store = runtime.store_snapshot(),
                        .scene = entry != nullptr ? entry->scene : std::vector<std::byte>{}};
   runtime.drop_callers();
-  runtime.replay(target, {}, kFirstStep);
+  runtime.replay(target, {}, step);
   if (runtime.state() != RunState::kFailed) {
     return {};
   }
   std::string problem =
-      "'" + std::string{label} + "' did not reach its first step: " + runtime.error();
+      "'" + std::string{label} + "' did not reach step " + std::to_string(step) + ": " +
+      runtime.error();
   if (can_go_back) {
-    runtime.replay(before, inputs, step);
+    runtime.replay(before, inputs, step_before);
     if (runtime.state() == RunState::kFailed) {
       problem += "; and the story could not go back: " + runtime.error();
     }

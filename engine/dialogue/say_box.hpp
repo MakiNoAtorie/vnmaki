@@ -63,6 +63,13 @@ class SayBoxView {
   using ScreenSource = std::function<std::optional<UiNode>(const DialogueLine&)>;
   void set_screen_source(ScreenSource source, Size canvas);
 
+  /// Multiplies the text size of the box by `scale` (the `text_scale` preference). The screen is
+  /// built and laid out again, so a wrapped line reflows.
+  void set_text_scale(float scale);
+
+  /// Replaces the fonts (the dyslexia font preference). They must outlive the view.
+  void set_fonts(FontSet fonts);
+
   /// Lays `line` out and returns its glyph count (what DialoguePresenter needs).
   [[nodiscard]] std::size_t glyph_count(const DialogueLine& line);
 
@@ -93,6 +100,7 @@ class SayBoxView {
 
   ScreenSource source_;
   Size canvas_{};
+  float text_scale_ = 1;
   // The laid-out tree of `built_for_` (empty if the source gave none) and where its line starts.
   std::optional<DialogueLine> built_for_;
   std::optional<UiNode> built_;

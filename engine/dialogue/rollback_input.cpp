@@ -4,17 +4,16 @@
 
 namespace vnmaki {
 
-bool is_rollback_event(const InputEvent& event) {
+bool is_rollback_event(const InputEvent& event, const InputMap& map) {
   if (const auto* wheel = std::get_if<WheelEvent>(&event)) {
     return wheel->dy > 0;
   }
-  if (const auto* key = std::get_if<KeyEvent>(&event)) {
-    return key->pressed && !key->repeat && key->key == Key::kPageUp;
-  }
-  if (const auto* button = std::get_if<GamepadButtonEvent>(&event)) {
-    return button->pressed && button->button == GamepadButton::kLeftShoulder;
-  }
-  return false;
+  return map.matches(InputAction::kRollback, event);
+}
+
+bool is_rollback_event(const InputEvent& event) {
+  static const InputMap kDefaults;
+  return is_rollback_event(event, kDefaults);
 }
 
 }  // namespace vnmaki

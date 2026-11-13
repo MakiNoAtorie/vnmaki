@@ -48,7 +48,7 @@ constexpr std::string_view kFontPath = "fonts/default.ttf";
 constexpr float kFontSize = 40;
 constexpr float kNoWrap = 100000;
 // Thirteen images, the music, the voice line, the font and the shader.
-constexpr std::size_t kAssetCount = 17;
+constexpr std::size_t kAssetCount = 18;
 
 // A directory under the system temp directory, empty at the start and removed at the end.
 class TempDir {

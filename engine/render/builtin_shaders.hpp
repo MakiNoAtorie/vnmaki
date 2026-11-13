@@ -14,6 +14,13 @@ namespace vnmaki::shaders {
 /// sdf_text_shader() in engine/text/text.hpp).
 [[nodiscard]] ShaderBytecode sdf_text_frag();
 
+/// shaders/mesh.vert.hlsl: the vertex shader of every mesh (IRenderer::draw_mesh).
+[[nodiscard]] ShaderBytecode mesh_vert();
+/// shaders/mesh_*.frag.hlsl: the built-in mesh shaders (engine/model3d/scene3d.hpp).
+[[nodiscard]] ShaderBytecode mesh_unlit_frag();
+[[nodiscard]] ShaderBytecode mesh_toon_frag();
+[[nodiscard]] ShaderBytecode mesh_pbr_frag();
+
 /// shaders/transition_*.frag.hlsl: the built-in transitions (engine/anim/transition.hpp).
 [[nodiscard]] ShaderBytecode transition_dissolve_frag();
 [[nodiscard]] ShaderBytecode transition_fade_frag();

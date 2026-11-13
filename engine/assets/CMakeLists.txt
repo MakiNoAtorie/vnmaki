@@ -4,7 +4,6 @@ target_sources(
   vnmaki_engine
   PRIVATE audio_import.cpp
           audio_import.hpp
-          cgltf_impl.cpp
           font_import.cpp
           font_import.hpp
           gltf_import.cpp
@@ -35,13 +34,5 @@ endif()
 # cgltf is one header. vcpkg installs cgltf.h at the top of its include directory.
 find_path(VNMAKI_CGLTF_INCLUDE_DIR cgltf.h PATH_SUFFIXES cgltf REQUIRED)
 target_include_directories(vnmaki_engine SYSTEM PRIVATE "${VNMAKI_CGLTF_INCLUDE_DIR}")
-# The implementation is third-party code: compile it without the project's warnings and keep
-# clang-tidy off it. It still gets the sanitizer instrumentation from vnmaki::options.
-if(MSVC)
-  set(vnmaki_cgltf_flags /W0)
-else()
-  set(vnmaki_cgltf_flags -w)
-endif()
-set_source_files_properties(
-  cgltf_impl.cpp TARGET_DIRECTORY vnmaki_engine PROPERTIES COMPILE_OPTIONS "${vnmaki_cgltf_flags}"
-                                                           SKIP_LINTING ON)
+# The implementation of cgltf is engine/model3d/cgltf_impl.cpp (the only file that defines
+# CGLTF_IMPLEMENTATION, compiled without the project's warnings).

@@ -6,7 +6,7 @@
 function(vnmaki_isolate_run_data name args_var define_var)
   set(args ${${args_var}})
   set(define "")
-  if(args MATCHES "^run(;|$)")
+  if(args MATCHES "^(run|debug)(;|$)")
     set(directory "${CMAKE_CURRENT_BINARY_DIR}/data/${name}")
     list(APPEND args --data-dir "${directory}")
     set(define "-DDATA_DIR=${directory}")
@@ -336,6 +336,29 @@ if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
                        PROPERTIES SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
 endif()
 
+set(vnmaki_new_precompiled "")
+if(NOT VNMAKI_SHADER_COMPILER)
+  set(vnmaki_new_precompiled "-DPRECOMPILED_DIR=${VNMAKI_PRECOMPILED_DIR}")
+endif()
+
+# The Phase 4 demo (ticket 37): the profile CSV of 120 frames of the template.
+add_test(NAME cli.run_profile_of_the_template_has_120_frames
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+                 -DPROJECT=${PROJECT_SOURCE_DIR}/templates/default -DFRAMES=120
+                 ${vnmaki_new_precompiled}
+                 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/profile/template.csv
+                 -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/run_profile_template -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_profile.cmake")
+set_tests_properties(cli.run_profile_of_the_template_has_120_frames PROPERTIES TIMEOUT 60)
+if(vnmaki_gpu_cli_env)
+  set_tests_properties(cli.run_profile_of_the_template_has_120_frames
+                       PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
+endif()
+if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+  set_tests_properties(cli.run_profile_of_the_template_has_120_frames
+                       PROPERTIES SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
+endif()
+
 vnmaki_add_cli_test(
   run_rejects_profile_with_headless
   ARGS run "${vnmaki_run_fixtures}/demo" --headless --profile out.csv
@@ -349,10 +372,6 @@ add_test(NAME cli.new_makes_a_game_and_stops_at_a_second_one
          COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
                  -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/plain -P
                  "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
-set(vnmaki_new_precompiled "")
-if(NOT VNMAKI_SHADER_COMPILER)
-  set(vnmaki_new_precompiled "-DPRECOMPILED_DIR=${VNMAKI_PRECOMPILED_DIR}")
-endif()
 add_test(NAME cli.new_game_runs_in_a_window
          COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> ${vnmaki_new_precompiled}
                  -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/windowed -DFRAMES=3
@@ -411,6 +430,12 @@ vnmaki_add_cli_stdout_file_test(
   ARGS graph --format dot "${vnmaki_graph_fixtures}/story"
   EXIT 0
   STDOUT_FILE "${vnmaki_graph_fixtures}/story.dot")
+# The template (the Phase 4 demo, ticket 37): the expected CSV comes from graph_fixtures.py.
+vnmaki_add_cli_stdout_file_test(
+  graph_prints_the_csv_of_the_template
+  ARGS graph "${PROJECT_SOURCE_DIR}/templates/default" --format csv
+  EXIT 0
+  STDOUT_FILE "${vnmaki_graph_fixtures}/template.csv")
 vnmaki_add_cli_stdout_file_test(
   graph_prints_the_csv_of_a_random_project
   ARGS graph "${vnmaki_graph_fixtures}/random" --format csv
@@ -458,6 +483,7 @@ set_tests_properties(
   cli.graph_prints_dot_by_default
   cli.graph_prints_dot_when_asked
   cli.graph_prints_the_csv_of_a_random_project
+  cli.graph_prints_the_csv_of_the_template
   cli.graph_of_a_folder_without_scripts_has_only_the_header
   cli.graph_reports_a_missing_folder
   cli.graph_needs_a_folder
@@ -521,6 +547,60 @@ set_tests_properties(
   cli.check_reports_a_missing_folder
   cli.check_needs_a_folder
   cli.check_rejects_a_second_folder PROPERTIES TIMEOUT 60)
+
+# vnmaki debug (ticket 36). The debugger speaks DAP on stdin and stdout. It needs the dev tools
+# and Windows (the non-blocking read of stdin). The headless mode opens no window, so these tests
+# need no GPU. Each runs the debugger on a project and a request file that
+# tools/generators/debug_fixtures.py writes, with the responses that the generator works out
+# itself (the stdin of the process is the request file, which ends: EOF, not a hang).
+set(vnmaki_debug_fixtures "${VNMAKI_FIXTURES_DIR}/debug")
+if(VNMAKI_DEV_TOOLS AND WIN32)
+  foreach(session session finish)
+    set(data_dir "${CMAKE_CURRENT_BINARY_DIR}/data/debug_${session}")
+    add_test(
+      NAME cli.debug_${session}
+      COMMAND
+        ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+        "-DARGS=debug;${vnmaki_debug_fixtures}/project;--headless;--data-dir;${data_dir}"
+        -DEXPECTED_EXIT=0 -DDATA_DIR=${data_dir}
+        -DINPUT_FILE=${vnmaki_debug_fixtures}/${session}.in.dap
+        -DEXPECTED_STDOUT_FILE=${vnmaki_debug_fixtures}/${session}.out.dap -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_dap.cmake")
+    set_tests_properties(cli.debug_${session} PROPERTIES TIMEOUT 120)
+  endforeach()
+endif()
+
+# The Phase 4 demo (ticket 37): the same on the template, in templates/default: a breakpoint in
+# `start`, a step, `store.affection` and a goto to `warm`.
+if(VNMAKI_DEV_TOOLS AND WIN32)
+  set(data_dir "${CMAKE_CURRENT_BINARY_DIR}/data/debug_template")
+  add_test(
+    NAME cli.debug_template
+    COMMAND
+      ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+      "-DARGS=debug;${PROJECT_SOURCE_DIR}/templates/default;--headless;--data-dir;${data_dir}"
+      -DEXPECTED_EXIT=0 -DDATA_DIR=${data_dir}
+      -DINPUT_FILE=${vnmaki_debug_fixtures}/template.in.dap
+      -DEXPECTED_STDOUT_FILE=${vnmaki_debug_fixtures}/template.out.dap -P
+      "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_dap.cmake")
+  set_tests_properties(cli.debug_template PROPERTIES TIMEOUT 120)
+endif()
+
+vnmaki_add_cli_test(
+  debug_rejects_an_unknown_option
+  ARGS debug --frobnicate
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki debug: unexpected argument '--frobnicate'.*usage: vnmaki debug")
+if(NOT VNMAKI_DEV_TOOLS)
+  vnmaki_add_cli_test(
+    debug_needs_the_dev_tools
+    ARGS debug "${PROJECT_SOURCE_DIR}/templates/default"
+    EXIT 1
+    NO_STDOUT
+    STDERR_REGEX "vnmaki debug: this build has no debugger")
+endif()
+set_tests_properties(cli.debug_rejects_an_unknown_option PROPERTIES TIMEOUT 60)
 
 # vnmaki extract-strings (ticket 40), on the projects tools/generators/l10n_fixtures.py writes. The
 # run works on a copy in the build tree, then a second run and `vnmaki check` must accept it.

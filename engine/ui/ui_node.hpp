@@ -162,6 +162,10 @@ struct UiNode {
 /// Whether a button, toggle, slider or input can take the focus.
 [[nodiscard]] bool is_focusable(const UiNode& node);
 
+/// Multiplies the text size of `node` and all nodes under it by `factor` (the text scale
+/// preference). A size stays at most kMaxFontPixelSize (docs/SPEC.md section 17).
+void scale_text_sizes(UiNode& node, float factor);
+
 /// What a node draws and measures as text: its `text`, or the placeholder of an empty input.
 [[nodiscard]] const std::string& display_text(const UiNode& node);
 

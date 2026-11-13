@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "cli/check_command.hpp"
+#include "cli/debug_command.hpp"
 #include "cli/extract_command.hpp"
 #include "cli/graph_command.hpp"
 #include "cli/import_command.hpp"
@@ -50,6 +51,10 @@ int main(int argc, char* argv[]) {
     return vnmaki::cli::check_command(std::span{args}.subspan(1), std::cout, std::cerr);
   }
 
+  if (!args.empty() && args.front() == "debug") {
+    return vnmaki::cli::debug_command(std::span{args}.subspan(1), std::cout, std::cerr);
+  }
+
   if (!args.empty() && args.front() == "extract-strings") {
     return vnmaki::cli::extract_command(std::span{args}.subspan(1), std::cout, std::cerr);
   }
@@ -67,6 +72,6 @@ int main(int argc, char* argv[]) {
   }
   std::cerr << usage << vnmaki::cli::kNewUsage << vnmaki::cli::kRunUsage
             << vnmaki::cli::kWindowUsage << vnmaki::cli::kGraphUsage << vnmaki::cli::kCheckUsage
-            << vnmaki::cli::kExtractUsage << vnmaki::cli::kImportUsage;
+            << vnmaki::cli::kDebugUsage << vnmaki::cli::kExtractUsage << vnmaki::cli::kImportUsage;
   return exit_usage_error;
 }

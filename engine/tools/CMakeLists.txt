@@ -18,7 +18,11 @@ target_sources(
 if(VNMAKI_DEV_TOOLS)
   target_sources(
     vnmaki_engine
-    PRIVATE file_watcher.cpp
+    PRIVATE dap.cpp
+            dap.hpp
+            debugger.cpp
+            debugger.hpp
+            file_watcher.cpp
             file_watcher.hpp
             hot_import.cpp
             hot_import.hpp
@@ -44,4 +48,13 @@ if(VNMAKI_DEV_TOOLS)
   find_package(SDL3 CONFIG REQUIRED COMPONENTS SDL3)
   find_package(efsw CONFIG REQUIRED)
   target_link_libraries(vnmaki_engine PRIVATE imgui::imgui SDL3::SDL3 efsw::efsw)
+
+  # The debugger (task 36) speaks DAP in JSON and uses Lua's debug interface through sol2, with the
+  # same sol2 settings as script_runtime.cpp.
+  find_package(nlohmann_json CONFIG REQUIRED)
+  target_link_libraries(vnmaki_engine PRIVATE nlohmann_json::nlohmann_json)
+  set_property(
+    SOURCE debugger.cpp TARGET_DIRECTORY vnmaki_engine
+    APPEND
+    PROPERTY COMPILE_DEFINITIONS SOL_ALL_SAFETIES_ON=1 SOL_PRINT_ERRORS=0)
 endif()

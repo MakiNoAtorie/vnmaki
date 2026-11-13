@@ -9,5 +9,6 @@ target_compile_definitions(vnmaki
 target_sources(vnmaki PRIVATE run_command.cpp run_command.hpp story_window.cpp story_window.hpp)
 target_sources(vnmaki PRIVATE graph_command.cpp graph_command.hpp)
 target_sources(vnmaki PRIVATE check_command.cpp check_command.hpp)
+target_sources(vnmaki PRIVATE debug_command.cpp debug_command.hpp)
 target_sources(vnmaki PRIVATE extract_command.cpp extract_command.hpp)
 target_sources(vnmaki PRIVATE import_command.cpp import_command.hpp)

@@ -12,9 +12,11 @@
 // table. Entering a label takes a LabelSnapshot and starts an input log;
 // replay() restores a snapshot and runs the label again, silently, to a step.
 
+#include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -24,6 +26,8 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+struct lua_State;  // Lua's own type (global scope); only the debugger uses it
 
 namespace vnmaki {
 
@@ -383,6 +387,41 @@ struct ShakeRequest {
   bool replaying = false;
 };
 
+/// A point or a direction in a 3D scene (x, y, z).
+using Vec3Option = std::array<double, 3>;
+
+/// `scene3d`, `model`, `light`, `camera(scene, {...})` and `hide3d` (engine/model3d/scene3d.hpp).
+/// Fields the script left out are empty and keep their values; a new object starts with defaults.
+struct Scene3dRequest {
+  enum class Kind : std::uint8_t {
+    kScene,   ///< `scene3d(scene, { layer })`: makes the scene, or moves it to `layer`.
+    kModel,   ///< `model(name, path, { scene, ... })`.
+    kLight,   ///< `light(scene, name, { kind, ... })`.
+    kCamera,  ///< `camera(scene, { position, look_at, fov })`.
+    kRemove,  ///< `hide3d(scene, name)`: removes a model or a light.
+  };
+
+  Kind kind = Kind::kScene;
+  std::string scene{};  ///< The tag of the 3D scene.
+  std::string name{};   ///< The model's tag, or the light's name.
+  std::optional<std::string> layer{};
+  std::string path{};  ///< The Vfs path of the model file, with its extension.
+  /// "unlit", "toon" or "pbr", or the name of a declared game shader.
+  std::optional<std::string> shader{};
+  std::vector<UniformValue> uniforms{};  ///< Uniforms of the model's game shader.
+  std::optional<std::string> light_kind{};  ///< "directional", "point" or "ambient".
+  std::optional<Vec3Option> position{};   ///< Model, point light, camera.
+  std::optional<Vec3Option> rotation{};   ///< Model, in degrees.
+  std::optional<Vec3Option> direction{};  ///< Directional light: the way the light travels.
+  std::optional<Vec3Option> look_at{};    ///< Camera.
+  std::optional<double> scale{};          ///< Model: uniform scale.
+  std::optional<double> fov{};            ///< Camera: vertical field of view in degrees.
+  std::optional<std::uint32_t> color{};   ///< Light: 0xRRGGBB.
+  std::optional<double> intensity{};      ///< Light.
+  /// Set while the runtime replays: a model file is not parsed again, only checked for.
+  bool replaying = false;
+};
+
 /// What `scene`, `show`, `hide`, `tween` and `wait` do to the engine (engine/scene/scene.hpp
 /// implements it). A call that cannot be done returns why, and the runtime
 /// raises that as a script error at the calling script line; it returns an
@@ -452,6 +491,11 @@ class SceneCommands {
   /// Starts a camera shake. `tweening("@camera")` is true while it runs, and
   /// `finish_tweens("@camera")` ends it. The default does nothing.
   [[nodiscard]] virtual std::string shake(const ShakeRequest& /*request*/) { return {}; }
+
+  /// Makes or changes a 3D scene, a model, a light or a camera. Returns why it cannot (an
+  /// unknown scene, a bad file, a number out of range). The default does nothing, for
+  /// implementations without 3D.
+  [[nodiscard]] virtual std::string scene3d(const Scene3dRequest& /*request*/) { return {}; }
 };
 
 /// What `show_screen`, `hide_screen` and `call_screen` need from the engine (engine/ui/ui_host.hpp
@@ -484,12 +528,18 @@ struct MusicRequest {
   double fade = 0;                     ///< Seconds the old and new music cross-fade.
   std::optional<double> loop_start{};  ///< Seconds into the file; overrides the file's tags.
   std::optional<double> loop_end{};    ///< Seconds into the file; overrides the file's tags.
+  /// What the captions screen says while the music starts (docs/SPEC.md section 17); empty for
+  /// none. The runtime leaves it empty during a replay.
+  std::string caption{};
 };
 
 /// `sound(name, options)`: `name` plays once on `channel`, over whatever plays there.
 struct SoundRequest {
   std::string name{};
   std::string channel{"sound"};
+  /// What the captions screen says for the length of the sound; empty for none. The runtime does
+  /// not call `sound` during a replay.
+  std::string caption{};
 };
 
 /// What `music`, `sound`, `voice`, `stop` and `volume` do to the engine (engine/audio/audio.hpp
@@ -683,7 +733,13 @@ struct ScriptRuntimeOptions {
   /// The first state of the script RNG (`rand`, `math.random`). The same seed,
   /// scripts and inputs always give the same story.
   std::uint64_t random_seed = kDefaultRandomSeed;
+  /// Set through ScriptRuntime::set_thread_hook(); see ThreadHook.
+  std::function<void(lua_State*)> thread_hook{};
 };
+
+/// Called with the main thread of each new VM (the constructor, reload_scripts()) and with the
+/// thread of each label (also in a replay). Only the debugger (engine/tools/debugger.hpp) sets one.
+using ThreadHook = std::function<void(lua_State*)>;
 
 /// The outcome of ScriptRuntime::eval.
 struct EvalResult {
@@ -920,6 +976,12 @@ class ScriptRuntime {
   [[nodiscard]] EvalResult eval(std::string_view code);
   /// Replaces the observer (null: none). Pass one that outlives the runtime or reset it first.
   void set_observer(ScriptObserver* observer);
+
+  /// Dev tools: `hook` is called for the VM now, for the label threads that run, and for each
+  /// later VM and label thread. A reload keeps it. Empty turns it off.
+  void set_thread_hook(ThreadHook hook);
+  /// The thread of the running label (the top of the call stack); null if none runs.
+  [[nodiscard]] lua_State* label_thread() const;
 
   /// Dev tools (hot reload): loads every script again, the default screens and styles with them,
   /// and replays to the position the story waits at. The new scripts run in a fresh Lua VM, so a

@@ -32,8 +32,8 @@ constexpr std::string_view kShaderDirectory = "shaders/";
 constexpr std::string_view kHlslSuffix = ".frag.hlsl";
 constexpr std::string_view kCacheRoot = ".vnmaki";
 // The engine headers that a game shader includes: a change of one is a change of every shader.
-constexpr std::array<std::string_view, 3> kShaderHeaders{"vnmaki.hlsli", "sprite_fragment.hlsli",
-                                                         "transition.hlsli"};
+constexpr std::array<std::string_view, 4> kShaderHeaders{"vnmaki.hlsli", "sprite_fragment.hlsli",
+                                                         "mesh.hlsli", "transition.hlsli"};
 
 enum class Kind : std::uint8_t { kNone, kAudio, kFont, kShader, kGltf, kText };
 

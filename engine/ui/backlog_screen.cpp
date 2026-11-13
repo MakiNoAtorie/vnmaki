@@ -121,12 +121,14 @@ void BacklogScreen::open() {
   heights_.reserve(entries_.size());
   for (std::size_t i = 0; i < entries_.size(); ++i) {
     float height = (2 * metrics.padding) + metrics.gap;
-    for (const UiNode& child : entry_node(entries_[i], i, false, metrics).children) {
+    for (UiNode& child : entry_node(entries_[i], i, false, metrics).children) {
+      scale_text_sizes(child, host_->text_scale());  // the host scales what it shows
       height += measure_(child, wrap).height;
     }
     heights_.push_back(height);
   }
-  const UiNode title = text_node("Backlog", metrics.title_size, kWhite, false);
+  UiNode title = text_node("Backlog", metrics.title_size, kWhite, false);
+  scale_text_sizes(title, host_->text_scale());
   available_ = static_cast<float>(canvas.height) - (2 * metrics.margin) -
                measure_(title, wrap).height - metrics.gap;
   selected_ = entries_.empty() ? 0 : entries_.size() - 1;
@@ -195,11 +197,9 @@ void BacklogScreen::play(std::size_t index) const {
 
 bool BacklogScreen::handle_event(const InputEvent& event, const Viewport& viewport) {
   if (!open_) {
-    const auto* key = std::get_if<KeyEvent>(&event);
-    const auto* pad = std::get_if<GamepadButtonEvent>(&event);
+    static const InputMap kDefaults;
     const bool wants_open =
-        (key != nullptr && key->pressed && !key->repeat && key->key == Key::kL) ||
-        (pad != nullptr && pad->pressed && pad->button == GamepadButton::kNorth);
+        (input_map_ != nullptr ? *input_map_ : kDefaults).matches(InputAction::kBacklog, event);
     if (!wants_open || host_->has_modal()) {
       return false;
     }
