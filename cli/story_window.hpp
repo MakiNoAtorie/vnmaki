@@ -26,8 +26,11 @@ inline constexpr std::string_view kDefaultFontPath = "fonts/default.ttf";
 /// `max_frames` frames. Saves and `persistent` go to `data_directory`, by default the user-data
 /// directory of the game's title. Returns the process exit code: 0, or 1 (after a message on `err`)
 /// when the project, its font, a script or the GPU cannot be used or a script fails while running.
+/// With `profile_csv`, the profiler (engine/tools/profiler.hpp) keeps every frame and writes the
+/// file and its `_loads` twin when the window closes. Dev builds always profile, for the overlay.
 int run_story_window(const Vfs& vfs, const ProjectConfig& config,
                      std::optional<std::uint64_t> max_frames,
-                     const std::optional<std::filesystem::path>& data_directory, std::ostream& err);
+                     const std::optional<std::filesystem::path>& data_directory, std::ostream& err,
+                     const std::optional<std::filesystem::path>& profile_csv = {});
 
 }  // namespace vnmaki::cli

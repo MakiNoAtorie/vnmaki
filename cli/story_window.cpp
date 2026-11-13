@@ -36,6 +36,7 @@
 #include "engine/saves/thumbnail.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/text/text.hpp"
+#include "engine/tools/profiler.hpp"
 #if VNMAKI_DEV_TOOLS
 #include "engine/tools/log_buffer.hpp"
 #include "engine/tools/observer_chain.hpp"
@@ -88,9 +89,15 @@ std::unique_ptr<Audio> make_audio(const Vfs& vfs, std::ostream& err) {
 int run_story_window(const Vfs& vfs, const ProjectConfig& config,
                      std::optional<std::uint64_t> max_frames,
                      const std::optional<std::filesystem::path>& data_directory_override,
-                     std::ostream& err) {
+                     std::ostream& err, const std::optional<std::filesystem::path>& profile_csv) {
   const Size virtual_size{.width = config.resolution.width, .height = config.resolution.height};
   try {
+    SteadyClock clock;
+    // First, so that it sees the loads of the fonts. Dev builds always profile, for the overlay; a
+    // release build only for --profile.
+    Profiler profiler{clock,
+                      {.enabled = VNMAKI_DEV_TOOLS != 0 || profile_csv.has_value(),
+                       .max_frames = profile_csv ? 0 : Profiler::kGraphFrames}};
     // Everything that needs no window comes first, so a broken project fails before one opens.
     const Font font = load_font(vfs, kDefaultFontPath);
     // The fallback chain of the source language (the first in project.toml).
@@ -211,7 +218,9 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
                                    .audio = audio.get(),
                                    .platform = &platform}};
 
-    SteadyClock clock;
+#if VNMAKI_DEV_TOOLS
+    dev_overlay.set_profiler(&profiler);
+#endif
     MainLoop loop{platform, clock, {.min_frame_time = kFrameTime}};
     ScreenActions actions{runtime,
                           ui,
@@ -306,11 +315,15 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       indicator.sync(playback.skip(), playback.automatic());
       persistent.flush();
     };
+    if (profiler.enabled()) {
+      hooks.frame_end = [&](const FrameTiming& timing) { profiler.end_frame(timing); };
+    }
     hooks.draw = [&](double /*alpha*/) {
       if (presenter.ended()) {
         loop.request_quit();
         return;
       }
+      profiler.begin_prepare();
       const Viewport placed = viewport();
       const std::optional<DialogueLine>& line = presenter.line();
       scene.prepare(*renderer, jobs);
@@ -324,6 +337,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
           ui_renderer.prepare(*root, placed.scale);
         }
       }
+      profiler.end_prepare();
       renderer->begin_frame();
       renderer->begin_pass({.target = canvas, .clear = rgba8(0, 0, 0)});
       scene.draw(*renderer, canvas);
@@ -342,9 +356,15 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
 #if VNMAKI_DEV_TOOLS
       dev_overlay.draw(platform.window_metrics().pixels);
 #endif
-      static_cast<void>(renderer->end_frame());
+      profiler.set_gpu(renderer->end_frame(), renderer->texture_memory());
     };
     loop.run(hooks, max_frames);
+    if (profile_csv) {
+      if (const std::string problem = profiler.write_csv_files(*profile_csv); !problem.empty()) {
+        err << "vnmaki: " << problem << '\n';
+        return kExitFailure;
+      }
+    }
 
     if (runtime.state() == RunState::kFailed) {
       err << "vnmaki: " << runtime.error() << '\n';

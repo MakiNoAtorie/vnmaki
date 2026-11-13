@@ -36,6 +36,7 @@ struct RunArguments {
   std::size_t max_steps = kDefaultMaxSteps;
   std::optional<std::size_t> max_frames;
   std::optional<std::filesystem::path> data_dir;
+  std::optional<std::filesystem::path> profile_csv;
 };
 
 std::optional<std::size_t> parse_positive(std::string_view text) {
@@ -72,6 +73,13 @@ std::optional<RunArguments> parse_arguments(std::span<const std::string_view> ar
       }
       parsed.data_dir = std::filesystem::path{args[i + 1]};
       ++i;
+    } else if (arg == "--profile") {
+      if (i + 1 >= args.size() || args[i + 1].empty()) {
+        err << "vnmaki run: --profile needs a file\n";
+        return std::nullopt;
+      }
+      parsed.profile_csv = std::filesystem::path{args[i + 1]};
+      ++i;
     } else if (arg == "--frames") {
       parsed.max_frames = i + 1 < args.size() ? parse_positive(args[i + 1]) : std::nullopt;
       if (!parsed.max_frames) {
@@ -89,6 +97,10 @@ std::optional<RunArguments> parse_arguments(std::span<const std::string_view> ar
   }
   if (parsed.headless && parsed.max_frames) {
     err << "vnmaki run: --frames needs a window, so it cannot go with --headless\n";
+    return std::nullopt;
+  }
+  if (parsed.headless && parsed.profile_csv) {
+    err << "vnmaki run: --profile needs a window, so it cannot go with --headless\n";
     return std::nullopt;
   }
   return parsed;
@@ -117,7 +129,8 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
   }
 
   if (!arguments->headless) {
-    return run_story_window(vfs, config, arguments->max_frames, arguments->data_dir, err);
+    return run_story_window(vfs, config, arguments->max_frames, arguments->data_dir, err,
+                            arguments->profile_csv);
   }
 
   // Nothing is drawn or heard, but the scene and the audio still check every file a script
