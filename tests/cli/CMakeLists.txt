@@ -6,7 +6,7 @@
 function(vnmaki_isolate_run_data name args_var define_var)
   set(args ${${args_var}})
   set(define "")
-  if(args MATCHES "^run(;|$)")
+  if(args MATCHES "^(run|debug)(;|$)")
     set(directory "${CMAKE_CURRENT_BINARY_DIR}/data/${name}")
     list(APPEND args --data-dir "${directory}")
     set(define "-DDATA_DIR=${directory}")
@@ -492,3 +492,41 @@ set_tests_properties(
   cli.check_reports_a_missing_folder
   cli.check_needs_a_folder
   cli.check_rejects_a_second_folder PROPERTIES TIMEOUT 60)
+
+# vnmaki debug (ticket 36). The debugger speaks DAP on stdin and stdout. It needs the dev tools
+# and Windows (the non-blocking read of stdin). The headless mode opens no window, so these tests
+# need no GPU. Each runs the debugger on a project and a request file that
+# tools/generators/debug_fixtures.py writes, with the responses that the generator works out
+# itself (the stdin of the process is the request file, which ends: EOF, not a hang).
+set(vnmaki_debug_fixtures "${VNMAKI_FIXTURES_DIR}/debug")
+if(VNMAKI_DEV_TOOLS AND WIN32)
+  foreach(session session finish)
+    set(data_dir "${CMAKE_CURRENT_BINARY_DIR}/data/debug_${session}")
+    add_test(
+      NAME cli.debug_${session}
+      COMMAND
+        ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+        "-DARGS=debug;${vnmaki_debug_fixtures}/project;--headless;--data-dir;${data_dir}"
+        -DEXPECTED_EXIT=0 -DDATA_DIR=${data_dir}
+        -DINPUT_FILE=${vnmaki_debug_fixtures}/${session}.in.dap
+        -DEXPECTED_STDOUT_FILE=${vnmaki_debug_fixtures}/${session}.out.dap -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_dap.cmake")
+    set_tests_properties(cli.debug_${session} PROPERTIES TIMEOUT 120)
+  endforeach()
+endif()
+
+vnmaki_add_cli_test(
+  debug_rejects_an_unknown_option
+  ARGS debug --frobnicate
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki debug: unexpected argument '--frobnicate'.*usage: vnmaki debug")
+if(NOT VNMAKI_DEV_TOOLS)
+  vnmaki_add_cli_test(
+    debug_needs_the_dev_tools
+    ARGS debug "${PROJECT_SOURCE_DIR}/templates/default"
+    EXIT 1
+    NO_STDOUT
+    STDERR_REGEX "vnmaki debug: this build has no debugger")
+endif()
+set_tests_properties(cli.debug_rejects_an_unknown_option PROPERTIES TIMEOUT 60)

@@ -5,6 +5,7 @@
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -38,6 +39,7 @@
 #include "engine/scene/scene.hpp"
 #include "engine/text/text.hpp"
 #if VNMAKI_DEV_TOOLS
+#include "engine/tools/debugger.hpp"
 #include "engine/tools/file_watcher.hpp"
 #include "engine/tools/hot_reload.hpp"
 #include "engine/tools/log_buffer.hpp"
@@ -91,7 +93,7 @@ std::unique_ptr<Audio> make_audio(const Vfs& vfs, std::ostream& err) {
 int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::path& project_dir,
                      const ProjectConfig& config, std::optional<std::uint64_t> max_frames,
                      const std::optional<std::filesystem::path>& data_directory_override,
-                     std::ostream& err) {
+                     std::ostream& err, [[maybe_unused]] DapChannel* dap) {
   const Size virtual_size{.width = config.resolution.width, .height = config.resolution.height};
   try {
     // Everything that needs no window comes first, so a broken project fails before one opens.
@@ -146,6 +148,15 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     PersistentStore persistent{runtime, data_directory, warn};
     persistent.load();  // before the scripts, so that their defaults see the saved values
     runtime.load_scripts();
+#if VNMAKI_DEV_TOOLS
+    // `vnmaki debug`: the pump (below) draws and handles OS events while the story is stopped.
+    std::function<bool()> debug_pump;
+    std::unique_ptr<Debugger> debugger;
+    if (dap != nullptr) {
+      debugger = std::make_unique<Debugger>(runtime, *dap, project_dir,
+                                            [&] { return debug_pump && debug_pump(); });
+    }
+#endif
 
     SdlPlatform platform{WindowConfig{.title = config.title, .size = kDefaultWindowSize}};
     ui.set_platform(&platform);  // text input is on only while an `input` node has the keys
@@ -189,7 +200,13 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                  .auto_save = config.auto_save,
                  .thumbnail = [&] { return capture_thumbnail(*renderer, canvas); },
                  .on_warning = warn}};
+#if VNMAKI_DEV_TOOLS
+    if (!debugger) {
+      runtime.start("start");  // with a debugger it starts after configurationDone, below
+    }
+#else
     runtime.start("start");
+#endif
     saves.poll();
     ScreenPresenter screens{runtime, ui};
     WaitPresenter waits{runtime, scene};
@@ -304,6 +321,9 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     };
     hooks.update = [&](Duration step) {
 #if VNMAKI_DEV_TOOLS
+      if (debugger && !debugger->poll()) {
+        loop.request_quit();
+      }
       if (watcher) {
         if (const std::vector<std::string> changed = watcher->poll(); !changed.empty()) {
           hot_reload.apply(changed);
@@ -329,6 +349,11 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       persistent.flush();
     };
     hooks.draw = [&](double /*alpha*/) {
+#if VNMAKI_DEV_TOOLS
+      if (debugger && !debugger->poll()) {  // also settles a goto before the story seems to fail
+        loop.request_quit();
+      }
+#endif
       if (presenter.ended()) {
         loop.request_quit();
         return;
@@ -366,6 +391,31 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
 #endif
       static_cast<void>(renderer->end_frame());
     };
+#if VNMAKI_DEV_TOOLS
+    if (debugger) {
+      debug_pump = [&] {
+        while (const std::optional<InputEvent> event = platform.poll_event()) {
+          if (std::holds_alternative<QuitRequestedEvent>(*event)) {
+            return false;
+          }
+        }
+        hooks.draw(0.0);
+        return true;
+      };
+      while (true) {
+        if (!debugger->poll()) {
+          return 0;
+        }
+        if (debugger->configured()) {
+          break;
+        }
+        if (!debug_pump()) {
+          return 0;
+        }
+      }
+      runtime.start("start");
+    }
+#endif
     loop.run(hooks, max_frames);
 
     if (runtime.state() == RunState::kFailed) {
