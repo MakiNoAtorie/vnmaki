@@ -2,8 +2,6 @@
 // ScriptRuntime, and a recording renderer shows what the sprite draws. The GPU goldens are in
 // tests/render/layered_render_test.cpp.
 
-#include "engine/scene/layered_sprite.hpp"
-
 #include <algorithm>
 #include <cstddef>
 #include <memory>
@@ -21,19 +19,22 @@
 #include "engine/runtime/headless_runner.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/scene/displayable.hpp"
+#include "engine/scene/layered_sprite.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/support/memory_vfs.hpp"
+#include "tests/support/recording_renderer.hpp"
 
 namespace {
 
+using vnmaki::Layer;
 using vnmaki::LayerAttributes;
 using vnmaki::LayeredSprite;
-using vnmaki::Layer;
 using vnmaki::PointF;
 using vnmaki::RectF;
 using vnmaki::RunState;
 using vnmaki::Scene;
+using vnmaki::test::RecordingRenderer;
 using Lines = std::vector<std::string>;
 using Bytes = std::vector<std::byte>;
 
@@ -49,7 +50,7 @@ constexpr vnmaki::TextureId kSadTexture{.value = 4};
 
 constexpr float kHalf = 0.5F;
 constexpr float kQuarter = 0.25F;
-constexpr float kFade = 0.4F;       // 0.1 s into a 0.25 s crossfade.
+constexpr float kFade = 0.4F;        // 0.1 s into a 0.25 s crossfade.
 constexpr float kFadeHalved = 0.2F;  // The same fade at half alpha.
 constexpr double kTick = 0.1;
 constexpr double kRest = 0.2;  // The rest of the crossfade.
@@ -127,44 +128,6 @@ std::string at_line() {
   return "scripts/main.lua:" + std::to_string(lines + 2) + ": ";
 }
 
-// Draws as a renderer that only records the quads.
-class RecordingRenderer final : public vnmaki::IRenderer {
- public:
-  struct Draw {
-    vnmaki::Quad quad;
-    vnmaki::TextureId texture;
-  };
-
-  using IRenderer::draw;
-  void draw(std::span<const vnmaki::Quad> quads, const vnmaki::DrawState& state) override {
-    for (const vnmaki::Quad& quad : quads) {
-      draws.push_back({.quad = quad, .texture = state.texture});
-    }
-  }
-  [[nodiscard]] std::string_view backend_name() const override { return "recording"; }
-  [[nodiscard]] vnmaki::TextureId create_texture(const vnmaki::Image&,
-                                                 vnmaki::TextureFilter) override {
-    return {};
-  }
-  [[nodiscard]] vnmaki::TextureId create_render_target(vnmaki::Size,
-                                                       vnmaki::TextureFilter) override {
-    return {};
-  }
-  [[nodiscard]] vnmaki::ShaderId create_shader(const vnmaki::ShaderBytecode&) override {
-    return {};
-  }
-  void destroy_texture(vnmaki::TextureId) override {}
-  void destroy_shader(vnmaki::ShaderId) override {}
-  [[nodiscard]] vnmaki::Size texture_size(vnmaki::TextureId) const override { return {}; }
-  [[nodiscard]] vnmaki::Size screen_size() const override { return {}; }
-  void begin_frame() override {}
-  void begin_pass(const vnmaki::RenderPass&) override {}
-  vnmaki::FrameStats end_frame() override { return {}; }
-  [[nodiscard]] vnmaki::Image read_pixels(vnmaki::TextureId) override { return {}; }
-
-  std::vector<Draw> draws;
-};
-
 // The textures of the images that the tests give a sprite.
 void give_textures(LayeredSprite& sprite) {
   sprite.set_texture("images/eileen/base.png", kBaseTexture, kBodySize);
@@ -233,8 +196,7 @@ TEST_CASE("layered: an unknown group or value, or a bad definition, fails at the
         at_line() +
             "unknown value 'angry' for group 'face' of 'eileen' (the values are sad, smile)");
   CHECK(line_error(R"(show("eileen", { base = "x" }))") ==
-        at_line() +
-            "unknown value 'x' for group 'base' of 'eileen' (it has one fixed image)");
+        at_line() + "unknown value 'x' for group 'base' of 'eileen' (it has one fixed image)");
   CHECK(line_error(R"(show("eileen", { face = 1 }))") ==
         at_line() + "bad option 'face' to 'show' (string expected, got number)");
   CHECK(line_error(R"(layered("ghost", { order = { "base" }, base = "nope" }))") ==
@@ -392,9 +354,8 @@ end)
   sprite.draw(renderer);
   CHECK(renderer.draws.empty());
   CHECK(sprite.bounds() == RectF{.x = 16, .y = 32, .width = 0, .height = 0});
-  CHECK(sprite.missing_paths() ==
-        Lines{"images/eileen/base.png", "images/eileen/outfit_school.png",
-              "images/eileen/face_smile.png"});
+  CHECK(sprite.missing_paths() == Lines{"images/eileen/base.png", "images/eileen/outfit_school.png",
+                                        "images/eileen/face_smile.png"});
 
   give_textures(sprite);
   CHECK(sprite.missing_paths().empty());
