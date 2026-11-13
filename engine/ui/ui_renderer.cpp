@@ -51,8 +51,10 @@ UiRenderer::UiRenderer(IRenderer& renderer, FontSet fonts, const Vfs* vfs)
 
 UiRenderer::~UiRenderer() {
   renderer_->destroy_texture(white_);
-  if (atlas_texture_) {
-    renderer_->destroy_texture(*atlas_texture_);
+  for (const auto& [size, entry] : atlases_) {
+    if (entry.texture) {
+      renderer_->destroy_texture(*entry.texture);
+    }
   }
   for (const auto& [name, texture] : images_) {
     if (texture) {
@@ -118,12 +120,13 @@ std::optional<TextureId> UiRenderer::image_texture(const std::string& name) {
 void UiRenderer::prepare(const UiNode& root, float scale) {
   if (shows_text(root)) {
     const TextLayout& text = layout(root, content_width(root));
-    if (text.glyph_count > 0 && (atlas_.prepare(text, scale) || !atlas_texture_)) {
-      if (atlas_texture_) {
-        renderer_->destroy_texture(*atlas_texture_);
-        atlas_texture_.reset();
+    SizeAtlas& entry = atlases_[root.style.text_size];
+    if (text.glyph_count > 0 && (entry.atlas.prepare(text, scale) || !entry.texture)) {
+      if (entry.texture) {
+        renderer_->destroy_texture(*entry.texture);
+        entry.texture.reset();
       }
-      atlas_texture_ = renderer_->create_texture(atlas_.image(), TextureFilter::kNearest);
+      entry.texture = renderer_->create_texture(entry.atlas.image(), TextureFilter::kNearest);
     }
   }
   if (root.kind == NodeKind::kImage) {
@@ -141,7 +144,8 @@ void UiRenderer::draw_fill(RectF rect, Color color) {
 
 void UiRenderer::draw_text(const UiNode& node, float scale, PointF origin) {
   const TextLayout& text = layout(node, content_width(node));
-  if (text.glyph_count == 0 || !atlas_texture_) {
+  const SizeAtlas& entry = atlases_[node.style.text_size];
+  if (text.glyph_count == 0 || !entry.texture) {
     return;
   }
   float indent = 0;
@@ -151,9 +155,9 @@ void UiRenderer::draw_text(const UiNode& node, float scale, PointF origin) {
   const PointF at{.x = origin.x + ((node.rect.x + node.style.padding + indent) * scale),
                   .y = origin.y + ((node.rect.y + node.style.padding) * scale)};
   const std::size_t visible = node.visible_glyphs.value_or(text.glyph_count);
-  const std::vector<Quad> quads = text_quads(text, atlas_, at, visible, node.style.color);
+  const std::vector<Quad> quads = text_quads(text, entry.atlas, at, visible, node.style.color);
   if (!quads.empty()) {
-    renderer_->draw(quads, {.texture = *atlas_texture_});
+    renderer_->draw(quads, {.texture = *entry.texture});
   }
 }
 

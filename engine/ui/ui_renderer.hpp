@@ -46,6 +46,12 @@ class UiRenderer {
   void draw(const UiNode& root, float scale, PointF origin = {});
 
  private:
+  // A GlyphAtlas drops its glyphs when the layout's base size changes, so each text size has one.
+  struct SizeAtlas {
+    GlyphAtlas atlas{};
+    std::optional<TextureId> texture{};
+  };
+
   [[nodiscard]] const TextLayout& layout(const UiNode& node, float wrap_width);
   [[nodiscard]] std::optional<TextureId> image_texture(const std::string& name);
   void draw_node(const UiNode& node, float scale, PointF origin);
@@ -57,9 +63,7 @@ class UiRenderer {
   const Vfs* vfs_;
   TextureId white_;
   std::map<std::tuple<std::string, bool, float, float>, TextLayout> layouts_;
-  // One atlas for all text: it keeps glyphs of every size apart.
-  GlyphAtlas atlas_;
-  std::optional<TextureId> atlas_texture_;
+  std::map<float, SizeAtlas> atlases_;
   std::map<std::string, std::optional<TextureId>> images_;
 };
 

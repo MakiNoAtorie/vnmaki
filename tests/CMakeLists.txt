@@ -73,3 +73,6 @@ vnmaki_add_fixture_generator(
 # Say box: characters, the dialogue presenter and the say box view (ticket 08).
 target_sources(vnmaki_unit_tests PRIVATE unit/character_test.cpp
                                          unit/dialogue_test.cpp)
+
+# UI: nodes, Yoga layout, focus, the screen host, menus and call_screen (ticket 10).
+target_sources(vnmaki_unit_tests PRIVATE unit/ui_test.cpp)

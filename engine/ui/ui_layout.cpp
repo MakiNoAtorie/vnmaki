@@ -74,7 +74,8 @@ YGJustify to_yoga(Justify justify) {
 }
 
 // Mirrors `node` and its children as Yoga nodes. A leaf that shows text gets a measure function.
-YGNodeRef build(const UiNode& node, std::deque<MeasureContext>& contexts, const TextMeasure& measure) {
+YGNodeRef build(const UiNode& node, std::deque<MeasureContext>& contexts,
+                const TextMeasure& measure) {
   YGNodeRef yoga = YGNodeNew();
   const UiStyle& style = node.style;
   YGNodeStyleSetFlexDirection(yoga, node.kind == NodeKind::kHbox ? YGFlexDirectionRow

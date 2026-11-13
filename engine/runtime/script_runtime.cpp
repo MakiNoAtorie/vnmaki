@@ -1710,7 +1710,8 @@ bool ScriptRuntime::Impl::replay_answer(std::optional<ScreenValue>& resume_value
   const std::string where =
       "replay: label '" + frames_.back().label + "', step " + std::to_string(frames_.back().step);
   if (replay_.next_input >= replay_.inputs.size()) {
-    fail(where + ": the input log has no answer for this " + (call_screen ? "screen" : "menu"));
+    fail(where + (call_screen ? ": the input log has no result for this screen"
+                              : ": the input log has no choice for this menu"));
     return false;
   }
   const InputResult input = replay_.inputs[replay_.next_input++];

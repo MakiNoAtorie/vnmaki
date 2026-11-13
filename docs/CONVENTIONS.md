@@ -163,6 +163,28 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `vnmaki run <dir> [--frames N]` plays in a window. It exits with 0 when the story ends.
 - `SayRequest` has `color` (0xRRGGBB) and `voice_tag` from `character{}`.
 
+### UI (`engine/ui/`)
+
+- A screen is a `UiNode` tree with a name. Kinds: `box`, `hbox`, `vbox`, `text`, `image`, `button`. The Lua constructors have the same names.
+- Lua: `screen "name" { nodes }`, or `screen("name", function(args) return nodes end)`. A table of several nodes is wrapped in a `box`. `show_screen`, `hide_screen` and `call_screen` take the screen name and an `args` table for the function form.
+- `build_ui_tree` documents the options (`width`, `padding`, `bg`, `returns`, ...). An unknown option is an error that names the node.
+- A text or button string is the first string in the table: `button { "Save", returns = "save" }`. A button hands `returns` to its screen when activated.
+- A screen is built when it is shown. It does not update when `store` changes. `bind` is a later task.
+- Yoga does the layout (`layout_tree`). Only `ui_layout.cpp` includes it, and it is linked PRIVATE.
+  - The root fills the canvas. Lengths are virtual pixels. A node with `x` or `y` is positioned absolutely in its parent.
+  - Give `layout_tree` a `TextMeasure`. `UiRenderer::text_measure()` measures with the fonts. `estimate_text_size` is for tests.
+- Each node has a `role`, a `label` (default: its text) and a `state` (`focused`, `hovered`, `disabled`). These are the data for the accessibility tree.
+- Only enabled buttons take the focus. Tab order is document order. The arrow keys and the d-pad pick the nearest button in that direction. Pointer hover moves the focus.
+- `UiHost` is the stack of screens (the last one shown is on top).
+  - A screen with the same name is replaced. `handle_event(event, viewport)` returns `consumed` and an optional `ScreenActivation`.
+  - A modal screen takes the keys, the d-pad and all clicks. Other screens take the pointer only.
+  - `UiHost` does not store screens in snapshots. `show_screen` and `hide_screen` run again during replay, so they must be idempotent.
+- `ScreenPresenter` shows the modal screen of a `menu` or `call_screen` request and answers the runtime. Make it after `runtime.start()`. Call `sync()` after anything else that moves the story. Give it events before the dialogue presenter: if `handle_event` returns true, do not advance.
+- `UiRenderer` draws trees through `IRenderer`. Call `prepare(root, scale)` before `begin_frame`. Draw into a screen-resolution pass with the viewport scale and origin, like `SayBoxView`.
+  - It has one glyph atlas for each text size. A node with `markup = true` uses text tags.
+  - An image node draws `images/<name>.png` (else `.jpg`) from the VFS. It needs `width` and `height`.
+- The say box is a screen: `make_say_screen` builds it, and `SayBoxView` lays it out and draws it with a `UiRenderer`. A Lua replacement is task 18.
+
 ### Audio (`engine/audio/`)
 
 - `Audio` is the mixer. It implements `SceneState` and `AudioCommands`.
@@ -200,9 +222,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - They check the flag only for effects that the player can see or hear.
 - `replay(LabelSnapshot, inputs, step)` restores the label-entry snapshot and replays the top label only.
   - It does not make the callers again.
-  - Only menu choices go into the input log.
+  - Only menu choices and `call_screen` results go into the input log.
 - Scene state goes into snapshots through `SceneState` (`capture()` and `restore(bytes)`) in `ScriptRuntimeOptions::scene_state`.
-- `menu { "a", "b" }` returns a 1-based number. C++ gives the answer with `choose(index)`, which is 0-based. There is no menu UI.
+- `menu { "a", "b" }` returns a 1-based number. C++ gives the answer with `choose(index)`, which is 0-based. `ScreenPresenter` (`engine/ui/`) shows the menu and calls `choose`.
+- `call_screen(name, args)` is a blocking call (`CallScreenRequest`). C++ gives the value with `return_screen(value)`. The value is nil, a boolean, a number or a string.
+- `ScriptRuntimeOptions::screens` (`ScreenCommands`, implemented by `UiHost`) carries out `show_screen` and `hide_screen`.
+  - `check_screen` runs on every tree first. Its error string is raised at the script line.
+  - The runtime includes no ui headers. It reads the Lua node tables into `ScreenNodeDef`.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it.
 - `project.toml` has `title` (required), `version`, `resolution` and `languages`.
