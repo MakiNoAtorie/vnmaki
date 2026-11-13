@@ -205,6 +205,7 @@ struct SdlGpuRenderer::Impl {
   std::uint32_t next_shader = 1;
   std::map<PipelineKey, GpuPtr<SDL_GPUGraphicsPipeline>> pipelines;
 
+  GpuOverlay overlay;
   bool in_frame = false;
   FrameRecorder recorder;
   std::vector<TextureId> textures_to_destroy;
@@ -508,6 +509,9 @@ void SdlGpuRenderer::Impl::upload_vertices(SDL_GPUCommandBuffer* commands) {
 std::uint32_t SdlGpuRenderer::Impl::record_passes(SDL_GPUCommandBuffer* commands,
                                                   SDL_GPUTexture* swapchain, Size swapchain_size) {
   std::uint32_t draw_calls = 0;
+  SDL_GPUTexture* last_target = nullptr;
+  Size last_size{};
+  bool skipped_screen = false;
   const std::span<const Batch> batches = recorder.batches();
   const std::span<const std::byte> uniform_bytes = recorder.uniform_bytes();
   for (const RecordedPass& recorded : recorder.passes()) {
@@ -516,7 +520,8 @@ std::uint32_t SdlGpuRenderer::Impl::record_passes(SDL_GPUCommandBuffer* commands
     Size target_size{};
     if (recorded.pass.target == kScreen) {
       if (swapchain == nullptr) {
-        continue;  // The window is minimized or hidden: nothing to draw to this frame.
+        skipped_screen = true;  // The window is minimized or hidden: nothing to draw to.
+        continue;
       }
       target = swapchain;
       format = SDL_GetGPUSwapchainTextureFormat(device.get(), window->window());
@@ -586,6 +591,12 @@ std::uint32_t SdlGpuRenderer::Impl::record_passes(SDL_GPUCommandBuffer* commands
       }
     }
     SDL_EndGPURenderPass(pass);
+    last_target = target;
+    last_size = target_size;
+  }
+  if (overlay && last_target != nullptr && !skipped_screen) {
+    overlay(
+        {.device = device.get(), .commands = commands, .texture = last_target, .size = last_size});
   }
   return draw_calls;
 }
@@ -784,6 +795,15 @@ void SdlGpuRenderer::draw(std::span<const Quad> quads, const DrawState& state) {
   }
   impl_->recorder.add(quads, state);
 }
+
+GpuInfo SdlGpuRenderer::gpu_info() const {
+  const SDL_GPUTextureFormat format =
+      impl_->window ? SDL_GetGPUSwapchainTextureFormat(impl_->device.get(), impl_->window->window())
+                    : kTextureFormat;
+  return {.device = impl_->device.get(), .screen_format = static_cast<int>(format)};
+}
+
+void SdlGpuRenderer::set_overlay(GpuOverlay overlay) { impl_->overlay = std::move(overlay); }
 
 FrameStats SdlGpuRenderer::end_frame() {
   if (!impl_->in_frame) {

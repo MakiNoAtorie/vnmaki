@@ -4,11 +4,17 @@
 // platform. This header does not include SDL.
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string_view>
 
+#include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
+
+struct SDL_GPUCommandBuffer;
+struct SDL_GPUDevice;
+struct SDL_GPUTexture;
 
 namespace vnmaki {
 
@@ -19,6 +25,25 @@ struct RendererConfig {
   bool debug = false;
   /// Present at the display's refresh rate. Off presents as soon as a frame is ready.
   bool vsync = true;
+};
+
+/// What end_frame() hands to the overlay hook: the commands of the frame and the target of its
+/// last pass (the swapchain when the frame drew to the screen).
+struct GpuOverlayTarget {
+  SDL_GPUDevice* device = nullptr;
+  SDL_GPUCommandBuffer* commands = nullptr;
+  SDL_GPUTexture* texture = nullptr;
+  Size size{};
+};
+
+/// Draws over the last pass of every frame. The dev tools use it for ImGui.
+using GpuOverlay = std::function<void(const GpuOverlayTarget&)>;
+
+/// The device and the format of the screen (SDL_GPUTextureFormat as an integer), for an overlay
+/// that makes GPU objects of its own.
+struct GpuInfo {
+  SDL_GPUDevice* device = nullptr;
+  int screen_format = 0;
 };
 
 /// IRenderer on SDL3's GPU API.
@@ -59,6 +84,12 @@ class SdlGpuRenderer final : public IRenderer {
   void draw(std::span<const Quad> quads, const DrawState& state) override;
   FrameStats end_frame() override;
   [[nodiscard]] Image read_pixels(TextureId texture) override;
+
+  [[nodiscard]] GpuInfo gpu_info() const;
+  /// Sets the overlay (an empty function removes it). end_frame() calls it once the passes are
+  /// recorded, unless the screen pass was skipped (a minimized window). The overlay must not
+  /// outlive the renderer's device: remove it before the renderer is destroyed.
+  void set_overlay(GpuOverlay overlay);
 
  private:
   struct Impl;
