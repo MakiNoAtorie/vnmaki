@@ -13,11 +13,20 @@
 
 #include <doctest/doctest.h>
 
+#include "engine/dialogue/dialogue_presenter.hpp"
+#include "engine/l10n/translator.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
+#include "engine/runtime/project_config.hpp"
+#include "engine/runtime/script_runtime.hpp"
 #include "engine/text/markup.hpp"
 #include "engine/text/text.hpp"
+#include "engine/ui/ui_build.hpp"
+#include "engine/ui/ui_host.hpp"
+#include "engine/ui/ui_layout.hpp"
+#include "engine/ui/ui_node.hpp"
 #include "engine/vfs/vfs.hpp"
+#include "tests/support/memory_vfs.hpp"
 
 namespace {
 
@@ -188,4 +197,142 @@ TEST_CASE("vertical text: a link has a region on its column, and the reveal coun
   CHECK(vnmaki::link_at(layout, {.x = 30, .y = 30}) == "go");
   CHECK(vnmaki::link_at(layout, {.x = 30, .y = 10}).empty());
   CHECK(vnmaki::revealed_glyphs(layout, 10, 0.25) == 2);
+}
+
+namespace {
+
+constexpr vnmaki::Size kCanvas{.width = 300, .height = 200};
+constexpr float kTateTextSize = 30;
+constexpr float kColumnLimit = 70;
+constexpr float kColumnWidth = 30;
+
+const vnmaki::UiNode* find_text(const vnmaki::UiNode& node, std::string_view text) {
+  if (node.text == text) {
+    return &node;
+  }
+  for (const vnmaki::UiNode& child : node.children) {
+    if (const vnmaki::UiNode* found = find_text(child, text)) {
+      return found;
+    }
+  }
+  return nullptr;
+}
+
+vnmaki::UiNode built_screen(vnmaki::ScriptRuntime& runtime, const std::string& name,
+                            const vnmaki::ScreenNodeDef& args) {
+  vnmaki::ScreenNodeDef tree;
+  REQUIRE(runtime.build_screen(name, args, tree).empty());
+  return vnmaki::build_ui_tree(tree);
+}
+
+}  // namespace
+
+TEST_CASE("vertical text: project.toml sets it for a language") {
+  const vnmaki::ProjectConfig config = vnmaki::parse_project_config(
+      "title = \"T\"\nlanguages = [\"en\", \"ja\"]\n[vertical]\nja = true\nen = false\n");
+  CHECK(config.vertical.at("ja"));
+  CHECK_FALSE(config.vertical.at("en"));
+  const auto fails = [](std::string_view text) {
+    return vnmaki::parse_project_config("title = \"T\"\nlanguages = [\"en\"]\n[vertical]\n" +
+                                        std::string{text});
+  };
+  CHECK_THROWS_WITH_AS(fails("en = \"yes\"\n"),
+                       doctest::Contains("'vertical.en' must be true or false"),
+                       vnmaki::ProjectConfigError);
+  CHECK_THROWS_WITH_AS(fails("ja = true\n"), doctest::Contains("'vertical' has language 'ja'"),
+                       vnmaki::ProjectConfigError);
+
+  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
+      {{"project.toml", "title = \"T\"\nlanguages = [\"en\", \"ja\"]\n[vertical]\nja = true\n"}});
+  vnmaki::Translator translator{vfs, vnmaki::load_project_config(vfs)};
+  CHECK_FALSE(translator.vertical());
+  REQUIRE(translator.set_language("ja").empty());
+  CHECK(translator.vertical());
+  REQUIRE(translator.set_language("en").empty());
+  CHECK_FALSE(translator.vertical());
+}
+
+TEST_CASE("vertical text: the say and NVL screens are vertical when the language says so") {
+  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
+      {{"scripts/main.lua", "label('start', function() end)\n"},
+       {"styles/tate.lua", "style('say_text', { size = 30, vertical = true })\n"}});
+  vnmaki::UiHost host{kCanvas};
+  vnmaki::ScriptRuntime runtime{vfs, {.screens = &host}};
+  runtime.load_scripts();
+  const vnmaki::ScreenNodeDef say_args{.kind = "args",
+                                       .props = {{"speaker", "Eileen"}, {"text", "Hi"}}};
+  const vnmaki::NvlPage page{{.speaker = "Eileen", .text = "one"}, {.speaker = "", .text = "two"}};
+  const auto say = [&] { return built_screen(runtime, "say", say_args); };
+  const auto nvl = [&] { return built_screen(runtime, "nvl", vnmaki::make_nvl_args(page, true)); };
+
+  // Horizontal by default: no height on the line.
+  const vnmaki::UiNode horizontal = say();
+  REQUIRE(find_text(horizontal, "Hi") != nullptr);
+  CHECK_FALSE(find_text(horizontal, "Hi")->style.vertical);
+  CHECK_FALSE(find_text(horizontal, "Hi")->style.height.has_value());
+  CHECK_FALSE(find_text(nvl(), "two")->style.vertical);
+
+  // project.toml: the flag makes the line vertical, wrapping at a height inside the box.
+  REQUIRE(runtime.set_language_styles("", true).empty());
+  const vnmaki::UiNode tall = say();
+  const vnmaki::UiNode* line = find_text(tall, "Hi");
+  REQUIRE(line != nullptr);
+  CHECK(line->style.vertical);
+  REQUIRE(line->style.height.has_value());
+  CHECK(*line->style.height > 0);
+  CHECK(*line->style.height < tall.children.at(0).style.height.value());
+  CHECK_FALSE(find_text(tall, "Eileen")->style.vertical);  // the name stays horizontal
+  // NVL: every line is a column, the newest first (at the left), and the name of a line is a
+  // column after it (at its right).
+  const vnmaki::UiNode page_screen = nvl();
+  const vnmaki::UiNode* two = find_text(page_screen, "two");
+  const vnmaki::UiNode* one = find_text(page_screen, "one");
+  const vnmaki::UiNode* name = find_text(page_screen, "Eileen");
+  REQUIRE((two != nullptr && one != nullptr && name != nullptr));
+  CHECK(two->style.vertical);
+  CHECK(two->reveal);
+  CHECK(one->style.vertical);
+  CHECK(name->style.vertical);
+  const std::vector<vnmaki::UiNode>& row = page_screen.children.at(0).children;
+  REQUIRE(row.size() == 3);
+  CHECK(row[0].text == "two");
+  CHECK(row[1].text == "one");
+  CHECK(row[2].text == "Eileen");
+
+  // Back to horizontal, then the same through a style file, with no project.toml flag.
+  REQUIRE(runtime.set_language_styles("", false).empty());
+  CHECK_FALSE(find_text(say(), "Hi")->style.vertical);
+  REQUIRE(runtime.set_language_styles("styles/tate.lua", false).empty());
+  CHECK(find_text(say(), "Hi")->style.vertical);
+  CHECK(find_text(say(), "Hi")->style.text_size == kTateTextSize);
+  CHECK_FALSE(find_text(nvl(), "two")->style.vertical);  // the file set only say_text
+}
+
+TEST_CASE("vertical text: only text nodes take it, and layout wraps them at their height") {
+  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs({{"scripts/main.lua", R"(
+style("tate", { vertical = true, size = 20 })
+screen("s", function()
+  return hbox { text { "ab", style = "tate", height = 70 }, button { "Go", style = "tate" } }
+end)
+label("start", function() end)
+)"}});
+  vnmaki::UiHost host{kCanvas};
+  vnmaki::ScriptRuntime runtime{vfs, {.screens = &host}};
+  runtime.load_scripts();
+  vnmaki::UiNode screen = built_screen(runtime, "s", {});  // the button leaves `vertical` out
+  REQUIRE(screen.children.size() == 2);
+  CHECK(screen.children[0].style.vertical);
+  CHECK_FALSE(screen.children[1].style.vertical);
+
+  std::vector<float> limits;
+  vnmaki::layout_tree(screen, kCanvas, [&](const vnmaki::UiNode& node, float limit) {
+    if (node.style.vertical) {
+      limits.push_back(limit);
+    }
+    return vnmaki::MeasuredSize{.width = kColumnWidth, .height = kColumnLimit + 20};
+  });
+  // The text wraps at its height, and the width of its box is that of its columns.
+  CHECK(limits == std::vector<float>{kColumnLimit});
+  CHECK(screen.children[0].rect.width == kColumnWidth);
+  CHECK(screen.children[0].rect.height == kColumnLimit);
 }
