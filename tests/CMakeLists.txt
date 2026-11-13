@@ -225,6 +225,10 @@ vnmaki_add_fixture_generator(
           "${PROJECT_SOURCE_DIR}/templates/default/shaders/sepia.frag.hlsl"
   TEST_TARGETS vnmaki_unit_tests)
 
+# `.vnpak` archives (ticket 45): the format, the writer, the mount, patch packs and the font subset
+# choice. The fuzz target shares fuzz/pak_properties.hpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/pak_test.cpp)
+
 # Video: WebM, AV1 and Opus, the player and its clocks, `movie` and the movie displayable (ticket
 # 25). clip.webm is the one committed binary fixture; its README has the ffmpeg command.
 target_sources(vnmaki_unit_tests PRIVATE unit/video_test.cpp)
