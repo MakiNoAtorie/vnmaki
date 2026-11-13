@@ -146,10 +146,10 @@ std::vector<AutoSaveEvent> read_auto_save(const toml::node& node) {
   return events;
 }
 
-std::size_t read_rollback_depth(const toml::node& node) {
+std::size_t read_count(const toml::node& node, std::string_view key) {
   const std::optional<std::int64_t> depth = node.value_exact<std::int64_t>();
   if (!depth || *depth < 0 || *depth > kMaxRollbackDepth) {
-    fail_at(node, "'rollback_depth' must be a whole number from 0 to " +
+    fail_at(node, "'" + std::string{key} + "' must be a whole number from 0 to " +
                       std::to_string(kMaxRollbackDepth));
   }
   return static_cast<std::size_t>(*depth);
@@ -195,7 +195,10 @@ ProjectConfig parse_project_config(std::string_view toml_text) {
     config.auto_save = read_auto_save(*auto_save);
   }
   if (const toml::node* depth = table.get("rollback_depth")) {
-    config.rollback_depth = read_rollback_depth(*depth);
+    config.rollback_depth = read_count(*depth, "rollback_depth");
+  }
+  if (const toml::node* length = table.get("backlog_length")) {
+    config.backlog_length = read_count(*length, "backlog_length");
   }
   return config;
 }
