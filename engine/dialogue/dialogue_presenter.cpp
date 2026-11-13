@@ -1,6 +1,7 @@
 #include "engine/dialogue/dialogue_presenter.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <utility>
 #include <variant>
 
@@ -57,20 +58,28 @@ void DialoguePresenter::advance() {
   sync();
 }
 
-// Picks up the request the script waits at, unless it is the line already shown.
+// Picks up the request the script waits at, unless it is the line already shown. A request that
+// is not the line shown (the story moved by itself, e.g. a load) replaces it.
 void DialoguePresenter::sync() {
-  if (line_) {
-    return;
-  }
   const BlockingRequest* request =
       runtime_->state() == RunState::kWaiting ? runtime_->request() : nullptr;
+  std::optional<DialogueLine> next;
   if (const auto* say = request ? std::get_if<SayRequest>(request) : nullptr) {
-    line_ = DialogueLine{.speaker = say->speaker, .color = say->color, .text = say->text};
+    next = DialogueLine{.speaker = say->speaker,
+                        .color = say->color,
+                        .text = say->text,
+                        .auto_multiplier = say->auto_multiplier};
   } else if (const auto* narrate = request ? std::get_if<NarrateRequest>(request) : nullptr) {
-    line_ = DialogueLine{.speaker = {}, .color = std::nullopt, .text = narrate->text};
-  } else {
+    next = DialogueLine{.speaker = {}, .color = std::nullopt, .text = narrate->text};
+  }
+  if (next == line_) {
     return;
   }
+  line_ = std::move(next);
+  if (!line_) {
+    return;
+  }
+  ++line_serial_;
   glyph_count_ = counter_(*line_);
   elapsed_ = 0;
   completed_ = false;

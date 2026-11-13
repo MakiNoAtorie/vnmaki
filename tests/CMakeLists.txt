@@ -79,3 +79,6 @@ target_sources(vnmaki_unit_tests PRIVATE unit/ui_test.cpp)
 
 # Saves: file format, slots, quick save, auto save, on_load (ticket 12).
 target_sources(vnmaki_unit_tests PRIVATE unit/saves_test.cpp)
+
+# Persistent store, seen text, skip and auto-advance (ticket 14).
+target_sources(vnmaki_unit_tests PRIVATE unit/playback_test.cpp)

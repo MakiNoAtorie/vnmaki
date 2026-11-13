@@ -23,10 +23,15 @@ struct DialogueLine {
   /// The speaker's name colour as 0xRRGGBB.
   std::optional<std::uint32_t> color{};
   std::string text{};
+  /// Scales the per-character part of the auto-advance delay (`character { auto_multiplier }`).
+  double auto_multiplier = 1;
+
+  friend bool operator==(const DialogueLine&, const DialogueLine&) = default;
 };
 
 /// Drives a started ScriptRuntime through its say and narrate lines. Advance the story only
-/// through advance(); the presenter then notices the new line. Menus and other requests are not
+/// through advance(); the presenter then notices the new line. It also notices a line that
+/// replaced the old one without it (a load) at the next call. Menus and other requests are not
 /// shown: line() is empty and advance() does nothing while the story waits at one.
 class DialoguePresenter {
  public:
@@ -48,6 +53,11 @@ class DialoguePresenter {
   [[nodiscard]] const std::optional<DialogueLine>& line() const { return line_; }
   /// How many glyphs of line() show now; 0 without a line.
   [[nodiscard]] std::size_t visible_glyphs() const;
+  /// How many glyphs line() has once laid out; 0 without a line.
+  [[nodiscard]] std::size_t glyph_count() const { return line_ ? glyph_count_ : 0; }
+  /// Counts the lines the presenter has picked up. It changes when line() shows another line,
+  /// also when the story moved without advance() (a load).
+  [[nodiscard]] std::uint64_t line_serial() const { return line_serial_; }
   /// True while part of line() is still hidden.
   [[nodiscard]] bool revealing() const;
   /// True once the story has finished or failed.
@@ -70,6 +80,7 @@ class DialoguePresenter {
   std::size_t glyph_count_ = 0;
   double elapsed_ = 0;
   bool completed_ = false;
+  std::uint64_t line_serial_ = 0;
 };
 
 }  // namespace vnmaki
