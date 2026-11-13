@@ -87,13 +87,14 @@ struct TraceEdge {
 };
 
 /// Collects the labels and the edges of a run. Set it as `ScriptRuntimeOptions::observer` (or call
-/// it from the observer that is set). A replay is not reported, so a load or a rollback gives a
-/// label with no edge; call `break_trace()` before a load so the next label does not get an edge
-/// from the label that ran before.
+/// it from the observer that is set). A replay is not reported label by label; `on_replay()` calls
+/// `break_trace()`, so a load or a rollback gives no false edge from the label that ran before.
 class TraceRecorder final : public ScriptObserver {
  public:
   void on_label_entered(std::string_view label) override;
   void on_label_resumed(std::string_view label) override;
+  /// A load or a rollback starts: the next label entered has no edge into it.
+  void on_replay() override { break_trace(); }
 
   /// The next label entered has no edge into it.
   void break_trace() { current_.clear(); }
@@ -119,6 +120,9 @@ class TraceRecorder final : public ScriptObserver {
 /// edges reach as reachable. It replaces what an earlier call added, so it can run again with a
 /// longer trace.
 void apply_trace(StoryGraph& graph, const TraceRecorder& trace);
+
+/// `text` as a CSV field (RFC 4180): in quotes when it has a comma, a quote or a line end.
+[[nodiscard]] std::string csv_field(std::string_view text);
 
 /// "jump", "call", "menu" or "trace".
 [[nodiscard]] std::string_view edge_kind_name(EdgeKind kind);

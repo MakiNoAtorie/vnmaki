@@ -2075,6 +2075,8 @@ class ScriptRuntime::Impl {
   void set_observer(ScriptObserver* observer) {
     observer_ = observer != nullptr ? observer : &null_observer();
   }
+  // Returns the runtime for the reloaded scripts, or null with `problem` set.
+  [[nodiscard]] std::unique_ptr<Impl> reload(std::string& problem);
   [[nodiscard]] ScreenValue binding(std::string_view table, std::string_view key);
   [[nodiscard]] std::string set_binding(std::string_view table, std::string_view key,
                                         ScreenValue value);
@@ -2241,6 +2243,9 @@ class ScriptRuntime::Impl {
   std::vector<RollbackStep> rollback_;  // oldest first
   bool rolling_back_ = false;           // the replay in progress is roll_back()'s
   std::string pending_voice_;           // the last `voice(name)`, until the next say or menu
+  // Set while reload() replays: where a failing replay had got, so reload() can stop there.
+  bool clamp_replay_ = false;
+  std::optional<std::uint32_t> clamped_ordinal_;
 };
 
 void* ScriptRuntime::Impl::allocate(void* user_data, void* block, std::size_t old_size,
@@ -3206,6 +3211,7 @@ bool ScriptRuntime::Impl::roll_back() {
 void ScriptRuntime::Impl::begin_replay(const LabelSnapshot& snapshot,
                                        std::span<const InputResult> inputs, std::uint32_t step,
                                        std::uint32_t ordinal) {
+  observer_->on_replay();
   // Copies first: the arguments may belong to the frame replaced below.
   LabelSnapshot entry = snapshot;
   Replay replay{.inputs = {inputs.begin(), inputs.end()}, .step = step, .ordinal = ordinal};
@@ -3294,6 +3300,70 @@ std::string ScriptRuntime::Impl::run_on_load(LabelSnapshot& snapshot,
   }
   restore_store(current);
   return problem;
+}
+
+std::unique_ptr<ScriptRuntime::Impl> ScriptRuntime::Impl::reload(std::string& problem) {
+  auto fresh = std::make_unique<Impl>(*vfs_, options_);
+  fresh->observer_ = observer_;
+  try {
+    problem = fresh->restore_persistent(capture_persistent());
+    if (problem.empty()) {
+      fresh->load_scripts();
+    }
+  } catch (const ScriptError& error) {
+    problem = error.what();
+  }
+  if (!problem.empty()) {
+    return nullptr;
+  }
+  fresh->save_requests_ = std::move(save_requests_);
+  fresh->playback_requests_ = std::move(playback_requests_);
+  if (frames_.empty()) {
+    return fresh;  // not started, or the story ended: nothing to come back to
+  }
+
+  // What a replay of the outermost label needs, as push_rollback_step() keeps it.
+  const Frame& root = frames_.front();
+  const LabelSnapshot entry = root.snapshot;
+  const std::vector<InputResult> inputs = root.inputs;
+  const std::uint32_t ordinal = root.stops;
+  // `start` with the store and the empty scene of a new game, for a label that is gone.
+  const LabelSnapshot first{.label = "start", .store = fresh->capture_store()};
+  std::vector<RollbackStep> history = rollback_;
+  if (state_ != RunState::kWaiting) {
+    history.clear();
+  } else if (!is_pause(request_) && !history.empty()) {
+    history.pop_back();  // the replay pushes the position again
+  }
+  const std::vector<std::byte> scene_before =
+      options_.scene_state != nullptr ? options_.scene_state->capture() : std::vector<std::byte>{};
+
+  const auto attempt = [&](const LabelSnapshot& from, std::span<const InputResult> answers,
+                           std::uint32_t target, bool clamp) {
+    fresh->frames_.clear();
+    fresh->clamped_ordinal_.reset();
+    fresh->clamp_replay_ = clamp;
+    fresh->begin_replay(from, answers, 0, target);
+    fresh->clamp_replay_ = false;
+    return fresh->state_ != RunState::kFailed;
+  };
+  fresh->rollback_ = history;
+  bool ok = fresh->has_label(entry.label) && attempt(entry, inputs, ordinal, true);
+  if (!ok && fresh->clamped_ordinal_ && *fresh->clamped_ordinal_ < ordinal) {
+    ok = attempt(entry, inputs, *fresh->clamped_ordinal_, false);
+  }
+  if (!ok) {  // the label is gone, or the story cannot come back to it
+    fresh->rollback_.clear();
+    ok = attempt(first, {}, 0, false);
+  }
+  if (!ok) {
+    problem = fresh->error_;
+    if (options_.scene_state != nullptr) {
+      options_.scene_state->restore(scene_before);
+    }
+    return nullptr;
+  }
+  return fresh;
 }
 
 // Answers the request a replay just reached from the input log:
@@ -3471,6 +3541,9 @@ bool ScriptRuntime::Impl::activate_link(std::string_view id) {
 }
 
 void ScriptRuntime::Impl::fail(std::string message) {
+  if (clamp_replay_ && replaying_ && !frames_.empty()) {
+    clamped_ordinal_ = frames_.front().stops;
+  }
   state_ = RunState::kFailed;
   replaying_ = false;
   rolling_back_ = false;
@@ -3652,5 +3725,12 @@ ScriptPosition ScriptRuntime::position() const { return impl_->position(); }
 const std::string& ScriptRuntime::error() const { return impl_->error(); }
 EvalResult ScriptRuntime::eval(std::string_view code) { return impl_->eval(code); }
 void ScriptRuntime::set_observer(ScriptObserver* observer) { impl_->set_observer(observer); }
+std::string ScriptRuntime::reload_scripts() {
+  std::string problem;
+  if (std::unique_ptr<Impl> reloaded = impl_->reload(problem)) {
+    impl_ = std::move(reloaded);
+  }
+  return problem;
+}
 
 }  // namespace vnmaki

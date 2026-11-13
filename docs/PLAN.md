@@ -315,12 +315,12 @@ Files: new `engine/tools/inspect_*.cpp`, `engine/tools/overlay.cpp`.
 
 Files: new `engine/tools/file_watcher.*`, `engine/tools/hot_reload.*`, `engine/runtime/script_runtime.*`, `engine/scene/`, `vcpkg.json`.
 
-- [ ] efsw (vcpkg) watches the project folder. Events within 100 ms become one batch. A unit test can inject a batch with no efsw.
-- [ ] A changed `.lua` file reloads all scripts (labels, screens, styles). Then the engine replays to the current label and step. If the label is gone, it goes to `start`. If the step is past the label end, it stops at the last step.
-- [ ] A script error keeps the old scripts. The error and its line go to the log, and a red banner shows.
-- [ ] A changed image replaces its texture. A changed game shader compiles again (task 24). A compile error keeps the old shader.
-- [ ] Hot reload does not change `persistent` and does not make a rollback step.
-- [ ] Tests: unit tests with injected batches (say text changes at the same step, label removed, syntax error). A Windows platform test with a real file write and a timeout.
+- [x] efsw (vcpkg) watches the project folder. Events within 100 ms become one batch. A unit test can inject a batch with no efsw.
+- [x] A changed `.lua` file reloads all scripts (labels, screens, styles). Then the engine replays to the current label and step. If the label is gone, it goes to `start`. If the step is past the label end, it stops at the last step.
+- [x] A script error keeps the old scripts. The error and its line go to the log, and a red banner shows.
+- [x] A changed image replaces its texture. A changed game shader compiles again (task 24). A compile error keeps the old shader.
+- [x] Hot reload does not change `persistent` and does not make a rollback step.
+- [x] Tests: unit tests with injected batches (say text changes at the same step, label removed, syntax error). A Windows platform test with a real file write and a timeout.
 
 ### 33: Profiler (SPEC §18, §5)
 
@@ -347,11 +347,11 @@ Files: new `engine/tools/script_scan.*`, `engine/tools/story_graph.*`, `engine/t
 
 Files: new `engine/tools/check.*`, `cli/`, `tools/generators/check_fixtures.py`.
 
-- [ ] Output is CSV: `file,line,severity,code,message`. The exit code is 1 if there is an error.
-- [ ] Errors: Lua syntax, a jump or call to an unknown label, a malformed text tag (task 17 parser), a missing asset for a literal name in `scene`, `show`, `music`, `sound`, `voice` or `movie`.
-- [ ] Warnings: unreachable labels, dead ends, dynamic edges, `project.toml` errors.
-- [ ] The template project from task 19 gives no findings.
-- [ ] Tests: one CLI stdout-file test for each finding code, with a generated fixture project.
+- [x] Output is CSV: `file,line,severity,code,message`. The exit code is 1 if there is an error.
+- [x] Errors: Lua syntax, a jump or call to an unknown label, a malformed text tag (task 17 parser), a missing asset for a literal name in `scene`, `show`, `music`, `sound`, `voice` or `movie`.
+- [x] Warnings: unreachable labels, dead ends, dynamic edges, `project.toml` errors.
+- [x] The template project from task 19 gives no findings.
+- [x] Tests: one CLI stdout-file test for each finding code, with a generated fixture project.
 
 ### 36: Debugger (DAP) (SPEC §18)
 

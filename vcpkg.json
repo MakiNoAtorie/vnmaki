@@ -9,6 +9,7 @@
   "dependencies": [
     "dav1d",
     "doctest",
+    "efsw",
     {
       "name": "imgui",
       "default-features": false,

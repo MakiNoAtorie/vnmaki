@@ -129,8 +129,8 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
   }
 
   if (!arguments->headless) {
-    return run_story_window(vfs, config, arguments->max_frames, arguments->data_dir, err,
-                            arguments->profile_csv);
+    return run_story_window(vfs, arguments->project_dir, config, arguments->max_frames,
+                            arguments->data_dir, err, arguments->profile_csv);
   }
 
   // Nothing is drawn or heard, but the scene and the audio still check every file a script
