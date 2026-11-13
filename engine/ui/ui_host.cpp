@@ -51,6 +51,7 @@ void UiHost::show(std::string name, UiNode root, bool modal) {
   }
   screens_.push_back({.name = std::move(name), .root = std::move(root), .modal = modal});
   dirty_ = true;
+  sync_text_input();
 }
 
 bool UiHost::hide(std::string_view name) {
@@ -59,6 +60,7 @@ bool UiHost::hide(std::string_view name) {
     return false;
   }
   screens_.erase(found);
+  sync_text_input();
   return true;
 }
 
@@ -66,20 +68,18 @@ bool UiHost::is_shown(std::string_view name) const {
   return std::ranges::find(screens_, name, &Screen::name) != screens_.end();
 }
 
-bool UiHost::has_modal() const {
-  return std::ranges::any_of(screens_, &Screen::modal);
-}
+bool UiHost::has_modal() const { return std::ranges::any_of(screens_, &Screen::modal); }
 
 UiNode* UiHost::find(std::string_view name) {
-  ensure_layout();
   refresh_bindings();
+  ensure_layout();
   const auto found = std::ranges::find(screens_, name, &Screen::name);
   return found == screens_.end() ? nullptr : &found->root;
 }
 
 std::vector<const UiNode*> UiHost::roots() {
-  ensure_layout();
   refresh_bindings();
+  ensure_layout();
   std::vector<const UiNode*> trees;
   trees.reserve(screens_.size());
   for (const Screen& screen : screens_) {
@@ -110,10 +110,16 @@ std::optional<double> as_number(const ScreenValue& value) {
   return std::nullopt;
 }
 
-void refresh_node(UiNode& node, const ScriptRuntime& runtime) {
+// Sets `relayout` when the text of an input changed, which can change the size of the node.
+void refresh_node(UiNode& node, const ScriptRuntime& runtime, bool& relayout) {
   if (node.bind) {
     const ScreenValue value = runtime.binding(node.bind->table, node.bind->key);
-    if (node.kind == NodeKind::kToggle) {
+    if (node.kind == NodeKind::kInput) {
+      const auto* text = std::get_if<std::string>(&value);
+      const std::string shown = text != nullptr ? *text : std::string{};
+      relayout = relayout || shown != node.text;
+      node.text = shown;
+    } else if (node.kind == NodeKind::kToggle) {
       const auto* flag = std::get_if<bool>(&value);
       node.checked = flag != nullptr && *flag;
     } else if (node.kind == NodeKind::kSlider || node.kind == NodeKind::kBar) {
@@ -121,8 +127,57 @@ void refresh_node(UiNode& node, const ScriptRuntime& runtime) {
     }
   }
   for (UiNode& child : node.children) {
-    refresh_node(child, runtime);
+    refresh_node(child, runtime, relayout);
   }
+}
+
+constexpr unsigned char kContinuationMask = 0xC0;
+constexpr unsigned char kContinuation = 0x80;
+constexpr unsigned char kFirstPrintable = 0x20;
+constexpr unsigned char kDeleteCharacter = 0x7F;
+
+bool is_continuation(char byte) {
+  return (static_cast<unsigned char>(byte) & kContinuationMask) == kContinuation;
+}
+
+std::size_t code_points(std::string_view text) {
+  return static_cast<std::size_t>(
+      std::ranges::count_if(text, [](char byte) { return !is_continuation(byte); }));
+}
+
+// `text` with `typed` added at the end: whole characters, no control characters, and no more than
+// `max_length` characters in all.
+std::string with_typed(std::string text, std::string_view typed, std::size_t max_length) {
+  std::size_t count = code_points(text);
+  std::size_t first = 0;
+  while (first < typed.size() && count < max_length) {
+    std::size_t end = first + 1;
+    while (end < typed.size() && is_continuation(typed[end])) {
+      ++end;
+    }
+    const auto lead = static_cast<unsigned char>(typed[first]);
+    if (lead >= kFirstPrintable && lead != kDeleteCharacter && !is_continuation(typed[first])) {
+      text.append(typed.substr(first, end - first));
+      ++count;
+    }
+    first = end;
+  }
+  return text;
+}
+
+std::string without_last_character(std::string text) {
+  while (!text.empty() && is_continuation(text.back())) {
+    text.pop_back();
+  }
+  if (!text.empty()) {
+    text.pop_back();
+  }
+  return text;
+}
+
+bool is_navigation_key(Key key) {
+  return key == Key::kTab || key == Key::kEscape || key == Key::kUp || key == Key::kDown ||
+         key == Key::kLeft || key == Key::kRight;
 }
 
 // How much a key press moves a slider.
@@ -198,17 +253,56 @@ void UiHost::refresh_bindings() {
     return;
   }
   for (Screen& screen : screens_) {
-    refresh_node(screen.root, *bindings_);
+    refresh_node(screen.root, *bindings_, dirty_);
   }
+}
+
+void UiHost::set_platform(Platform* platform) {
+  platform_ = platform;
+  sync_text_input();
+}
+
+UiNode* UiHost::focused_input() {
+  Screen* screen = keyboard_screen();
+  if (screen == nullptr) {
+    return nullptr;
+  }
+  UiNode* focused = focused_node(screen->root);
+  return focused != nullptr && focused->kind == NodeKind::kInput ? focused : nullptr;
+}
+
+bool UiHost::wants_text_input() { return focused_input() != nullptr; }
+
+void UiHost::sync_text_input() {
+  const bool wanted = wants_text_input();
+  if (platform_ != nullptr && wanted != text_input_on_) {
+    text_input_on_ = wanted;
+    platform_->set_text_input(wanted);
+  }
+}
+
+UiEventResult UiHost::text_event(const TextInputEvent& typed) {
+  UiNode* input = focused_input();
+  if (input == nullptr) {
+    return {};
+  }
+  std::string text = with_typed(input->text, typed.text, input->max_length);
+  if (text != input->text) {
+    write_value(*input, std::move(text));
+  }
+  return {.consumed = true};
 }
 
 // Changes what a bound node follows; the node keeps the value if nothing is bound.
 void UiHost::write_value(UiNode& node, ScreenValue value) {
   if (node.bind && bindings_ != nullptr) {
     static_cast<void>(bindings_->set_binding(node.bind->table, node.bind->key, std::move(value)));
-    refresh_node(node, *bindings_);
+    refresh_node(node, *bindings_, dirty_);
   } else if (const auto* flag = std::get_if<bool>(&value)) {
     node.checked = *flag;
+  } else if (const auto* text = std::get_if<std::string>(&value)) {
+    node.text = *text;
+    dirty_ = true;
   } else if (const auto number = as_number(value)) {
     node.value = *number;
   }
@@ -258,6 +352,7 @@ UiEventResult UiHost::pointer_event(PointF point, bool click) {
   bool shadowed = false;  // a modal screen hides the ones below it from the pointer
   UiNode* hit = nullptr;
   Screen* hit_screen = nullptr;
+  const Screen* typing = focused_input() != nullptr ? keyboard_screen() : nullptr;
   for (auto screen = screens_.rbegin(); screen != screens_.rend(); ++screen) {
     clear_hover(screen->root);
     if (shadowed || hit != nullptr) {
@@ -266,7 +361,9 @@ UiEventResult UiHost::pointer_event(PointF point, bool click) {
     UiNode* node = focusable_at(screen->root, point);
     if (node != nullptr) {
       node->state.hovered = true;
-      static_cast<void>(set_focus(screen->root, node));
+      if (click || &*screen != typing) {  // moving the pointer leaves an input its focus
+        static_cast<void>(set_focus(screen->root, node));
+      }
       hit = node;
       hit_screen = &*screen;
     }
@@ -282,6 +379,10 @@ UiEventResult UiHost::pointer_event(PointF point, bool click) {
   }
   if (hit->kind == NodeKind::kToggle) {
     write_value(*hit, !hit->checked);
+  } else if (hit->kind == NodeKind::kInput) {
+    if (!hit_screen->modal) {
+      captured_ = hit_screen->name;  // the typed text must reach the screen
+    }
   } else if (hit->kind == NodeKind::kSlider) {
     const std::vector<UiNode*> nodes = focusable_nodes(hit_screen->root);
     const auto index = static_cast<std::size_t>(std::ranges::find(nodes, hit) - nodes.begin());
@@ -308,6 +409,23 @@ UiEventResult UiHost::activate_focused(Screen& screen) {
 }
 
 UiEventResult UiHost::key_event(const InputEvent& event) {
+  if (const auto* key = std::get_if<KeyEvent>(&event)) {
+    if (UiNode* input = focused_input()) {
+      if (key->pressed && key->key == Key::kBackspace) {
+        write_value(*input, without_last_character(input->text));
+        return {.consumed = true};
+      }
+      if (key->pressed && !key->repeat &&
+          (key->key == Key::kEnter || key->key == Key::kKeypadEnter) && input->returns) {
+        return {.consumed = true,
+                .activation =
+                    ScreenActivation{.screen = keyboard_screen()->name, .value = *input->returns}};
+      }
+      if (!is_navigation_key(key->key)) {
+        return {.consumed = true};  // typing: a key is not the story's (A, S, L, Space, ...)
+      }
+    }
+  }
   KeyIntent intent;
   if (const auto* key = std::get_if<KeyEvent>(&event); key != nullptr && key->pressed) {
     intent = key_intent(*key);
@@ -367,7 +485,16 @@ UiEventResult UiHost::key_event(const InputEvent& event) {
 }
 
 UiEventResult UiHost::handle_event(const InputEvent& event, const Viewport& viewport) {
+  UiEventResult result = dispatch_event(event, viewport);
+  sync_text_input();
+  return result;
+}
+
+UiEventResult UiHost::dispatch_event(const InputEvent& event, const Viewport& viewport) {
   refresh_bindings();
+  if (const auto* typed = std::get_if<TextInputEvent>(&event)) {
+    return text_event(*typed);
+  }
   if (const auto* move = std::get_if<PointerMoveEvent>(&event)) {
     const PointF point = window_to_virtual(viewport, move->position);
     if (drag_) {
