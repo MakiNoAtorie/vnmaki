@@ -184,8 +184,10 @@ std::string make_lip_sync(const LayeredRequest::LipSync& sync, LayeredDefinition
 // "scene3d", only when a 3D scene is shown: a u32 count, then for each scene (layer by layer): u8
 // layer, u32 index in the layer (counting every displayable: 3D scenes are put back last), tag,
 // the properties as for "displayables", the 16 f32 of the camera, a u32 count of models and for
-// each its tag, path, u8 style, game shader name ("" for none) and 16 f32; then a u32 count of
-// lights and for each its name, u8 kind and 16 f32.
+// each its tag, path, u8 style, game shader name ("" for none), 16 f32, then its clip (u8 1 and the
+// clip's name, u8 loop and f32 speed; or u8 0 for none: a clip that does not loop is at its end, a
+// loop starts at time 0) and its lip sync (the morph target name, the voice tag; "" for none); then
+// a u32 count of lights and for each its name, u8 kind and 16 f32.
 
 constexpr std::uint32_t kFormatVersion = 2;
 constexpr std::string_view kDisplayablesPart = "displayables";
@@ -386,6 +388,44 @@ auto* pose_3d(Layers& layers, std::string_view tag) {
   std::string_view object;
   auto* found = split_3d_tag(tag, scene, object) ? find_scene3d(layers, scene) : nullptr;
   return found != nullptr ? found->object(object) : nullptr;
+}
+
+// True while a model that `tag` names ("@3d.<scene>.<model>"; every model when empty) plays a clip
+// that does not loop.
+template <typename Layers>
+bool clips_playing_3d(const Layers& layers, std::string_view tag) {
+  std::string_view scene_tag;
+  std::string_view object;
+  if (!tag.empty() && !(tag.starts_with(kScene3dTagPrefix) && split_3d_tag(tag, scene_tag, object))) {
+    return false;
+  }
+  for (const auto& shown : layers) {
+    for (const auto& entry : shown) {
+      const auto* scene = dynamic_cast<const Scene3dDisplayable*>(entry.displayable.get());
+      if (scene != nullptr && (tag.empty() || entry.tag == scene_tag) && scene->clip_busy(object)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Puts the clips that `tag` names (see clips_playing_3d) that do not loop at their end.
+template <typename Layers>
+void finish_clips_3d(Layers& layers, std::string_view tag) {
+  std::string_view scene_tag;
+  std::string_view object;
+  if (!tag.empty() && !(tag.starts_with(kScene3dTagPrefix) && split_3d_tag(tag, scene_tag, object))) {
+    return;
+  }
+  for (auto& shown : layers) {
+    for (auto& entry : shown) {
+      auto* scene = dynamic_cast<Scene3dDisplayable*>(entry.displayable.get());
+      if (scene != nullptr && (tag.empty() || entry.tag == scene_tag)) {
+        scene->finish_model_clips(object);
+      }
+    }
+  }
 }
 
 // A 3D object has only the channels of its pose to tween.
@@ -877,6 +917,7 @@ void Scene::finish_tweens(std::string_view tag) {
     shake_.reset();
   }
   timeline_.finish(tag, lookup());
+  finish_clips_3d(layers_, tag);
   for (std::vector<Entry>& shown : layers_) {
     for (Entry& entry : shown) {
       if (tag.empty() || entry.tag == tag) {
@@ -889,7 +930,8 @@ void Scene::finish_tweens(std::string_view tag) {
 bool Scene::tweening(std::string_view tag) const {
   if (timeline_.busy(tag) ||
       (tag == kTransitionTag && transition_.has_value() && !transition_->clock.finished()) ||
-      ((tag.empty() || tag == kCameraTag) && shake_.has_value())) {
+      ((tag.empty() || tag == kCameraTag) && shake_.has_value()) ||
+      clips_playing_3d(layers_, tag)) {
     return true;
   }
   return std::ranges::any_of(layers_, [tag](const std::vector<Entry>& shown) {
@@ -1279,7 +1321,19 @@ std::string Scene::set_model_3d(Scene3dDisplayable& scene, const Scene3dRequest&
     return "a 3D scene has too many models";
   }
   Model3d model = made ? Model3d{.tag = tag, .properties = default_model_pose()} : *found;
+  if (model.path != request.path) {
+    model.clips = {};  // the clips belong to the old file
+  }
   model.path = request.path;
+  if (request.lip_morph.has_value()) {
+    // The file is known unless this is a replay, which does not read it.
+    const ModelData* data = models_->find_data(request.path);
+    if (!request.lip_morph->empty() && data != nullptr && !has_morph(*data, *request.lip_morph)) {
+      return quoted("model '", tag, "' has no morph target '" + *request.lip_morph + "'");
+    }
+    model.lip_morph = *request.lip_morph;
+    model.lip_voice_tag = request.lip_voice_tag.empty() ? tag : request.lip_voice_tag;
+  }
   if (request.shader.has_value()) {
     std::uint32_t id = 0;
     if (!style_from_name(*request.shader, model.style)) {
@@ -1395,6 +1449,13 @@ std::string Scene::scene3d(const Scene3dRequest& request) {
       return set_light_3d(*scene, request);
     case Kind::kCamera:
       return set_camera_3d(*scene, request);
+    case Kind::kPlay:
+      return scene->play(request.name, request.clip,
+                         PlayOptions{.loop = request.loop,
+                                     .fade = request.fade,
+                                     .speed = request.speed,
+                                     .seek = request.seek,
+                                     .replaying = request.replaying});
     case Kind::kRemove:
       if (!scene->remove(request.name)) {
         return quoted("scene '", request.scene, "' has no model or light '" + request.name + "'");
@@ -1628,6 +1689,16 @@ std::vector<std::byte> Scene::capture() const {
         scene3ds.u8(static_cast<std::uint8_t>(model.style));
         scene3ds.string(shader != nullptr ? shader->name : std::string{});
         scene3ds.uniforms(resting_pose.uniforms);
+        const ClipPlayer resting_clips = vnmaki::settled(model.clips);
+        scene3ds.u8(resting_clips.layers.empty() ? 0 : 1);
+        if (!resting_clips.layers.empty()) {
+          const ClipLayer& clip = resting_clips.layers.front();
+          scene3ds.string(clip.clip);
+          scene3ds.u8(clip.loop ? 1 : 0);
+          scene3ds.f32(static_cast<float>(clip.speed));
+        }
+        scene3ds.string(model.lip_morph);
+        scene3ds.string(model.lip_voice_tag);
       }
       scene3ds.u32(static_cast<std::uint32_t>(scene->lights().size()));
       for (const Light3d& light : scene->lights()) {
@@ -1923,6 +1994,20 @@ void Scene::read_scene3d(std::span<const std::byte> bytes, Layers& layers) const
       model.style = static_cast<ShadingStyle>(style);
       model.properties.shader = shader_id(reader.string());  // an undeclared shader is ignored
       model.properties.uniforms = reader.uniforms();
+      if (reader.u8() != 0) {
+        std::string clip = reader.string();
+        const bool loop = reader.u8() != 0;
+        const float speed = reader.f32();
+        if (!(speed > 0 && speed <= kMaxClipSpeed)) {
+          throw std::invalid_argument{"scene state: a clip's speed is not valid"};
+        }
+        model.clips.layers.push_back(ClipLayer{.clip = std::move(clip),
+                                               .loop = loop,
+                                               .speed = static_cast<double>(speed),
+                                               .time = loop ? 0 : kEndOfClip});
+      }
+      model.lip_morph = reader.string();
+      model.lip_voice_tag = reader.string();
       scene->models().push_back(std::move(model));
     }
     const std::uint32_t light_count = reader.u32();
@@ -2076,6 +2161,8 @@ void Scene::update(double seconds) {
         sprite->set_voice_level(voice_level_ != nullptr
                                     ? voice_level_->voice_level(sprite->lip_voice_tag())
                                     : std::nullopt);
+      } else if (auto* scene = dynamic_cast<Scene3dDisplayable*>(entry.displayable.get())) {
+        scene->set_voice_level(voice_level_);
       }
     }
   }
@@ -2087,6 +2174,7 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
     renderer.destroy_texture(retired);
   }
   retired_textures_->clear();
+  models_->release_retired(renderer);
   for (TextureId& frame : frames_) {
     if (frame == TextureId{}) {
       frame = renderer.create_render_target(virtual_size_, TextureFilter::kNearest);
