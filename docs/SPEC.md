@@ -15,7 +15,7 @@
 
 - Ren'Py compatibility or `.rpy` import.
 - Physics, IK, pathfinding, tile maps, or a real-time gameplay framework. Minigames can use Lua and plugins.
-- 3D modeling or animation authoring. External tools make 3D content. The engine plays it back.
+- 3D modeling, model editing or animation authoring. External tools make 3D content. The engine plays it back.
 - Live2D support.
 
 ## 3. Platforms
@@ -196,7 +196,7 @@ end)
 
 ### Backlog
 
-- Read-only, scrollable dialogue history with voice replay. It uses the same step log as rollback, but it is separate from rollback.
+- Read-only, scrollable dialogue history with voice replay. It is separate from rollback, but it uses the same step log.
 
 ### Skip / auto
 
@@ -252,7 +252,6 @@ wait_all()
 - **Compositing:** a 3D scene renders into a layer and mixes with 2D. Examples: 3D background with 2D sprites, 3D character with a painted background.
 - **Camera:** scriptable position, look-at, FOV. All tweenable.
 - **Lighting and shading:** directional and point lights. Unlit, toon, simple PBR. Custom shaders allowed.
-- Excluded: physics, IK, model editing, real-time 3D gameplay.
 
 ```lua
 local hall = scene3d("hall.glb")
@@ -264,21 +263,20 @@ wait("kai")
 
 ## 13. Text
 
-- **Shaping:** HarfBuzz. **Rasterizing:** FreeType. **Line breaking:** libunibreak, with Japanese kinsoku rules. **Bidi:** SheenBidi.
-- The glyph atlas is rasterized at actual screen resolution and rebuilt on resize.
-- SDF glyphs are used only for effect text: outline, glow, shadow, large animated titles.
-- Font fallback chains per language.
-- Ruby text (furigana). Vertical text is a later addition.
-- Typewriter reveal per character, with speed tags and inline pauses.
-- Per-character effects: wave, shake, fade-in.
-- Inline tags: color, size, font, bold/italic, speed, pause, ruby, link.
+- Libraries: see §4. Line breaks obey Japanese kinsoku rules.
+- The glyph atlas uses the screen resolution. A resize rebuilds it.
+- SDF glyphs only for effect text: outline, glow, shadow, large animated titles.
+- A font fallback chain for each language.
+- Inline tags: color, size, font, bold/italic, speed, pause, ruby (furigana), link.
+- Typewriter reveal per character. Effects per character: wave, shake, fade-in.
+- Vertical text comes later.
 
 ## 14. Audio and Video
 
-- **Audio:** miniaudio. Named channels: music, sound, voice, ambient, UI, custom. Crossfades, loops with loop points, ducking music under voice, per-channel volume in preferences.
-- Formats: Opus (recommended), Vorbis, WAV, FLAC.
-- **Video:** AV1 in WebM via dav1d and libwebm, Opus audio track. Fullscreen cutscenes, or video as a displayable (looping backgrounds, video sprites). Hardware decode later, where available.
-- The documentation gives a recommended encoding preset for authors.
+- **Audio:** channels music, sound, voice, ambient, UI, custom. Crossfades, loop points, music ducks under voice. Each channel has a volume in preferences.
+- Audio formats: Opus (recommended), Vorbis, WAV, FLAC.
+- **Video:** AV1 in WebM with an Opus track. Fullscreen cutscenes, or a displayable (loops, video sprites). Hardware decode later.
+- The documentation gives an encoding preset for authors.
 
 ## 15. UI System (Screens)
 
@@ -327,7 +325,7 @@ screen "quick_menu" {
 - **Hot reload:** A file watcher reloads changed scripts, images, styles, shaders. After a script reload, the engine replays the current label to the current step.
 - **Debugger:** Lua debugging through the Debug Adapter Protocol (VS Code and other DAP clients). Breakpoints, step in, step over, step out, call stack, locals, `store` inspection, watch expressions. Jumps to any label and step with replay.
 - **Dev overlay (ImGui):** variable viewer and editor, scene graph inspector, displayable properties, active tweens, audio channels, performance stats, log console with Lua REPL.
-- **Story graph:** static analysis of scripts (labels, `jump`, `call`, `menu` branches) drawn as a node graph. Edges found only at run time come from traces. Clicking a node opens its script or jumps there in-game. Shows unreachable labels and dead ends.
+- **Story graph:** a node graph of labels and `jump`, `call` and `menu` edges, from static analysis and run-time traces. A click on a node opens its script or goes there in-game. It shows unreachable labels and dead ends.
 - **Screen editor (later):** WYSIWYG editing of the screen tree, written back to the Lua screen files.
 - **Profiler:** frame timing, draw calls, texture memory, load times. Exports CSV.
 
@@ -366,10 +364,7 @@ screen "quick_menu" {
 
 ```
 vnmaki/
-  engine/
-    core/ runtime/ state/ scene/ anim/ ui/ text/
-    audio/ video/ model3d/ puppet/ render/ platform/
-    vfs/ jobs/ tools/
+  engine/<module>/        # core and the modules in §6
   cli/
   shaders/
   templates/default/      # project template + default screens
