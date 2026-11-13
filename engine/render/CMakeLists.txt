@@ -30,7 +30,7 @@ target_sources(vnmaki_engine PRIVATE sdl_shader_compiler.cpp)
 target_compile_definitions(vnmaki_engine PRIVATE VNMAKI_RUNTIME_SHADERS=${vnmaki_runtime_shaders})
 
 # The headers a game shader includes, embedded as text for the run-time compiler.
-foreach(header IN ITEMS vnmaki sprite_fragment)
+foreach(header IN ITEMS vnmaki sprite_fragment transition)
   set(header_path "${PROJECT_SOURCE_DIR}/shaders/${header}.hlsli")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${header_path}")
   string(TOUPPER "${header}" header_upper)
@@ -49,6 +49,11 @@ vnmaki_add_shaders(
   SHADERS "${PROJECT_SOURCE_DIR}/shaders/sprite.vert.hlsl"
           "${PROJECT_SOURCE_DIR}/shaders/sprite.frag.hlsl"
           "${PROJECT_SOURCE_DIR}/shaders/sdf_text.frag.hlsl"
+          "${PROJECT_SOURCE_DIR}/shaders/transition_dissolve.frag.hlsl"
+          "${PROJECT_SOURCE_DIR}/shaders/transition_fade.frag.hlsl"
+          "${PROJECT_SOURCE_DIR}/shaders/transition_slide.frag.hlsl"
+          "${PROJECT_SOURCE_DIR}/shaders/transition_wipe.frag.hlsl"
+          "${PROJECT_SOURCE_DIR}/shaders/transition_mask.frag.hlsl"
   INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/shaders")
 
 # stb_image decodes PNG and JPEG. vcpkg's stb installs stb_image.h at the top of its include

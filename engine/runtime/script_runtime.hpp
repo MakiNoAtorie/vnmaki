@@ -90,7 +90,8 @@ struct CallScreenRequest {
 /// `wait(tag)` or `wait_all()`: the script waits until the tweens of `tag` (all tweens when `tag`
 /// is empty) have ended. A wait is always a step, also when nothing is tweening, so a replay
 /// counts the same steps as live play. Answered with ScriptRuntime::advance(); see
-/// engine/anim/wait_presenter.hpp. Rollback skips wait steps (ScriptPosition::wait).
+/// engine/anim/wait_presenter.hpp. Rollback skips wait steps (ScriptPosition::wait). A transition
+/// is a wait too, for the tag kTransitionTag.
 struct WaitRequest {
   std::string tag{};
 
@@ -242,6 +243,23 @@ struct ShaderRequest {
   std::vector<UniformValue> uniforms{};
 };
 
+/// `transition(name, options)`, or the `with` option of `scene`, `show` and `hide`. Fields the
+/// script left out are empty.
+struct TransitionRequest {
+  /// A built-in transition (engine/anim/transition.hpp) or the name of a declared game shader.
+  std::string name{};
+  std::optional<double> duration{};      ///< Seconds.
+  std::optional<std::uint32_t> color{};  ///< 0xRRGGBB: what `fade` goes through.
+  std::optional<std::string> mask{};     ///< An image name: the mask of `mask`.
+  std::optional<double> softness{};      ///< The soft edge of `wipe_*` and `mask`, from 0 to 1.
+  std::vector<UniformValue> uniforms{};  ///< The uniforms of a custom shader, but "progress".
+  /// Set while the runtime replays: the transition is checked and not shown.
+  bool replaying = false;
+};
+
+/// The tag of the WaitRequest that a transition makes: the script blocks like `wait`.
+inline constexpr std::string_view kTransitionTag = "@transition";
+
 /// `tween(tag, options)`, or the group `sequence{...}` or `parallel{...}` of tweens. Fields the
 /// script left out are empty. Positions are fractions of the virtual resolution, as for `show`;
 /// `anchor` and `crop` are fractions of the displayable.
@@ -317,6 +335,14 @@ class SceneCommands {
   /// Sets the shader and uniform values of a displayable or a layer. Returns why it cannot (an
   /// unknown tag, shader or uniform).
   [[nodiscard]] virtual std::string set_shader(const ShaderRequest& /*request*/) { return {}; }
+
+  /// Checks a transition and starts it: it mixes the frame as it was before the changes of this
+  /// step with the frame after them (engine/anim/transition.hpp). Returns why it cannot (an
+  /// unknown name or a bad option), as for `show`. The runtime then waits like `wait`: the tag
+  /// of that wait is kTransitionTag (`tweening(kTransitionTag)` is true while it runs, and
+  /// `finish_tweens(kTransitionTag)` ends it). The default does nothing, for implementations
+  /// that cannot draw transitions.
+  [[nodiscard]] virtual std::string transition(const TransitionRequest& /*request*/) { return {}; }
 };
 
 /// What `show_screen`, `hide_screen` and `call_screen` need from the engine (engine/ui/ui_host.hpp
