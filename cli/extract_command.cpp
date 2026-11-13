@@ -34,14 +34,6 @@ struct Output {
   PoFile file{};
 };
 
-// The language is a file name: letters, digits, '-' and '_' only.
-bool is_language_code(std::string_view language) {
-  return !language.empty() && std::ranges::all_of(language, [](char c) {
-           return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-                  c == '-' || c == '_';
-         });
-}
-
 std::optional<std::string> read_text(const fs::path& path) {
   std::ifstream in{path, std::ios::binary};
   if (!in) {
@@ -114,10 +106,6 @@ int extract_command(std::span<const std::string_view> args, std::ostream& out, s
   outputs.push_back({.path = std::string{kTemplatePath}, .file = tmpl});
   for (std::size_t i = 1; i < config.languages.size(); ++i) {  // [0] is the source language
     const std::string& language = config.languages[i];
-    if (!is_language_code(language)) {
-      err << "vnmaki: project.toml: '" << language << "' is not a language code\n";
-      return kExitError;
-    }
     const std::string path = translation_path(language);
     PoFile old;
     if (const std::optional<std::string> text = read_text(directory / utf8_path(path))) {

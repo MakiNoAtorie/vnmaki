@@ -70,6 +70,10 @@ std::vector<std::string> read_languages(const toml::node& node) {
     if (!code || code->empty()) {
       fail_at(node, kReason);
     }
+    if (!is_language_code(*code)) {
+      fail_at(node, "'languages' has '" + *code +
+                        "', which is not a language code (letters, digits, '-' and '_')");
+    }
     if (std::find(languages.begin(), languages.end(), *code) != languages.end()) {
       fail_at(node, "'languages' lists '" + *code + "' twice");
     }
@@ -256,6 +260,13 @@ std::size_t read_count(const toml::node& node, std::string_view key) {
 }
 
 }  // namespace
+
+bool is_language_code(std::string_view language) {
+  return !language.empty() && std::ranges::all_of(language, [](char c) {
+           return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                  c == '-' || c == '_';
+         });
+}
 
 ProjectConfig parse_project_config(std::string_view toml_text) {
   toml::table table;

@@ -75,12 +75,6 @@ Kind kind_of(std::string_view path) {
   return Kind::kNone;
 }
 
-bool is_language_code(std::string_view language) {
-  return !language.empty() && std::ranges::all_of(language, [](char c) {
-    return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '-' || c == '_';
-  });
-}
-
 std::vector<std::byte> bytes_of(std::string_view text) {
   std::vector<std::byte> bytes;
   bytes.reserve(text.size());
@@ -209,9 +203,6 @@ ImportReport Importer::import_paths(const std::vector<std::string>& sources) con
             scripts = read_scripts(*vfs_);
           }
           for (const std::string& language : config.languages) {
-            if (!is_language_code(language)) {
-              throw std::runtime_error{"project.toml: '" + language + "' is not a language code"};
-            }
             auto found = codepoints.find(language);
             if (found == codepoints.end()) {
               found = codepoints
