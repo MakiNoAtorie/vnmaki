@@ -6,6 +6,7 @@
 
 #include <doctest/doctest.h>
 
+#include "engine/audio/audio.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/platform.hpp"
@@ -13,6 +14,7 @@
 #include "engine/render/renderer.hpp"
 #include "engine/render/sdl_gpu_renderer.hpp"
 #include "engine/runtime/script_runtime.hpp"
+#include "engine/scene/scene.hpp"
 #include "engine/tools/log_buffer.hpp"
 #include "engine/tools/overlay.hpp"
 #include "engine/vfs/vfs.hpp"
@@ -29,6 +31,7 @@ using vnmaki::Key;
 using vnmaki::KeyEvent;
 using vnmaki::LogBuffer;
 using vnmaki::LogLevel;
+using vnmaki::PointerButtonEvent;
 using vnmaki::PointerMoveEvent;
 using vnmaki::ScriptRuntime;
 using vnmaki::SdlGpuRenderer;
@@ -41,6 +44,11 @@ constexpr Size kScreen{.width = 1280, .height = 720};
 constexpr float kInsideConsole = 100;
 constexpr float kOutsideConsole = 1000;
 constexpr int kSettleFrames = 3;
+// The tab bar of the inspectors: its y, and the x range and step of a sweep that clicks each tab.
+constexpr float kTabBarY = 45;
+constexpr float kTabsFromX = 690;
+constexpr float kTabsToX = 1090;
+constexpr float kTabStepX = 15;
 constexpr std::size_t kBytesPerPixel = 4;
 
 KeyEvent key(Key which, bool pressed) { return {.key = which, .pressed = pressed}; }
@@ -157,4 +165,32 @@ TEST_CASE("overlay: a line typed into the console runs in the sandbox") {
   CHECK(entries.back().text == "6");
   overlay.set_visible(false);
   CHECK_FALSE(fixture.platform.text_input_enabled());
+}
+
+TEST_CASE("overlay: every inspector tab draws with a scene and audio") {
+  Fixture fixture;
+  if (!fixture.renderer) {
+    return;
+  }
+  vnmaki::Scene scene{fixture.vfs, kScreen};
+  vnmaki::Audio audio{fixture.vfs};
+  DevOverlay overlay{*fixture.renderer, fixture.platform, fixture.runtime, fixture.log};
+  overlay.set_inspect_targets(&scene, &audio);
+  overlay.set_visible(true);
+  REQUIRE(fixture.runtime.eval("store.bag = { a = { b = 1 }, c = 2 }").ok);
+  fixture.settle(overlay);
+  // Click along the tab bar, so that each tab is drawn for a frame (a bad Push or Pop in a tab
+  // asserts in ImGui, and the test fails).
+  for (float x = kTabsFromX; x < kTabsToX; x += kTabStepX) {
+    const vnmaki::PointF at{.x = x, .y = kTabBarY};
+    static_cast<void>(overlay.handle_event(PointerMoveEvent{.position = at}));
+    fixture.settle(overlay);
+    static_cast<void>(overlay.handle_event(
+        PointerButtonEvent{.button = vnmaki::MouseButton::kLeft, .pressed = true, .position = at}));
+    fixture.settle(overlay);
+    static_cast<void>(overlay.handle_event(PointerButtonEvent{
+        .button = vnmaki::MouseButton::kLeft, .pressed = false, .position = at}));
+    fixture.settle(overlay);
+  }
+  CHECK(fixture.frame(overlay) > 0);
 }

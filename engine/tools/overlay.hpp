@@ -6,6 +6,8 @@
 #include <chrono>
 #include <cstddef>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
@@ -16,10 +18,15 @@
 
 namespace vnmaki {
 
+class Audio;
 class ImguiBackend;
+class Scene;
+struct StoreRow;
 
-/// The overlay: a log console with a Lua REPL. F12 shows and hides it. Construct it after the
-/// renderer and destroy it before; `platform`, `runtime` and `log` must outlive it.
+/// The overlay: a log console with a Lua REPL, and the inspectors (store, persistent, scene,
+/// tweens, audio, labels; their rows come from engine/tools/inspect.hpp). F12 shows and hides it.
+/// Construct it after the renderer and destroy it before; `platform`, `runtime` and `log` must
+/// outlive it.
 ///
 /// The game keeps running under the overlay. While the pointer is over an overlay window, or a
 /// text field of the overlay has the keyboard, handle_event() takes the event, so the game gets
@@ -41,6 +48,10 @@ class DevOverlay {
   /// wants.
   [[nodiscard]] bool handle_event(const InputEvent& event);
 
+  /// The scene and audio that the inspector panels show. Both may be null (their tabs say so);
+  /// they must outlive the overlay or be reset first.
+  void set_inspect_targets(Scene* scene, Audio* audio);
+
   /// Builds this frame's windows and gives them to the renderer, which draws them in its
   /// end_frame() over the last pass. Call it once per frame after the game's passes. Does
   /// nothing while hidden. `window_pixels` is the size of that pass's target.
@@ -51,11 +62,20 @@ class DevOverlay {
   static constexpr std::size_t kLevels = 3;
 
   void draw_console();
+  void draw_inspectors();
+  void draw_store_tree(const std::vector<StoreRow>& rows);
+  void draw_scene_tab();
+  void draw_tweens_tab();
+  void draw_audio_tab();
+  void draw_labels_tab();
   void run_input();
 
   std::unique_ptr<ImguiBackend> backend_;
   Platform* platform_;
   ScriptRuntime* runtime_;
+  Scene* scene_ = nullptr;
+  Audio* audio_ = nullptr;
+  std::string selected_tag_;
   LogBuffer* log_;
   std::chrono::steady_clock::time_point last_frame_ = std::chrono::steady_clock::now();
   bool visible_ = false;
