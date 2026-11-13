@@ -154,7 +154,12 @@ function ret()
   transfer("ret", "")
 end
 
--- character { name =, color = "#rrggbb", voice_tag =, auto_multiplier = }: a table `say` reads.
+-- Defined with NVL mode below: the page that goes with a say, narrate or menu (nil: not NVL).
+-- Defined with the gallery below: notes that an image was shown, which can unlock it.
+local nvl_page, note_shown
+
+-- character { name =, color = "#rrggbb", voice_tag =, auto_multiplier =, kind = "adv" or "nvl" }:
+-- a table `say` reads.
 function character(definition)
   if type(definition) ~= "table" then
     bad_argument("character", 1, "table", definition)
@@ -175,8 +180,12 @@ function character(definition)
   if multiplier ~= nil and (type(multiplier) ~= "number" or multiplier < 0) then
     error("bad option 'auto_multiplier' to 'character' (number of 0 or more expected)", 2)
   end
+  local kind = definition.kind
+  if kind ~= nil and kind ~= "adv" and kind ~= "nvl" then
+    error("bad option 'kind' to 'character' (\"adv\" or \"nvl\" expected)", 2)
+  end
   return { name = definition.name, color = color, voice_tag = definition.voice_tag,
-           auto_multiplier = multiplier }
+           auto_multiplier = multiplier, kind = kind }
 end
 
 -- Raises a bad text tag at the caller of the API function that called this.
@@ -188,7 +197,7 @@ local function check_text(text)
 end
 
 function say(who, text)
-  local speaker, color, voice_tag, multiplier
+  local speaker, color, voice_tag, multiplier, kind
   if type(who) == "string" then
     speaker = who
   elseif type(who) == "table" and type(who.name) == "string" then
@@ -200,6 +209,7 @@ function say(who, text)
       voice_tag = who.voice_tag
     end
     multiplier = who.auto_multiplier
+    kind = who.kind
   elseif who ~= nil then
     bad_argument("say", 1, "string, character or nil", who)
   end
@@ -208,6 +218,7 @@ function say(who, text)
   end
   require_label("say")
   check_text(text)
+  engine.stage_nvl(nvl_page(kind, speaker, text, color))
   if speaker == nil then
     engine.narrate(text)
   else
@@ -221,6 +232,7 @@ function narrate(text)
   end
   require_label("narrate")
   check_text(text)
+  engine.stage_nvl(nvl_page(nil, nil, text))
   engine.narrate(text)
 end
 
@@ -272,6 +284,7 @@ function scene(image, options)
   if problem then
     error(problem, 2)
   end
+  note_shown(image)
   engine.scene_command("scene " .. image)
   end_with(with)
 end
@@ -293,6 +306,7 @@ function show(tag, options)
   if problem then
     error(problem, 2)
   end
+  note_shown(image or tag)
   local command = "show " .. tag
   if image then
     command = command .. " image " .. image
@@ -442,6 +456,7 @@ function menu(options)
     error(format("bad option 'fixed' to 'menu' (boolean expected, got %s)", type(fixed)), 2)
   end
   require_label("menu")
+  engine.stage_nvl(nvl_page())
   return engine.menu(texts, fixed == true)
 end
 )lua" R"lua(
@@ -1214,6 +1229,105 @@ string.dump = nil
 -- Globals the engine owns: scripts read them but cannot replace them.
 local persistent = {}
 )lua" R"lua(
+-- Pause, NVL mode and the gallery (docs/SPEC.md sections 7, 8 and 15).
+-- pause(seconds) blocks like `wait`: a step that a click or skip mode ends, and a replay does not
+-- wait for.
+function pause(seconds)
+  if type(seconds) ~= "number" then
+    bad_argument("pause", 1, "number", seconds)
+  end
+  if not (seconds >= 0 and seconds <= 86400) then
+    error("bad argument #1 to 'pause' (a number of seconds from 0 to 86400 expected)", 2)
+  end
+  require_label("pause")
+  engine.wait("@pause", seconds)
+end
+
+-- The NVL page is store.__nvl = { on = bool, { speaker =, text =, color = }, ... }. Being in
+-- `store`, it is in snapshots and saves, and a replay builds it again. A line is NVL in NVL mode
+-- and for a character of kind "nvl"; it joins the page, and the engine gets the page with the
+-- request. A menu (no text) gets the page in NVL mode. Everything else gets nil.
+nvl_page = function(kind, speaker, text, color)
+  local page = rawget(store, "__nvl")
+  local on = page ~= nil and page.on
+  if text == nil then
+    return on and page or nil
+  end
+  if kind ~= "nvl" and not on then
+    return nil
+  end
+  if page == nil then
+    page = { on = false }
+    rawset(store, "__nvl", page)
+  end
+  page[#page + 1] = { speaker = speaker or "", text = text, color = color }
+  return page
+end
+
+-- nvl(true) shows the lines that follow on the NVL screen; nvl(false) goes back to the say box
+-- and empties the page.
+function nvl(on)
+  if type(on) ~= "boolean" then
+    bad_argument("nvl", 1, "boolean", on)
+  end
+  require_label("nvl")
+  local page = rawget(store, "__nvl")
+  if not on then
+    rawset(store, "__nvl", nil)
+  elseif page == nil then
+    rawset(store, "__nvl", { on = true })
+  else
+    page.on = true
+  end
+end
+
+-- Empties the page: the next line starts a new screen.
+function nvl_clear()
+  require_label("nvl_clear")
+  local page = rawget(store, "__nvl")
+  if page ~= nil then
+    rawset(store, "__nvl", { on = page.on })
+  end
+end
+
+-- persistent.unlocks["kind/name"] = true. Showing a gallery image unlocks "cg/<image>". A replay
+-- writes it again, which is harmless.
+local function unlock_key(fname, kind, name)
+  if type(kind) ~= "string" then
+    bad_argument(fname, 1, "string", kind, 1)
+  end
+  if type(name) ~= "string" then
+    bad_argument(fname, 2, "string", name, 1)
+  end
+  return kind .. "/" .. name
+end
+function unlock(kind, name)
+  local key = unlock_key("unlock", kind, name)
+  local unlocks = rawget(persistent, "unlocks")
+  if type(unlocks) ~= "table" then
+    unlocks = {}
+    persistent.unlocks = unlocks
+  end
+  unlocks[key] = true
+end
+function unlocked(kind, name)
+  local key = unlock_key("unlocked", kind, name)
+  local unlocks = rawget(persistent, "unlocks")
+  return type(unlocks) == "table" and unlocks[key] == true
+end
+local gallery_set, gallery_unpack = {}, table.unpack
+for _, name in ipairs(engine.gallery) do
+  gallery_set[name] = true
+end
+note_shown = function(image)
+  if gallery_set[image] then
+    unlock("cg", image)
+  end
+end
+function gallery_images()
+  return { gallery_unpack(engine.gallery) }
+end
+)lua" R"lua(
 -- Preferences, bindings and the bridge the engine calls (docs/SPEC.md sections 15 and 17).
 -- `prefs` keeps what the player changed in persistent.prefs; a value never set reads as its
 -- default. The engine reads these keys: text_speed (characters a second), auto_delay (seconds),
@@ -1901,6 +2015,7 @@ class ScriptRuntime::Impl {
   std::uint32_t hook_period_ = 0;
   BlockingRequest request_;
   ScreenNodeDef staged_screen_;  // the tree stage_screen read, for show_screen or call_screen
+  std::optional<NvlPage> staged_nvl_;  // the page stage_nvl read, for the next say, narrate or menu
   std::string error_;
   bool replaying_ = false;
   Replay replay_;
@@ -1976,6 +2091,11 @@ void ScriptRuntime::Impl::bind_engine() {
   engine_ = lua_.create_table();
   engine_["canvas_width"] = options_.canvas_width;
   engine_["canvas_height"] = options_.canvas_height;
+  sol::table gallery = lua_.create_table();
+  for (std::size_t i = 0; i < options_.gallery.size(); ++i) {
+    gallery[i + 1] = options_.gallery[i];
+  }
+  engine_["gallery"] = gallery;
   engine_["in_label"] = [this](sol::this_state state) { return in_label(state); };
   engine_["has_label"] = [this](const std::string& name) { return has_label(name); };
   // Primitives that create Lua values do so inside an unlimited scope and
@@ -2031,16 +2151,37 @@ void ScriptRuntime::Impl::bind_engine() {
     }
     yield_at(state,
              SayRequest{.speaker = speaker, .text = text, .color = rgb, .voice_tag = voice_tag,
-                         .auto_multiplier = auto_multiplier});
+                         .auto_multiplier = auto_multiplier,
+                         .nvl = std::exchange(staged_nvl_, std::nullopt)});
   });
   engine_["narrate"] = sol::yielding([this](sol::this_state state, const std::string& text) {
-    yield_at(state, NarrateRequest{.text = text});
+    yield_at(state, NarrateRequest{.text = text, .nvl = std::exchange(staged_nvl_, std::nullopt)});
   });
+  // The prelude stages the NVL page (nil outside NVL) just before each say, narrate and menu.
+  engine_["stage_nvl"] = [this](const sol::object& page) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    staged_nvl_.reset();
+    if (page.get_type() != sol::type::table) {
+      return;
+    }
+    const sol::table lines = page.as<sol::table>();
+    NvlPage staged;
+    for (std::size_t i = 1; i <= lines.size(); ++i) {
+      const sol::table line = lines.raw_get<sol::table>(i);
+      NvlLine added{.speaker = line.raw_get<sol::optional<std::string>>("speaker").value_or(""),
+                    .text = line.raw_get<sol::optional<std::string>>("text").value_or("")};
+      if (const auto color = line.raw_get<sol::optional<std::int64_t>>("color")) {
+        added.color = static_cast<std::uint32_t>(*color);
+      }
+      staged.push_back(std::move(added));
+    }
+    staged_nvl_ = std::move(staged);
+  };
   // The prelude checked that `options` is a list of strings. A stack_table
   // makes no registry reference, so nothing here can raise a Lua error.
   engine_["menu"] = sol::yielding([this](sol::this_state state, const sol::stack_table& options,
                                          bool fixed) {
-    MenuRequest request{.fixed = fixed};
+    MenuRequest request{.fixed = fixed, .nvl = std::exchange(staged_nvl_, std::nullopt)};
     const std::size_t count = options.size();
     request.options.reserve(count);
     for (std::size_t i = 1; i <= count; ++i) {
@@ -2237,9 +2378,10 @@ void ScriptRuntime::Impl::bind_engine() {
                                             .duration = duration,
                                             .replaying = replaying_ || still}));
   };
-  engine_["wait"] = sol::yielding([this](sol::this_state state, const std::string& tag) {
-    yield_at(state, WaitRequest{.tag = tag});
-  });
+  engine_["wait"] = sol::yielding(
+      [this](sol::this_state state, const std::string& tag, std::optional<double> seconds) {
+        yield_at(state, WaitRequest{.tag = tag, .seconds = seconds.value_or(0)});
+      });
   engine_["scene_command"] = [this](const std::string& command) {
     if (!replaying_) {
       observer_->on_scene_command(command);

@@ -128,6 +128,7 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
   CompositeSceneState state{{&scene, &audio}};
   HeadlessOptions options;
   options.runtime.rollback_depth = config.rollback_depth;
+  options.runtime.gallery = config.gallery;
   options.runtime.scene = &scene;
   options.runtime.audio = &audio;
   options.runtime.scene_state = &state;

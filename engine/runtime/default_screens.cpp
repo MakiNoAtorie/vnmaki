@@ -27,13 +27,15 @@ screen("title", function(args)
   local function entry(caption, action)
     return button { caption, returns = action, width = 520 * u, size = 40 * u, padding = 16 * u }
   end
+  local entries = { entry("Start", "start"), entry("Load", "@open:load"),
+                    entry("Preferences", "@open:preferences"), entry("Quit", "@quit") }
+  if #gallery_images() > 0 then  -- project.toml lists a gallery
+    table.insert(entries, 3, entry("Gallery", "@open:gallery"))
+  end
   return vbox {
     align = "center", justify = "center", gap = 24 * u, bg = "#101020",
     text { args.title or "", size = 96 * u },
-    entry("Start", "start"),
-    entry("Load", "@open:load"),
-    entry("Preferences", "@open:preferences"),
-    entry("Quit", "@quit"),
+    table.unpack(entries),
   }
 end)
 
@@ -169,17 +171,62 @@ screen("quick_menu", function()
   }
 end)
 
--- Placeholders until NVL mode and the gallery exist.
-screen("nvl", function()
-  return box { text { "NVL mode is not available yet.", size = 32 * unit() } }
+-- The NVL screen: the page of lines over the whole canvas. `args` has `lines` (how many page
+-- lines come first), `typing` (the last line is on the typewriter: its text node has `reveal`),
+-- the lines (speaker, text, color) and then the options of a menu (text). An option returns its
+-- number, from 1.
+screen("nvl", function(args)
+  local u = unit()
+  local size, margin = 34 * u, 100 * u
+  local width = canvas.width - 2 * margin
+  local nodes = {}
+  for i = 1, args.lines do
+    local line = args[i]
+    if line.speaker ~= "" then
+      nodes[#nodes + 1] = text { line.speaker, size = size, color = line.color or "#ffffff" }
+    end
+    nodes[#nodes + 1] = text { line.text, markup = true, reveal = args.typing and i == args.lines,
+                               width = width, size = size }
+  end
+  for i = args.lines + 1, #args do
+    nodes[#nodes + 1] = button { args[i].text, returns = i - args.lines, width = width // 2,
+                                 size = size, padding = 12 * u }
+  end
+  return vbox { bg = "#101020e6", padding = margin, gap = 12 * u, table.unpack(nodes) }
 end)
+
+-- The gallery: a grid of the images of project.toml `gallery`. An unlocked image is a button that
+-- shows it full screen; any other is a locked placeholder.
 screen("gallery", function()
   local u = unit()
+  local cells = {}
+  for i, name in ipairs(gallery_images()) do
+    if unlocked("cg", name) then
+      cells[i] = button { returns = "@view:" .. name, label = name, width = 300 * u,
+                          height = 180 * u, padding = 8 * u,
+                          image { name, width = 284 * u, height = 160 * u } }
+    else
+      cells[i] = button { disabled = true, label = "Locked", width = 300 * u, height = 180 * u,
+                          padding = 8 * u,
+                          box { width = 284 * u, height = 160 * u, bg = "#202038", align = "center",
+                                justify = "center", text { "Locked", size = 26 * u } } }
+    end
+  end
   return vbox {
-    modal = true, cancel = "@close", bg = "#101020f2", align = "center", justify = "center",
-    gap = 24 * u,
-    text { "The gallery is not available yet.", size = 40 * u },
+    modal = true, cancel = "@close", bg = "#101020f2", padding = 40 * u, gap = 20 * u,
+    text { "Gallery", size = 64 * u },
+    #cells > 0 and grid { columns = 5, gap = 12 * u, table.unpack(cells) }
+        or text { "This game has no gallery.", size = 32 * u },
     button { "Back", returns = "@close", width = 300 * u, size = 34 * u, padding = 14 * u },
+  }
+end)
+
+-- One unlocked image, full screen. `args` has image. A click, Enter or Esc goes back.
+screen("gallery_view", function(args)
+  return vbox {
+    modal = true, cancel = "@close", bg = "#000000",
+    button { returns = "@close", label = args.image, width = canvas.width, height = canvas.height,
+             padding = 0, image { args.image, width = canvas.width, height = canvas.height } },
   }
 end)
 )lua";

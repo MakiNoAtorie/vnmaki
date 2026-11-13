@@ -150,3 +150,6 @@ target_sources(vnmaki_unit_tests PRIVATE unit/screens_test.cpp)
 
 # Backlog: entries from the step log, voice replay, the scrolling screen (ticket 15).
 target_sources(vnmaki_unit_tests PRIVATE unit/backlog_test.cpp)
+
+# pause, NVL mode and the gallery (ticket 29).
+target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)

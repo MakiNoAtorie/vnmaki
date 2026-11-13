@@ -111,6 +111,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
                            .scene = &scene,
                            .screens = &ui,
                            .audio = audio.get(),
+                           .gallery = config.gallery,
                            .canvas_width = virtual_size.width,
                            .canvas_height = virtual_size.height}};
     ui.set_bindings(&runtime);
@@ -129,16 +130,19 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     UiRenderer ui_renderer{*renderer, fonts, &vfs};
     ui.set_text_measure(ui_renderer.text_measure());
     SayBoxView say_box{*renderer, std::move(fonts), SayBoxStyle::for_resolution(virtual_size)};
-    // The say box is the Lua screen `say`; if it fails the built-in box is drawn.
+    // The say box is the Lua screen `say` (`nvl` for an NVL line); if it fails the built-in box is
+    // drawn.
     say_box.set_screen_source(
         [&](const DialogueLine& line) -> std::optional<UiNode> {
-          ScreenNodeDef args{.kind = "args",
-                             .props = {{"speaker", line.speaker}, {"text", line.text}}};
-          if (line.color) {
+          ScreenNodeDef args =
+              line.nvl ? make_nvl_args(*line.nvl, true)
+                       : ScreenNodeDef{.kind = "args",
+                                       .props = {{"speaker", line.speaker}, {"text", line.text}}};
+          if (line.color && !line.nvl) {
             args.props.emplace_back("color", std::format("#{:06x}", *line.color));
           }
           ScreenNodeDef tree;
-          if (!runtime.build_screen("say", args, tree).empty()) {
+          if (!runtime.build_screen(line.nvl ? "nvl" : "say", args, tree).empty()) {
             return std::nullopt;
           }
           try {
@@ -258,7 +262,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       }
       scene.update(seconds);
       audio->update(seconds);
-      waits.update();
+      waits.update(seconds);
       screens.sync();
       indicator.sync(playback.skip(), playback.automatic());
       persistent.flush();

@@ -18,14 +18,21 @@ ScreenPresenter::ScreenPresenter(ScriptRuntime& runtime, UiHost& host)
 
 // The Lua screen `choice` for the options, or the built-in one if the game's screen fails (a
 // broken screen must not stop the story).
-UiNode ScreenPresenter::menu_tree(const std::vector<std::string>& options) {
-  ScreenNodeDef args{.kind = "args"};
-  args.children.reserve(options.size());
-  for (const std::string& option : options) {
-    args.children.push_back({.kind = "option", .props = {{"text", option}}});
+UiNode ScreenPresenter::menu_tree(const MenuRequest& menu) {
+  const std::vector<std::string>& options = menu.options;
+  // In NVL mode the options show inside the NVL screen, under the page.
+  ScreenNodeDef args;
+  if (menu.nvl) {
+    args = make_nvl_args(*menu.nvl, false, options);
+  } else {
+    args = {.kind = "args"};
+    args.children.reserve(options.size());
+    for (const std::string& option : options) {
+      args.children.push_back({.kind = "option", .props = {{"text", option}}});
+    }
   }
   ScreenNodeDef tree;
-  if (runtime_->build_screen("choice", args, tree).empty()) {
+  if (runtime_->build_screen(menu.nvl ? "nvl" : "choice", args, tree).empty()) {
     try {
       return build_ui_tree(tree);
     } catch (const UiBuildError&) {
@@ -49,7 +56,7 @@ void ScreenPresenter::sync() {
     return;
   }
   if (menu != nullptr) {
-    host_->show(std::string{kMenuScreenName}, menu_tree(menu->options), true);
+    host_->show(std::string{kMenuScreenName}, menu_tree(*menu), true);
     shown_ = {std::string{kMenuScreenName}, position};
   } else if (call != nullptr) {
     host_->show(call->name, build_ui_tree(call->screen), true);

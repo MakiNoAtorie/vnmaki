@@ -5,7 +5,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -401,6 +403,26 @@ UiNode make_menu_screen(const std::vector<std::string>& options, Size canvas) {
     root.children.push_back(std::move(button));
   }
   return root;
+}
+
+ScreenNodeDef make_nvl_args(const NvlPage& page, bool typing,
+                            std::span<const std::string> options) {
+  ScreenNodeDef args{.kind = "args",
+                     .props = {{"lines", static_cast<std::int64_t>(page.size())},
+                               {"typing", typing}}};
+  args.children.reserve(page.size() + options.size());
+  for (const NvlLine& line : page) {
+    ScreenNodeDef entry{.kind = "line",
+                        .props = {{"speaker", line.speaker}, {"text", line.text}}};
+    if (line.color) {
+      entry.props.emplace_back("color", std::format("#{:06x}", *line.color));
+    }
+    args.children.push_back(std::move(entry));
+  }
+  for (const std::string& option : options) {
+    args.children.push_back({.kind = "option", .props = {{"text", option}}});
+  }
+  return args;
 }
 
 }  // namespace vnmaki

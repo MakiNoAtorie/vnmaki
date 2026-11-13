@@ -29,6 +29,20 @@ namespace vnmaki {
 
 class Vfs;
 
+/// One line of the NVL page (`nvl(true)`, `character { kind = "nvl" }`): who said it (empty for
+/// narration), the text with its tags, and the speaker's colour (0xRRGGBB).
+struct NvlLine {
+  std::string speaker{};
+  std::string text{};
+  std::optional<std::uint32_t> color{};
+
+  friend bool operator==(const NvlLine&, const NvlLine&) = default;
+};
+
+/// The lines on the NVL page, oldest first. The page lives in `store` (`store.__nvl`), so
+/// snapshots, saves and rollback cover it.
+using NvlPage = std::vector<NvlLine>;
+
 /// `say(who, text)`: a line spoken by a named character. `color` and `voice_tag` come from a
 /// `character { name =, color = "#rrggbb", voice_tag = }` table; a plain string speaker has
 /// neither.
@@ -41,6 +55,8 @@ struct SayRequest {
   std::string voice_tag{};
   /// `character { auto_multiplier = }`: scales the per-character part of the auto-advance delay.
   double auto_multiplier = 1;
+  /// Set for a line shown on the NVL screen: the page, with this line last.
+  std::optional<NvlPage> nvl{};
 
   friend bool operator==(const SayRequest&, const SayRequest&) = default;
 };
@@ -48,6 +64,8 @@ struct SayRequest {
 /// `narrate(text)` (or `say(nil, text)`): a line with no speaker.
 struct NarrateRequest {
   std::string text;
+  /// As SayRequest::nvl.
+  std::optional<NvlPage> nvl{};
 
   friend bool operator==(const NarrateRequest&, const NarrateRequest&) = default;
 };
@@ -58,6 +76,8 @@ struct MenuRequest {
   std::vector<std::string> options;
   /// `fixed = true`: once answered, rollback cannot go back to this menu or before it.
   bool fixed = false;
+  /// Set in NVL mode: the page so far (maybe empty). The options show inside the NVL screen.
+  std::optional<NvlPage> nvl{};
 
   friend bool operator==(const MenuRequest&, const MenuRequest&) = default;
 };
@@ -95,11 +115,17 @@ struct CallScreenRequest {
 /// is a wait too, for the tag kTransitionTag.
 struct WaitRequest {
   std::string tag{};
+  /// For kPauseTag: how long the pause takes.
+  double seconds = 0;
 
   friend bool operator==(const WaitRequest&, const WaitRequest&) = default;
 };
 
-/// What a suspended label waits for. Every alternative is one kind of yield
+/// The tag of the WaitRequest that `pause(seconds)` makes. Nothing tweens under it: the wait
+/// presenter ends it by time, a click or skip mode.
+inline constexpr std::string_view kPauseTag = "@pause";
+
+/// What a suspended label waits for.Every alternative is one kind of yield
 /// point; later tickets add pauses.
 using BlockingRequest =
     std::variant<SayRequest, NarrateRequest, MenuRequest, CallScreenRequest, WaitRequest>;
@@ -599,6 +625,9 @@ struct ScriptRuntimeOptions {
   /// calls only reach the observer. Must outlive the runtime. An Audio goes here, and in
   /// `scene_state` (inside a CompositeSceneState when there is a Scene too).
   AudioCommands* audio = nullptr;
+  /// The images (names, as for `show`) of the gallery (project.toml `gallery`). Showing one with
+  /// `scene` or `show` unlocks `cg/<name>` in `persistent.unlocks`.
+  std::vector<std::string> gallery{};
   /// The virtual resolution, as the read-only global `canvas` (`canvas.width`, `canvas.height`)
   /// that screens size themselves by.
   int canvas_width = 1920;
@@ -663,6 +692,13 @@ struct ScriptRuntimeOptions {
 /// volume_ambient and volume_ui (0 to 1, 1), fullscreen (false), skip_unseen (false: the skip
 /// key stops at unread text), window_opacity (0.3 to 1, 1) and reduce_motion (false). The engine
 /// applies them.
+///
+/// Pauses and NVL: `pause(seconds)` is a blocking step (a WaitRequest for kPauseTag). `nvl(true)`
+/// turns NVL mode on and `nvl(false)` off (and empties the page); `nvl_clear()` empties the page.
+/// In NVL mode, and for a `character { kind = "nvl" }`, `say` and `narrate` add their line to the
+/// page and the request carries it (SayRequest::nvl); a menu in NVL mode does too. The page is
+/// `store.__nvl`. Gallery: `unlock(kind, name)` sets `persistent.unlocks["kind/name"]`;
+/// `unlocked(kind, name)` reads it; `gallery_images()` lists ScriptRuntimeOptions::gallery.
 ///
 /// `load_scripts()` loads the engine's default screens first (engine/runtime/default_screens.cpp:
 /// title, say, choice, save, load, preferences, quick_menu, confirm, nvl, gallery), so a game
