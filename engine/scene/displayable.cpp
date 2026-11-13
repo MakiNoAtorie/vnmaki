@@ -63,8 +63,6 @@ RectF bounding_box(const std::array<PointF, 4>& corners) {
       .x = left->x, .y = top->y, .width = right->x - left->x, .height = bottom->y - top->y};
 }
 
-RectF ImageDisplayable::bounds() const {
-  return bounding_box(place_corners(properties(), size_));
-}
+RectF ImageDisplayable::bounds() const { return bounding_box(place_corners(properties(), size_)); }
 
 }  // namespace vnmaki

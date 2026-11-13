@@ -451,7 +451,8 @@ class ScriptObserver {
   /// A `scene`, `show`, `hide`, `tween`, `sequence` or `parallel` call was done. `command` is its
   /// transcript form: "scene <image>", "hide <tag>", "tween <tag>", "sequence", "parallel", or
   /// "show <tag>" followed by the options given, in this order: " image <name>", " at <position>",
-  /// " x <number>", " y <number>", " layer <name>".
+  /// " x <number>", " y <number>", " layer <name>", the layered attributes and " shader <name>".
+  /// A `layer(name, options)` call is "layer <name>", with " shader <name>" if it set one.
   virtual void on_scene_command(std::string_view /*command*/) {}
   /// A `music`, `sound`, `voice`, `stop` or `volume` call was done. `command` is its transcript
   /// form, with the options given in this order:
@@ -535,6 +536,10 @@ struct ScriptRuntimeOptions {
 /// group `{ sequence = { item... } }` or `{ parallel = { item... } }`; the group table may have
 /// `delay` and `loop`. `wait(tag)` and `wait_all()` block until those tweens have ended. A tween
 /// that is not waited for does not block.
+/// Shaders: `shader(name, { "uniform", ... })` declares the game shader `shaders/<name>.frag.hlsl`
+/// and its float uniforms, in order. `show` takes `shader = name` and `uniforms = { uniform =
+/// number }`. `layer(name, { shader =, uniforms = })` sets them on a layer. `tween` takes
+/// `uniforms = { uniform = number }`; the tag `@layer.<name>` tweens those of a layer.
 /// Screens: `screen "name" { node... }` (or a function of the arguments that
 /// returns nodes), the node constructors `box`, `hbox`, `vbox`, `text`, `image` and `button`,
 /// `show_screen(name, args)`, `hide_screen(name)` and `call_screen(name, args)`, which waits for

@@ -44,8 +44,8 @@ void expand_includes(std::string_view name, std::string_view source, int depth,
     const std::string_view line = source.substr(0, end);
     source = end == std::string_view::npos ? std::string_view{} : source.substr(end + 1);
     const std::string_view header_name = included_name(line);
-    const std::string_view header = header_name.empty() ? std::string_view{}
-                                                         : hlsl_header(header_name);
+    const std::string_view header =
+        header_name.empty() ? std::string_view{} : hlsl_header(header_name);
     if (!header.empty() && depth < kMaxIncludeDepth) {
       output += "#line 1 \"" + std::string{header_name} + "\"\n";
       expand_includes(header_name, header, depth + 1, output);

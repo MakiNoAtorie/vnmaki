@@ -189,11 +189,11 @@ Files: new `engine/scene/camera.*`, `engine/scene/scene.cpp` (draw), `engine/ani
 
 Files: `engine/render/` (shader loading), `engine/scene/scene.cpp` (draw), `vcpkg.json`, runtime, `tests/render/shaders/`.
 
-- [ ] Game shaders are VFS files, `shaders/<name>.frag.hlsl`, and include `vnmaki.hlsli`. Dev builds compile them at load with the SDL_shadercross library (vcpkg, also as a target dependency). A compile error gives the file, the line and the message.
-- [ ] `shader(name, { "amount", ... })` declares the uniforms. They are floats, packed into `b0` in that order and padded to 16 bytes.
-- [ ] `show(tag, { shader = name, uniforms = {...} })` sets a shader on a displayable. `layer(name, { shader = ... })` draws the layer into a target, then draws that target with the shader.
-- [ ] `tween(tag, { uniforms = { amount = 1 } })` changes uniforms. Shader names and uniform values are in the snapshot.
-- [ ] GPU goldens: a sepia shader on a displayable and on a layer, at two uniform values. A bad shader gives an error test.
+- [x] Game shaders are VFS files, `shaders/<name>.frag.hlsl`, and include `vnmaki.hlsli`. Dev builds compile them at load with the SDL_shadercross library (vcpkg, also as a target dependency). A compile error gives the file, the line and the message.
+- [x] `shader(name, { "amount", ... })` declares the uniforms. They are floats, packed into `b0` in that order and padded to 16 bytes.
+- [x] `show(tag, { shader = name, uniforms = {...} })` sets a shader on a displayable. `layer(name, { shader = ... })` draws the layer into a target, then draws that target with the shader.
+- [x] `tween(tag, { uniforms = { amount = 1 } })` changes uniforms. Shader names and uniform values are in the snapshot.
+- [x] GPU goldens: a sepia shader on a displayable and on a layer, at two uniform values. A bad shader gives an error test.
 
 ### 25: Video (SPEC §14, §4, §5)
 

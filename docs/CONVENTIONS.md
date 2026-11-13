@@ -74,7 +74,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - If there is no device, it prints `VNMAKI_SKIP:` and ctest skips the test. `VNMAKI_REQUIRE_GPU=1` stops the skip. Linux CI sets it, because it has lavapipe.
   - Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png`.
   - `tools/generators/render_fixtures.py` makes the golden images with a reference rasterizer.
-  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Example: `layered_fixtures.py`.
+  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`.
 
 ## Module contracts
 
@@ -121,6 +121,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Then draw that target to `kScreen` at `compute_viewport(virtual, window_metrics().pixels, mode).rect`.
 - Shaders are HLSL in `shaders/`. shadercross compiles them at build time through `vnmaki_add_shaders(...)`.
 - Custom fragment shaders include `vnmaki.hlsli`. They can have one constant buffer at `register(b0, space3)`.
+- Game shaders compile at run time, not at build time (`shader_compiler.hpp`).
+  - `compile_fragment_shader(name, hlsl)` uses the SDL_shadercross library (`sdl3-shadercross` in `vcpkg.json` is a target dependency, not only a host tool). It returns a `CompiledShader` that owns SPIR-V, MSL and DXIL. `bytecode()` is the view for `IRenderer::create_shader`.
+  - `#include "vnmaki.hlsli"` finds the engine header. The build embeds `shaders/*.hlsli` as text (`shader_headers.cpp.in`), so a game needs no engine shader files.
+  - A compile error throws `ShaderCompileError`. The message has the file, the line, the column and the compiler message. Example: `shaders/sepia.frag.hlsl:5:18: error: use of undeclared identifier 'x'`.
+  - A shader may use one texture and one constant buffer at `register(b0, space3)`. Storage textures and buffers are errors.
+  - `shader_compiler_available()` is false on macOS, where vcpkg has no `sdl3-shadercross`. Tests that compile shaders return early then.
+  - The compiler is only in `engine/render/sdl_shader_compiler.cpp`, because it includes SDL headers.
 - `load_image(vfs, jobs, path)` loads an image and returns `JobHandle<Image>`.
 - Upload images with `create_texture` on the main thread.
 
@@ -154,7 +161,14 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - The snapshot keeps the properties as a replay leaves them. A tween that ends is at its end value. A loop is at the value where it started.
 - Tweens write through `Scene::find(tag)->properties()`. `Scene::update(seconds)` moves them. `hide` and `scene` end the tweens of the displayables that they remove.
 - `Scene::show` of a tag that is shown does not end its tweens.
-- For each frame, call `scene.prepare(renderer, jobs)` on the main thread. Then call `scene.draw(renderer)` in a pass on the virtual-resolution target.
+- For each frame, call `scene.prepare(renderer, jobs)` on the main thread. Then call `scene.draw(renderer, target)` in a pass on the virtual-resolution target. Give the id of that target: a layer with a shader ends the pass and begins a new pass on `target`.
+- Game shaders:
+  - `shader(name, { "amount", ... })` declares `shaders/<name>.frag.hlsl` and compiles it when the scripts load. A declaration again with the same uniforms does nothing. The uniforms are floats (at most `kMaxUniforms`, 16) packed in order into `b0` and padded to 16 bytes. `SceneCommands::declare_shader` carries it out and returns the error string.
+  - `show(tag, { shader = name, uniforms = { amount = 1 } })` and `layer(name, { shader =, uniforms = })` set them (`SceneCommands::set_shader`). `shader = ""` removes the shader. A `show` without the options keeps them. Uniforms that the call does not name keep their values; a new shader starts with zeros.
+  - `DisplayProperties::shader` is the number of the shader (from 1, in declaration order; 0 is the default shader) and `uniforms` are the values. Every displayable draws through `Displayable::draw_state(texture)`, so images and layered sprites get the shader the same way. `Scene::prepare` makes the GPU shaders and gives them to the displayables.
+  - A layer with a shader (and displayables) draws into its own render target of the virtual size, and then that target draws with the shader. The layer properties are in `layer_properties(layer)`.
+  - The tag `@layer.<name>` is for the uniforms of a layer in `tween`. A `show` tag cannot start with `@layer.`.
+  - The snapshot part `shaders` keeps the shader name (not the number) and the 16 uniform values of each displayable and layer. The part is left out when no shader is set. `restore()` ignores a shader that is not declared.
 - `SceneCommands` calls return an error string. The prelude raises it at the script line.
 - `SceneCommands` calls also run during replay.
 - `SceneCommands` has `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
@@ -177,7 +191,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `easing.hpp`: `Ease` is linear, and sine, quad, cubic, back and bounce, each as `in`, `out` and `in_out`. The script names are `linear` and `in_sine`, `out_quad`, `in_out_back`, ... `apply_ease` clamps its input to [0, 1].
 - `Timeline` runs `TweenNode` trees: a tween, a `sequence` or a `parallel` group. It has no clock. The caller gives the elapsed seconds to `update()`. Tests use a fake clock.
 - A `Timeline::Lookup` finds the `DisplayProperties` of a tag. The timeline keeps no pointers to displayables. A tween of a tag that is not found does nothing.
-- A tween changes channels (`Channel`: position, anchor, scale, rotation, alpha, tint, crop). A channel without a target stays as it is. Alpha and tint are kept in [0, 1], also for a back easing.
+- A tween changes channels (`Channel`: position, anchor, scale, rotation, alpha, tint, crop). The 16 shader uniforms are channels after them (`uniform_slot(i)`), so `kChannelCount` is 32. This changed the snapshot form of loops. A channel without a target stays as it is. Alpha and tint are kept in [0, 1], also for a back easing.
 - A tween starts after its `delay` and reads its start values then. A sequence of tweens on one property continues from the last end. The values do not depend on the step size.
 - `yoyo` goes to the target and back. Without `loop`, it does this one time. `loop` repeats a tween forever. On the outermost group, `loop` repeats the whole group. The `delay` of a group applies one time.
 - A loop in a sequence must be the last item. A nested group cannot loop. `start()` returns the reason.
@@ -185,7 +199,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `start(node, lookup, instant = true)` is for replay. A tween that ends goes to its end value. A loop starts at time 0.
 - `finish(tag)` puts the tweens that end at their end values. A click or skip does this.
 - `settle()`, `capture()` and `restore()` are the snapshot. `capture()` keeps only loops, with the whole group if it contains a loop. `restore()` starts them at time 0 from the properties that it finds. `Scene::capture()` calls `settle()` on copies first.
-- Script API: `tween(tag, { x, y, anchor = { x, y }, scale = number or { x, y }, rotation, alpha, tint = "#rrggbb", crop = { x, y, width, height }, duration, delay, ease, loop, yoyo })`. The units are those of `show`. `duration` is 0.5 s if the script gives none.
+- Script API: `tween(tag, { x, y, anchor = { x, y }, scale = number or { x, y }, rotation, alpha, tint = "#rrggbb", crop = { x, y, width, height }, duration, delay, ease, loop, yoyo, uniforms = { name = number } })`. The units are those of `show`. `duration` is 0.5 s if the script gives none.
 - `sequence { item, ... }` and `parallel { item, ... }` start a group at once. An item is `{ tag, <options of tween> }`, or a group: `{ sequence = { items } }` or `{ parallel = { items } }`. The group table can have `delay` and `loop`. A group nests up to 16 levels.
 - `tween` has an effect at once and does not block. `wait(tag)` and `wait_all()` block (`WaitRequest`).
 - A wait is always one step, also when nothing is tweening, so replay counts the same steps as live play. `WaitPresenter` (`wait_presenter.hpp`) ends it:

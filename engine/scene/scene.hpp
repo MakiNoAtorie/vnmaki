@@ -171,7 +171,7 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] const DisplayProperties* properties_of(std::string_view tag) const;
   // The index of a uniform of the shader that `tag` has, from its name.
   [[nodiscard]] std::optional<std::size_t> uniform_index(std::string_view tag,
-                                                          std::string_view name) const;
+                                                         std::string_view name) const;
   // Reads the "displayables" part of a snapshot. Throws std::invalid_argument.
   [[nodiscard]] static Layers read_displayables(std::span<const std::byte> bytes);
   // Reads the "shaders" part into displayables that are there already. Throws

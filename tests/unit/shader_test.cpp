@@ -108,8 +108,9 @@ struct Stage {
 // The error of a story whose script is `body` inside the `start` label (the body starts at line
 // 3 of the script, below the sepia declaration).
 std::string error_of(const std::string& body) {
-  const Stage stage{"shader(\"sepia\", { \"amount\", \"strength\" })\nlabel(\"start\", function()\n" +
-                    body + "\nend)\n"};
+  const Stage stage{
+      "shader(\"sepia\", { \"amount\", \"strength\" })\nlabel(\"start\", function()\n" + body +
+      "\nend)\n"};
   REQUIRE(stage.runtime.state() == RunState::kFailed);
   return stage.runtime.error();
 }
@@ -211,7 +212,8 @@ TEST_CASE("shader: mistakes are script errors at the calling line") {
   }
   SUBCASE("a shader that is not declared") {
     CHECK(error_of("  show(\"eileen\", { shader = \"other\" })") ==
-          "scripts/main.lua:3: shader 'other' is not declared (use shader(name, { uniforms }) first)");
+          "scripts/main.lua:3: shader 'other' is not declared (use shader(name, { uniforms }) "
+          "first)");
   }
   SUBCASE("a uniform that the shader does not declare") {
     CHECK(error_of("  show(\"eileen\", { shader = \"sepia\", uniforms = { bogus = 1 } })") ==
@@ -226,13 +228,12 @@ TEST_CASE("shader: mistakes are script errors at the calling line") {
           "scripts/main.lua:4: 'eileen' has no uniform 'amount' (set a shader that declares it)");
   }
   SUBCASE("a layer that does not exist") {
-    CHECK(error_of("  layer(\"front\", { shader = \"sepia\" })")
-              .find("unknown layer 'front'") != std::string::npos);
+    CHECK(error_of("  layer(\"front\", { shader = \"sepia\" })").find("unknown layer 'front'") !=
+          std::string::npos);
   }
   SUBCASE("a uniform that is not a number") {
     CHECK(error_of("  show(\"eileen\", { shader = \"sepia\", uniforms = { amount = \"x\" } })")
-              .find("uniforms must be a table of uniform names and numbers") !=
-          std::string::npos);
+              .find("uniforms must be a table of uniform names and numbers") != std::string::npos);
   }
 }
 
@@ -255,8 +256,7 @@ TEST_CASE("shader: declarations are checked when they run") {
   CHECK(declared("shader(\"sepia\", { \"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\", "
                  "\"i\", \"j\", \"k\", \"l\", \"m\", \"n\", \"o\", \"p\", \"q\" })")
             .find("declares more than 16 uniforms") != std::string::npos);
-  CHECK(declared("shader(\"bad name\")").find("bad argument #1 to 'shader'") !=
-        std::string::npos);
+  CHECK(declared("shader(\"bad name\")").find("bad argument #1 to 'shader'") != std::string::npos);
   const std::string broken = declared("shader(\"broken\")");
   INFO(broken);
   CHECK(broken.find("shaders/broken.frag.hlsl:5") != std::string::npos);
@@ -309,4 +309,32 @@ TEST_CASE("shader: the snapshot keeps shaders and uniform values, and a replay r
     Stage other{"label(\"start\", function()\n  narrate(\"x\")\nend)\n"};
     CHECK_THROWS_AS(other.scene.restore(broken), std::invalid_argument);
   }
+}
+
+TEST_CASE("shader: a layered sprite takes a shader and uniforms like an image") {
+  if (compiler_missing()) {
+    return;
+  }
+  const std::string header =
+      "shader(\"sepia\", { \"amount\", \"strength\" })\n"
+      "layered(\"doll\", { order = { \"base\" }, base = \"eileen\" })\n";
+  Stage stage{header + R"(
+label("start", function()
+  show("doll", { shader = "sepia", uniforms = { amount = 0.5 } })
+  tween("doll", { uniforms = { strength = 1 }, duration = 1 })
+  narrate("end")
+end)
+)"};
+  REQUIRE_MESSAGE(stage.runtime.state() == RunState::kWaiting, stage.runtime.error());
+  stage.scene.update(1);
+  CHECK(stage.properties("doll").shader == 1);
+  CHECK(stage.properties("doll").uniforms.at(0) == kHalf);
+  CHECK(stage.properties("doll").uniforms.at(1) == 1);
+
+  // The snapshot keeps it too.
+  const std::vector<std::byte> captured = stage.scene.capture();
+  Stage other{header + "label(\"start\", function()\n  narrate(\"x\")\nend)\n"};
+  other.scene.restore(captured);
+  CHECK(other.properties("doll").shader == 1);
+  CHECK(other.properties("doll").uniforms.at(1) == 1);
 }

@@ -363,8 +363,7 @@ const DisplayProperties* Scene::properties_of(std::string_view tag) const {
   return shown != nullptr ? &shown->properties() : nullptr;
 }
 
-std::optional<std::size_t> Scene::uniform_index(std::string_view tag,
-                                                std::string_view name) const {
+std::optional<std::size_t> Scene::uniform_index(std::string_view tag, std::string_view name) const {
   const DisplayProperties* properties = properties_of(tag);
   const GameShader* shader = properties != nullptr ? shader_by_id(properties->shader) : nullptr;
   if (shader == nullptr) {
@@ -504,10 +503,10 @@ std::string Scene::show(const ShowRequest& request) {
   std::unique_ptr<Displayable> displayable;
   if (definition != definitions_.end()) {
     // A sprite that is shown again keeps its groups, and the named ones change.
-    const auto* before =
-        shown.has_value() ? dynamic_cast<const LayeredSprite*>(
-                                entries(shown->layer).at(shown->index).displayable.get())
-                          : nullptr;
+    const auto* before = shown.has_value()
+                             ? dynamic_cast<const LayeredSprite*>(
+                                   entries(shown->layer).at(shown->index).displayable.get())
+                             : nullptr;
     const bool again = before != nullptr && before->name() == request.image;
     auto sprite = again ? std::make_unique<LayeredSprite>(*before)
                         : std::make_unique<LayeredSprite>(definition->second);
@@ -717,8 +716,8 @@ std::vector<std::byte> Scene::capture() const {
   Writer layered;
   std::uint32_t layered_count = 0;
   for (const std::vector<Entry>& shown : layers_) {
-    layered_count += static_cast<std::uint32_t>(
-        std::ranges::count_if(shown, [](const Entry& entry) {
+    layered_count +=
+        static_cast<std::uint32_t>(std::ranges::count_if(shown, [](const Entry& entry) {
           return dynamic_cast<const LayeredSprite*>(entry.displayable.get()) != nullptr;
         }));
   }
