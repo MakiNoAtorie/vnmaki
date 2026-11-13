@@ -178,7 +178,7 @@ screen("preferences", function()
   local function switch(key, caption)
     return toggle { caption, bind = bind(prefs, key), style = "pref_switch" }
   end
-  return vbox {
+  local items = {
     style = "prefs_panel", modal = true, cancel = "@close",
     text { "Preferences", style = "panel_title" },
     range("text_speed", 10, 120, 5, "Text speed"),
@@ -192,8 +192,18 @@ screen("preferences", function()
     switch("fullscreen", "Fullscreen"),
     switch("skip_unseen", "Skip text not read yet"),
     switch("reduce_motion", "Reduce motion"),
-    button { "Back", returns = "@close", style = "back_button" },
   }
+  -- A game with more than one language (project.toml) lets the player pick it.
+  local codes = languages()
+  if #codes > 1 then
+    local row = { style = "pref_row", text { "Language", style = "pref_label" } }
+    for _, code in ipairs(codes) do
+      row[#row + 1] = button { code, returns = "@language:" .. code, style = "quick_button" }
+    end
+    items[#items + 1] = hbox(row)
+  end
+  items[#items + 1] = button { "Back", returns = "@close", style = "back_button" }
+  return vbox(items)
 end)
 
 -- Top right, over the story. The engine shows it (the story window does); a game hides it with

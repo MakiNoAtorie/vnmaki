@@ -31,6 +31,12 @@ bool flag(const ScriptRuntime& runtime, std::string_view key, bool fallback) {
   return held != nullptr ? *held : fallback;
 }
 
+std::string text(const ScriptRuntime& runtime, std::string_view key) {
+  const ScreenValue value = runtime.binding("prefs", key);
+  const auto* held = std::get_if<std::string>(&value);
+  return held != nullptr ? *held : std::string{};
+}
+
 double unit_volume(const ScriptRuntime& runtime, std::string_view key, double fallback) {
   return std::clamp(number(runtime, key, fallback), 0.0, 1.0);
 }
@@ -54,6 +60,7 @@ Preferences read_preferences(const ScriptRuntime& runtime) {
       .window_opacity = std::clamp(number(runtime, "window_opacity", defaults.window_opacity),
                                    kMinWindowOpacity, 1.0),
       .reduce_motion = flag(runtime, "reduce_motion", defaults.reduce_motion),
+      .language = text(runtime, "language"),
   };
 }
 
@@ -90,6 +97,9 @@ void PreferenceApplier::update() {
     if (now.window_opacity != applied_.window_opacity) {
       targets_.platform->set_window_opacity(static_cast<float>(now.window_opacity));
     }
+  }
+  if (targets_.language && now.language != applied_.language) {
+    targets_.language(now.language);
   }
   applied_ = now;
 }

@@ -6,7 +6,9 @@
 // change: text speed to the reveal, auto delay to Playback, volumes to Audio, fullscreen and window
 // opacity to the Platform.
 
+#include <functional>
 #include <optional>
+#include <string>
 
 #include "engine/runtime/script_runtime.hpp"
 
@@ -34,6 +36,8 @@ struct Preferences {
   double window_opacity = 1;
   /// Read by the presentation code (camera moves, flashes) that reduce_motion switches off.
   bool reduce_motion = false;
+  /// The language code (SPEC section 16); empty is the source language of project.toml.
+  std::string language{};
 
   bool operator==(const Preferences&) const = default;
 };
@@ -53,6 +57,8 @@ struct PreferenceTargets {
   Playback* playback = nullptr;
   Audio* audio = nullptr;
   Platform* platform = nullptr;
+  /// Called with the language code when `language` changes (the empty code: the source language).
+  std::function<void(const std::string&)> language{};
 };
 
 class PreferenceApplier {

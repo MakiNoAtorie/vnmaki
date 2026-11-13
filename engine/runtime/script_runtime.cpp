@@ -471,6 +471,7 @@ end
 -- names a style whose options come first. A node takes `style = "name"`; its own options win.
 -- The styles that the engine's default screens declare are the defaults of every theme.
 local styles, default_styles = {}, {}
+local apply_language_styles  -- set below: runs the style override file of the language
 local plain_style_options = {
   font = true, size = true, color = true, padding = true, gap = true, margin = true, width = true,
   height = true, grow = true, align = true, justify = true, fill = true,
@@ -586,6 +587,40 @@ function theme(name)
     styles = before
     error(problem, 0)
   end
+  apply_language_styles()
+end
+)lua" R"lua(
+-- Languages (docs/SPEC.md section 16). languages() lists the codes of project.toml, the source
+-- language first. engine.set_language_styles(chunk) puts the styles back as the scripts and the theme
+-- made them, then runs `chunk`, the style override file of the player's language (nil: none).
+-- A theme() call runs the override again. A chunk that fails is dropped and its error raised.
+local language_list, language_unpack = engine.languages, table.unpack
+function languages()
+  return { language_unpack(language_list) }
+end
+local language_chunk, styles_without_language
+function apply_language_styles()
+  if language_chunk == nil then
+    styles_without_language = nil
+    return
+  end
+  styles_without_language = styles
+  styles = {}
+  for key, entry in pairs(styles_without_language) do
+    styles[key] = entry
+  end
+  local ok, problem = pcall(language_chunk)
+  if not ok then
+    styles, styles_without_language, language_chunk = styles_without_language, nil, nil
+    error(problem, 0)
+  end
+end
+function engine.set_language_styles(chunk)
+  if styles_without_language ~= nil then
+    styles = styles_without_language
+  end
+  language_chunk = chunk
+  apply_language_styles()
 end
 )lua" R"lua(
 -- Screens (docs/SPEC.md section 15). A node is a plain table the engine reads: kind, text (the
@@ -1517,11 +1552,11 @@ end
 -- `prefs` keeps what the player changed in persistent.prefs; a value never set reads as its
 -- default. The engine reads these keys: text_speed (characters a second), auto_delay (seconds),
 -- volume_<channel> (0 to 1), fullscreen, skip_unseen, window_opacity (0.3 to 1)
--- and reduce_motion.
+-- reduce_motion and language (a code of project.toml; "" is the source language).
 local pref_defaults = {
   text_speed = 40, auto_delay = 1, volume_music = 1, volume_sound = 1, volume_voice = 1,
   volume_ambient = 1, volume_ui = 1, fullscreen = false, skip_unseen = false, window_opacity = 1,
-  reduce_motion = false,
+  reduce_motion = false, language = "",
 }
 local prefs = setmetatable({}, {
   __index = function(_, key)
@@ -2088,6 +2123,9 @@ class ScriptRuntime::Impl {
                                         ScreenValue value);
   [[nodiscard]] std::string build_screen(std::string_view name, const ScreenNodeDef& args,
                                          ScreenNodeDef& tree);
+  // Remembers `path` (empty: none) as the style override file, and applies it if the scripts are
+  // loaded. Returns why it cannot.
+  [[nodiscard]] std::string set_language_styles(std::string_view path);
   [[nodiscard]] StoreSnapshot capture_persistent() const {
     return capture_table(persistent_, "persistent");
   }
@@ -2244,6 +2282,8 @@ class ScriptRuntime::Impl {
   std::vector<RollbackStep> held_rollback_;
   std::optional<std::variant<BlockingRequest, Transfer>> pending_;
   bool started_ = false;
+  bool scripts_loaded_ = false;
+  std::string language_style_path_;
   RunState state_ = RunState::kIdle;
   std::uint32_t hook_period_ = 0;
   BlockingRequest request_;
@@ -2345,6 +2385,11 @@ void ScriptRuntime::Impl::bind_engine() {
     gallery[i + 1] = options_.gallery[i];
   }
   engine_["gallery"] = gallery;
+  sol::table languages = lua_.create_table();
+  for (std::size_t i = 0; i < options_.languages.size(); ++i) {
+    languages[i + 1] = options_.languages[i];
+  }
+  engine_["languages"] = languages;
   engine_["in_label"] = [this](sol::this_state state) { return in_label(state); };
   engine_["has_label"] = [this](const std::string& name) { return has_label(name); };
   // Compiles styles/<name>.lua for theme(): returns the chunk as a function, or why it cannot.
@@ -3126,6 +3171,41 @@ void ScriptRuntime::Impl::load_scripts() {
   for (const std::string& path : paths) {
     load_script(path);
   }
+  scripts_loaded_ = true;
+  if (const std::string problem = set_language_styles(language_style_path_); !problem.empty()) {
+    observer_->on_warning(problem);
+  }
+}
+
+std::string ScriptRuntime::Impl::set_language_styles(std::string_view requested) {
+  const std::string path{requested};  // a copy: `requested` can be language_style_path_ itself
+  language_style_path_ = path;
+  if (!scripts_loaded_) {
+    return {};  // load_scripts() applies it after the game's styles
+  }
+  reset_instruction_budget();
+  sol::object chunk;
+  {
+    const MemoryLimitScope unlimited{allocator_, false};
+    chunk = sol::make_object(lua_, sol::lua_nil);
+    if (!path.empty()) {
+      const std::optional<std::vector<std::byte>> bytes = vfs_->read(path);
+      if (!bytes) {
+        return "style file '" + path + "' not found";
+      }
+      sol::load_result loaded = lua_.load(to_string(*bytes), "@" + path, sol::load_mode::text);
+      if (!loaded.valid()) {
+        const sol::error error = loaded;
+        return error.what();
+      }
+      sol::protected_function function = loaded;
+      chunk = sol::make_object(lua_, function);
+    }
+  }
+  const MemoryLimitScope limited{allocator_, true};
+  sol::protected_function apply = engine_["set_language_styles"];
+  const sol::protected_function_result result = apply(chunk);
+  return result.valid() ? std::string{} : error_text(result);
 }
 
 ScriptRuntime::Impl::Frame ScriptRuntime::Impl::make_frame(const std::string& name) {
@@ -3406,6 +3486,7 @@ std::string ScriptRuntime::Impl::run_on_load(LabelSnapshot& snapshot,
 std::unique_ptr<ScriptRuntime::Impl> ScriptRuntime::Impl::reload(std::string& problem) {
   auto fresh = std::make_unique<Impl>(*vfs_, options_);
   fresh->observer_ = observer_;
+  fresh->language_style_path_ = language_style_path_;
   try {
     problem = fresh->restore_persistent(capture_persistent());
     if (problem.empty()) {
@@ -3815,6 +3896,10 @@ std::string ScriptRuntime::set_binding(std::string_view table, std::string_view 
 std::string ScriptRuntime::build_screen(std::string_view name, const ScreenNodeDef& args,
                                         ScreenNodeDef& tree) {
   return impl_->build_screen(name, args, tree);
+}
+
+std::string ScriptRuntime::set_language_styles(std::string_view path) {
+  return impl_->set_language_styles(path);
 }
 StoreSnapshot ScriptRuntime::persistent_snapshot() const { return impl_->capture_persistent(); }
 std::string ScriptRuntime::restore_persistent(const StoreSnapshot& snapshot) {

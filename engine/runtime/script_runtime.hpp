@@ -679,6 +679,8 @@ struct ScriptRuntimeOptions {
   /// The images (names, as for `show`) of the gallery (project.toml `gallery`). Showing one with
   /// `scene` or `show` unlocks `cg/<name>` in `persistent.unlocks`.
   std::vector<std::string> gallery{};
+  /// The language codes of project.toml, the source language first, as `languages()` in scripts.
+  std::vector<std::string> languages{};
   /// The virtual resolution, as the read-only global `canvas` (`canvas.width`, `canvas.height`)
   /// that screens size themselves by.
   int canvas_width = 1920;
@@ -889,6 +891,12 @@ class ScriptRuntime {
   /// Returns why it cannot, or an empty string. Runs the screen's Lua function.
   [[nodiscard]] std::string build_screen(std::string_view name, const ScreenNodeDef& args,
                                          ScreenNodeDef& tree);
+  /// Sets the style override file of the player's language (SPEC section 16): the styles go back to
+  /// what the scripts and `theme()` made, and the file at `path` (a `styles/...lua` script that
+  /// calls `style`) runs on top of them. An empty path means none. Screens built from now on use
+  /// it. Before load_scripts() it only remembers the path, and load_scripts() (also a reload)
+  /// applies it. Returns why it cannot, or an empty string.
+  [[nodiscard]] std::string set_language_styles(std::string_view path);
   /// A copy of `persistent` as it is now. Throws ScriptError like store_snapshot().
   [[nodiscard]] StoreSnapshot persistent_snapshot() const;
   /// Makes `persistent` equal to `snapshot`. Call it before load_scripts() so that scripts that
