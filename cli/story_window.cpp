@@ -41,6 +41,7 @@
 #include "engine/ui/ui_host.hpp"
 #include "engine/ui/ui_renderer.hpp"
 #include "engine/vfs/vfs.hpp"
+#include "engine/video/movie_presenter.hpp"
 
 namespace vnmaki::cli {
 
@@ -110,8 +111,10 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     for (const Font& fallback : fallback_fonts) {
       fonts.fallbacks.push_back(&fallback);
     }
-    Scene scene{vfs, virtual_size};
+    // The audio comes first, so that it outlives the scene: a movie stops its audio when it goes.
     const std::unique_ptr<Audio> audio = make_audio(vfs, err);
+    Scene scene{vfs, virtual_size};
+    scene.set_movie_audio(audio.get());
     CompositeSceneState scene_state{{&scene, audio.get()}};
     UiHost ui{virtual_size};
     ScriptRuntime runtime{vfs,
@@ -146,6 +149,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     saves.poll();
     ScreenPresenter screens{runtime, ui};
     WaitPresenter waits{runtime, scene};
+    MoviePresenter movies{runtime, vfs, jobs, audio.get()};
     DialoguePresenter presenter{runtime,
                                 [&](const DialogueLine& line) { return say_box.glyph_count(line); },
                                 kDefaultCharactersPerSecond,
@@ -156,7 +160,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
                       presenter,
                       persistent,
                       {.voice_playing = [&] { return audio->voice_playing(); },
-                       .skip_wait = [&] { return waits.skip(); }}};
+                       .skip_wait = [&] { return waits.skip() || movies.skip(); }}};
     PlaybackIndicator indicator{ui};
     const Backlog backlog{runtime, audio.get(), config.backlog_length};
     BacklogScreen backlog_screen{ui, backlog, ui_renderer.text_measure()};
@@ -172,9 +176,10 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
              point.y < static_cast<float>(virtual_size.height);
     };
 
-    // A click, key or button ends a wait for tweens first (skip mode will do the same).
+    // A click, key or button ends a wait for tweens first (skip mode will do the same), or a
+    // movie that can be skipped.
     const auto advance = [&] {
-      if (!waits.skip()) {
+      if (!waits.skip() && !movies.click()) {
         presenter.advance();
       }
     };
@@ -225,6 +230,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       }
       scene.update(seconds);
       audio->update(seconds);
+      movies.update(seconds);
       waits.update();
       screens.sync();
       indicator.sync(playback.skip(), playback.automatic());
@@ -238,6 +244,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       const Viewport placed = viewport();
       const std::optional<DialogueLine>& line = presenter.line();
       scene.prepare(*renderer, jobs);
+      movies.prepare(*renderer);
       if (line && placed.scale > 0) {
         say_box.prepare(*line, placed.scale);
       }
@@ -250,6 +257,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       renderer->begin_frame();
       renderer->begin_pass({.target = canvas, .clear = rgba8(0, 0, 0)});
       scene.draw(*renderer, canvas);
+      movies.draw(*renderer, virtual_size);
       renderer->begin_pass({.target = kScreen, .clear = rgba8(0, 0, 0)});
       renderer->draw(quad_from_rect(placed.rect), {.texture = canvas});
       if (line && placed.scale > 0) {

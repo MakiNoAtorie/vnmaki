@@ -281,9 +281,11 @@ function show(tag, options)
   local x = option("show", options, "x", "number")
   local y = option("show", options, "y", "number")
   local layer = option("show", options, "layer", "string")
+  local movie = option("show", options, "movie", "string")
+  local loop = option("show", options, "loop", "boolean")
   local attributes, attribute_text = layered_attributes(options, image or tag)
   require_label("show")
-  local problem = engine.show(tag, image or tag, at, x, y, layer, attributes)
+  local problem = engine.show(tag, image or tag, at, x, y, layer, movie, loop, attributes)
   if problem then
     error(problem, 2)
   end
@@ -302,6 +304,9 @@ function show(tag, options)
   end
   if layer then
     command = command .. " layer " .. layer
+  end
+  if movie then
+    command = command .. " movie " .. movie .. (loop and " loop" or "")
   end
   command = command .. engine.shader_options("show", tag, false, options)
   engine.scene_command(command .. attribute_text)
@@ -763,7 +768,7 @@ end
 local pairs, ipairs, sort = pairs, ipairs, table.sort
 local layered_defs = {}
 local show_options = { image = true, at = true, x = true, y = true, layer = true,
-                       shader = true, uniforms = true }
+                       shader = true, uniforms = true, movie = true, loop = true }
 
 -- `level` is the error() level of the caller of this function.
 local function layered_option(key, expected, value, level)
@@ -905,6 +910,22 @@ function animation(name, definition)
   if problem then
     error(problem, 2)
   end
+end
+)lua" R"lua(
+-- Movies (docs/SPEC.md section 14). movie(path, { skippable = true }) plays a movie over all
+-- layers and blocks until it has played. Replay and skip mode do not play it.
+function movie(path, options)
+  if type(path) ~= "string" then
+    bad_argument("movie", 1, "string", path)
+  end
+  options = options_argument("movie", options)
+  local skippable = option("movie", options, "skippable", "boolean")
+  require_label("movie")
+  local problem = engine.movie_check(path)
+  if problem then
+    error(problem, 2)
+  end
+  engine.movie(path, skippable == true)
 end
 )lua" R"lua(
 
@@ -1443,6 +1464,13 @@ void read_animation(const sol::table& table, AnimationRequest& request) {
   }
 }
 
+// A `wait` or `movie`: advance() ends it, it is a step that a replay passes by itself, and it is
+// not a rollback step.
+bool is_pause(const BlockingRequest& request) {
+  return std::holds_alternative<WaitRequest>(request) ||
+         std::holds_alternative<MovieRequest>(request);
+}
+
 // Continues `coroutine` with the answer of a blocking call as its result.
 sol::protected_function_result resume_with(sol::coroutine& coroutine, const ScreenValue& value) {
   return std::visit(
@@ -1520,7 +1548,7 @@ class ScriptRuntime::Impl {
     }
     return {.label = frames_.back().label,
             .step = frames_.back().step,
-            .wait = state_ == RunState::kWaiting && std::holds_alternative<WaitRequest>(request_)};
+            .wait = state_ == RunState::kWaiting && is_pause(request_)};
   }
   [[nodiscard]] const std::string& error() const { return error_; }
 
@@ -1825,11 +1853,16 @@ void ScriptRuntime::Impl::bind_engine() {
                         sol::this_state state, const std::string& tag, const std::string& image,
                         const sol::optional<std::string>& at, sol::optional<double> x,
                         sol::optional<double> y, const sol::optional<std::string>& layer,
+                        const sol::optional<std::string>& movie, sol::optional<bool> loop,
                         const sol::optional<sol::table>& attributes) {
     if (options_.scene == nullptr) {
       return problem_or_nil(state, {});
     }
     ShowRequest request{.tag = tag, .image = image, .replaying = replaying_};
+    if (movie) {
+      request.movie = *movie;
+      request.loop = loop.value_or(false);
+    }
     if (attributes) {
       const MemoryLimitScope unlimited{allocator_, false};
       request.attributes = read_pairs(*attributes);
@@ -1925,6 +1958,18 @@ void ScriptRuntime::Impl::bind_engine() {
   };
   engine_["wait"] = sol::yielding([this](sol::this_state state, const std::string& tag) {
     yield_at(state, WaitRequest{.tag = tag});
+  });
+  // The check reads the file, so a replay (a load, a rollback) does not repeat it.
+  engine_["movie_check"] = [this, problem_or_nil](sol::this_state state, const std::string& path) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr || replaying_) {
+      return problem_or_nil(state, {});
+    }
+    return problem_or_nil(state, options_.scene->check_movie(path));
+  };
+  engine_["movie"] = sol::yielding([this](sol::this_state state, const std::string& path,
+                                          bool skippable) {
+    yield_at(state, MovieRequest{.path = path, .skippable = skippable});
   });
   engine_["scene_command"] = [this](const std::string& command) {
     if (!replaying_) {
@@ -2330,8 +2375,7 @@ bool ScriptRuntime::Impl::enter(const std::string& name) {
 
 void ScriptRuntime::Impl::advance() {
   const bool at_line = std::holds_alternative<SayRequest>(request_) ||
-                       std::holds_alternative<NarrateRequest>(request_) ||
-                       std::holds_alternative<WaitRequest>(request_);
+                       std::holds_alternative<NarrateRequest>(request_) || is_pause(request_);
   if (state_ != RunState::kWaiting || !at_line) {
     return;
   }
@@ -2381,7 +2425,7 @@ bool ScriptRuntime::Impl::can_roll_back() const {
     return false;
   }
   // At a wait the last step is the line before it; elsewhere the last step is this request.
-  return rollback_.size() >= (std::holds_alternative<WaitRequest>(request_) ? 1U : 2U);
+  return rollback_.size() >= (is_pause(request_) ? 1U : 2U);
 }
 
 // Replays the label that was outermost at an earlier step, with every label it had called, to
@@ -2390,7 +2434,7 @@ bool ScriptRuntime::Impl::roll_back() {
   if (!can_roll_back()) {
     return false;
   }
-  if (!std::holds_alternative<WaitRequest>(request_)) {
+  if (!is_pause(request_)) {
     rollback_.pop_back();
   }
   const RollbackStep target = rollback_.back();  // a copy: begin_replay changes the frames
@@ -2567,7 +2611,7 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
       ++frames_.front().stops;
       request_ = std::get<BlockingRequest>(std::move(*pending_));
       std::string voice;
-      if (!std::holds_alternative<WaitRequest>(request_)) {
+      if (!is_pause(request_)) {
         voice = std::exchange(pending_voice_, std::string{});
       }
       if (replaying_ && !at_replay_target()) {
@@ -2581,14 +2625,14 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
       }
       replaying_ = false;
       state_ = RunState::kWaiting;
-      if (!rolling_back_ && !std::holds_alternative<WaitRequest>(request_)) {
+      if (!rolling_back_ && !is_pause(request_)) {
         push_rollback_step(std::move(voice));
       }
       rolling_back_ = false;
       observer_->on_blocked(request_,
                             ScriptPosition{.label = frame.label,
                                            .step = frame.step,
-                                           .wait = std::holds_alternative<WaitRequest>(request_)});
+                                           .wait = is_pause(request_)});
       return;
     }
     TransferKind kind = TransferKind::kReturn;

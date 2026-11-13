@@ -25,6 +25,8 @@
 #include "engine/scene/displayable.hpp"
 #include "engine/scene/frame_animation.hpp"
 #include "engine/scene/layered_sprite.hpp"
+#include "engine/scene/movie_displayable.hpp"
+#include "engine/video/movie_audio.hpp"
 
 namespace vnmaki {
 
@@ -83,6 +85,13 @@ inline constexpr std::string_view kLayerTagPrefix = "@layer.";
 /// what `tweening` reports while it plays, and `finish_tweens` puts it at its end. After a
 /// restore it plays again from frame 1.
 ///
+/// `show(tag, { movie = path, loop = true })` shows a movie (engine/scene/movie_displayable.hpp)
+/// instead of an image; `path` is the movie file in the Vfs, with its extension. A movie loads on a
+/// job and plays from time 0 on the clock of update(); with audio, its Opus track plays on the
+/// `movie` channel of the MovieAudio from set_movie_audio() (which must outlive the scene) and the
+/// picture follows it. A movie that does not loop is what `tweening` reports until it has played,
+/// and `finish_tweens` ends it. After a restore it plays again from time 0.
+///
 /// `tween` changes the properties of shown displayables over time (engine/anim/timeline.hpp), as
 /// update() moves the clock on. `hide` and `scene` end the tweens of the displayables they remove.
 ///
@@ -102,10 +111,10 @@ inline constexpr std::string_view kLayerTagPrefix = "@layer.";
 ///
 /// The snapshot is a map from a part's name to its bytes, so a later feature adds a part without
 /// changing the others: "displayables" (the images), "layered" (the layered sprites),
-/// "animations" (the frame animations), "tweens" (the loops) and "shaders" (the shader and
-/// uniform values of displayables and layers; left out when no shader is set). It keeps the
-/// properties as a replay would leave them: tweens that end are at their end values, loops at the
-/// value they started from, and restore() starts each loop again at time 0.
+/// "animations" (the frame animations), "movies" (the movies), "tweens" (the loops) and "shaders"
+/// (the shader and uniform values of displayables and layers; left out when no shader is set). It
+/// keeps the properties as a replay would leave them: tweens that end are at their end values,
+/// loops at the value they started from, and restore() starts each loop again at time 0.
 class Scene final : public SceneState, public SceneCommands {
  public:
   /// `vfs` must outlive the scene. `virtual_size` is the virtual resolution.
@@ -116,6 +125,7 @@ class Scene final : public SceneState, public SceneCommands {
   void hide(std::string_view tag) override;
   [[nodiscard]] std::string layered(const LayeredRequest& request) override;
   [[nodiscard]] std::string animation(const AnimationRequest& request) override;
+  [[nodiscard]] std::string check_movie(std::string_view path) override;
   [[nodiscard]] std::string tween(const TweenRequest& request) override;
   void finish_tweens(std::string_view tag) override;
   [[nodiscard]] bool tweening(std::string_view tag) const override;
@@ -125,6 +135,10 @@ class Scene final : public SceneState, public SceneCommands {
 
   [[nodiscard]] std::vector<std::byte> capture() const override;
   void restore(std::span<const std::byte> state) override;
+
+  /// The audio that movies play on. May be null (movies are then silent). It must outlive the
+  /// scene, whose movies stop their audio when they go away.
+  void set_movie_audio(MovieAudio* audio) { movie_audio_ = audio; }
 
   /// The tags on `layer`, back to front.
   [[nodiscard]] std::vector<std::string> tags(Layer layer) const;
@@ -198,6 +212,9 @@ class Scene final : public SceneState, public SceneCommands {
   void read_layered(std::span<const std::byte> bytes, Layers& layers) const;
   // Reads the "animations" part into `layers`. Throws std::invalid_argument.
   void read_animations(std::span<const std::byte> bytes, Layers& layers) const;
+  // Reads the "movies" part into `layers`. Throws std::invalid_argument.
+  static void read_movies(std::span<const std::byte> bytes, Layers& layers,
+                          const std::shared_ptr<std::vector<TextureId>>& retired);
 
   [[nodiscard]] std::vector<Entry>& entries(Layer layer);
   [[nodiscard]] const std::vector<Entry>& entries(Layer layer) const;
@@ -210,6 +227,10 @@ class Scene final : public SceneState, public SceneCommands {
   std::array<TextureId, kLayerOrder.size()> layer_targets_{};
   std::vector<ShaderId> retired_shaders_;  // GPU shaders of redeclared shaders, to destroy
   std::map<std::string, Texture, std::less<>> textures_;
+  MovieAudio* movie_audio_ = nullptr;
+  // Textures of movies that went away, for prepare() to destroy.
+  std::shared_ptr<std::vector<TextureId>> retired_textures_ =
+      std::make_shared<std::vector<TextureId>>();
   std::map<std::string, std::shared_ptr<const LayeredDefinition>, std::less<>> definitions_;
   std::map<std::string, std::shared_ptr<const AnimationDefinition>, std::less<>> animations_;
   Timeline timeline_;

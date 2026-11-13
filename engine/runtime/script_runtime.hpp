@@ -97,10 +97,22 @@ struct WaitRequest {
   friend bool operator==(const WaitRequest&, const WaitRequest&) = default;
 };
 
+/// `movie(path, { skippable = true })`: the script plays the movie `path` over all layers
+/// and waits until it has played (engine/video/movie_presenter.hpp). Answered with
+/// ScriptRuntime::advance(). Like a wait, it is a step that a replay passes by itself without
+/// playing it, and rollback goes back over it (ScriptPosition::wait).
+struct MovieRequest {
+  std::string path{};
+  /// The player may end the movie early with a click. Skip mode ends it whatever this says.
+  bool skippable = false;
+
+  friend bool operator==(const MovieRequest&, const MovieRequest&) = default;
+};
+
 /// What a suspended label waits for. Every alternative is one kind of yield
 /// point; later tickets add pauses.
-using BlockingRequest =
-    std::variant<SayRequest, NarrateRequest, MenuRequest, CallScreenRequest, WaitRequest>;
+using BlockingRequest = std::variant<SayRequest, NarrateRequest, MenuRequest, CallScreenRequest,
+                                     WaitRequest, MovieRequest>;
 
 /// The answer to a MenuRequest: the chosen option, counted from 0.
 struct MenuChoice {
@@ -205,6 +217,10 @@ struct ShowRequest {
   std::optional<double> x{};        ///< A fraction of the virtual width.
   std::optional<double> y{};        ///< A fraction of the virtual height.
   std::optional<std::string> layer{};
+  /// The `movie` option: shows the movie at this Vfs path (the movie file's name, with its
+  /// extension) instead of an image; `image` is then the tag. `loop` is the option of that name.
+  std::optional<std::string> movie{};
+  bool loop = false;
   /// For a layered sprite: the groups the script named and the values it chose, in the order of
   /// the definition's groups. Other groups keep their values.
   std::vector<std::pair<std::string, std::string>> attributes{};
@@ -223,7 +239,7 @@ struct LayeredRequest {
   };
 
   std::string name{};
-  std::vector<Group> groups{};  ///< From the back to the front.
+  std::vector<Group> groups{};                                  ///< From the back to the front.
   std::vector<std::pair<std::string, std::string>> defaults{};  ///< (group, value)
   double crossfade = 0;  ///< Seconds an attribute change takes; 0 for a cut.
 };
@@ -314,6 +330,11 @@ class SceneCommands {
   /// Defines a frame animation. Returns why it cannot (a missing image, a bad rate, ...), as for
   /// `show`. The default does nothing, for implementations without frame animation.
   [[nodiscard]] virtual std::string animation(const AnimationRequest& /*request*/) { return {}; }
+
+  /// Checks that the movie file `path` can be played, before `movie(path)` blocks. Returns why
+  /// not (missing, not WebM with AV1, ...), as for `show`. The default accepts every file, for
+  /// implementations that do not play movies. Not called during a replay.
+  [[nodiscard]] virtual std::string check_movie(std::string_view /*path*/) { return {}; }
 
   /// Starts the tweens. Returns why it cannot (an unknown tag or easing, ...), as for `show`. The
   /// defaults do nothing, for implementations without an animation system.
@@ -472,7 +493,8 @@ class ScriptObserver {
   /// A `scene`, `show`, `hide`, `tween`, `sequence` or `parallel` call was done. `command` is its
   /// transcript form: "scene <image>", "hide <tag>", "tween <tag>", "sequence", "parallel", or
   /// "show <tag>" followed by the options given, in this order: " image <name>", " at <position>",
-  /// " x <number>", " y <number>", " layer <name>", the layered attributes and " shader <name>".
+  /// " x <number>", " y <number>", " layer <name>", " movie <path>" (and " loop"), the layered
+  /// attributes and " shader <name>".
   /// A `layer(name, options)` call is "layer <name>", with " shader <name>" if it set one.
   virtual void on_scene_command(std::string_view /*command*/) {}
   /// A `music`, `sound`, `voice`, `stop` or `volume` call was done. `command` is its transcript
@@ -639,7 +661,7 @@ class ScriptRuntime {
 
   /// Resumes the waiting label (the player advanced past the request) and
   /// runs it to its next yield point. Does nothing unless kWaiting at a say,
-  /// narrate or wait.
+  /// narrate, wait or movie.
   void advance();
 
   /// Answers the MenuRequest the label waits at with option `index` (from 0),
