@@ -15,6 +15,7 @@
 
 #include "engine/anim/wait_presenter.hpp"
 #include "engine/audio/audio.hpp"
+#include "engine/dialogue/backlog.hpp"
 #include "engine/dialogue/dialogue_presenter.hpp"
 #include "engine/dialogue/playback.hpp"
 #include "engine/dialogue/rollback_input.hpp"
@@ -34,6 +35,7 @@
 #include "engine/saves/thumbnail.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/text/text.hpp"
+#include "engine/ui/backlog_screen.hpp"
 #include "engine/ui/playback_indicator.hpp"
 #include "engine/ui/screen_presenter.hpp"
 #include "engine/ui/ui_host.hpp"
@@ -156,6 +158,8 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
                       {.voice_playing = [&] { return audio->voice_playing(); },
                        .skip_wait = [&] { return waits.skip(); }}};
     PlaybackIndicator indicator{ui};
+    const Backlog backlog{runtime, audio.get(), config.backlog_length};
+    BacklogScreen backlog_screen{ui, backlog, ui_renderer.text_measure()};
 
     SteadyClock clock;
     MainLoop loop{platform, clock, {.min_frame_time = kFrameTime}};
@@ -176,6 +180,9 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     };
     MainLoopHooks hooks;
     hooks.on_event = [&](const InputEvent& event) {
+      if (backlog_screen.handle_event(event, viewport())) {  // L opens it, Esc or L closes it
+        return;
+      }
       if (screens.handle_event(event, viewport())) {
         return;
       }
@@ -213,7 +220,9 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       const double seconds = std::chrono::duration<double>(step).count();
       saves.poll();  // a script's save or load, or a load in the middle of a line
       presenter.update(seconds);
-      playback.update(seconds);
+      if (!backlog_screen.is_open()) {  // auto and skip wait while the player reads
+        playback.update(seconds);
+      }
       scene.update(seconds);
       audio->update(seconds);
       waits.update();

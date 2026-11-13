@@ -474,6 +474,9 @@ class ScriptObserver {
 /// How many steps back the player can roll unless ScriptRuntimeOptions::rollback_depth is set.
 inline constexpr std::size_t kDefaultRollbackDepth = 100;
 
+/// How many lines the backlog shows at most unless project.toml `backlog_length` says otherwise.
+inline constexpr std::size_t kDefaultBacklogLength = 100;
+
 /// A position the player can roll back to: a say, narrate, menu or call_screen the story waited
 /// at (never a `wait`). It holds all that replaying to there takes, so every step stands alone.
 struct RollbackStep {
@@ -488,6 +491,9 @@ struct RollbackStep {
   std::uint32_t ordinal = 0;
   /// What the story waited for there.
   BlockingRequest request{};
+  /// The name of the last `voice(name)` call before this say or menu (and after the one before);
+  /// empty if there was none. The backlog plays it again.
+  std::string voice{};
 };
 
 /// The seed of the script RNG unless ScriptRuntimeOptions::random_seed is set.

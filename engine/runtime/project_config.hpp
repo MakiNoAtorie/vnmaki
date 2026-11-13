@@ -11,6 +11,8 @@
 //                                 # each label, at each menu; default [] (never)
 //   rollback_depth = 100          # how many steps the player can roll back; 0 turns rollback
 //                                 # off; default 100 (kDefaultRollbackDepth)
+//   backlog_length = 100          # how many lines the backlog shows at most, 0 to 10000; it
+//                                 # cannot hold more than rollback_depth; default 100
 //
 //   [fonts.fallback]              # for a language: the fonts (virtual paths)
 //   ja = ["fonts/jp.otf"]         # that supply characters the text's font
@@ -56,6 +58,7 @@ struct ProjectConfig {
   std::map<std::string, std::vector<std::string>> font_fallbacks;
   std::vector<AutoSaveEvent> auto_save{};
   std::size_t rollback_depth = kDefaultRollbackDepth;
+  std::size_t backlog_length = kDefaultBacklogLength;
 };
 
 /// project.toml is missing, is not valid TOML, or breaks the schema above.

@@ -226,6 +226,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `vnmaki run <dir> [--frames N] [--data-dir <path>]` plays in a window. It exits with 0 when the story ends. Saves and `persistent.vnpersist` go to `--data-dir`, or else to the user-data directory of the project title. This also applies to `--headless`.
 - Rollback input (`is_rollback_event`, `rollback_input.hpp`): mouse wheel up, Page Up, gamepad left shoulder. The story window checks it after the screens and calls `ScriptRuntime::roll_back()`. It turns skip off. Task 42 will make the keys configurable.
 - `SayRequest` has `color` (0xRRGGBB) and `voice_tag` from `character{}`.
+- `Backlog` (`backlog.hpp`) has no list of its own. `entries()` reads `ScriptRuntime::rollback_steps()`, so it is right after a rollback and after a load. It is the say and narrate steps (menus and screens are left out), oldest first, at most `max_entries` of the newest (`project.toml` `backlog_length`, default 100). It cannot hold more than `rollback_depth` steps plus one.
+  - A `BacklogEntry` has `speaker` (empty for narrate), `text` (with tags), `label`, `step` and `voice`. `voice` is the name of the last `voice(name)` call before the line (`RollbackStep::voice`). The runtime records it also during a replay, but does not play it.
+  - `play_voice(entry)` calls `AudioCommands::voice`, so a replayed voice also ducks the music and `voice_playing()` is true. Give `Backlog` the same `Audio` as the runtime.
+- `BacklogScreen` (`engine/ui/backlog_screen.hpp`) is the screen `vnmaki:backlog` of a `UiHost` (not modal). The story window gives it every event first. While it is open it takes all key, wheel, gamepad button and pointer events, and the story window does not call `Playback::update`, so auto and skip wait.
+  - `L` or the gamepad north button opens it (not while a modal screen is shown). `Esc`, `L` or the east button closes it.
+  - Up/Down, the d-pad and the wheel select the previous or next line. Page Up/Down and the shoulders move a page. Home/End go to the oldest or newest line. Enter, Space, the south button or a click on a line plays its voice (only a line with a voice is a button).
+  - The scroll viewport is a window of whole entries: `UiRenderer` has no clipping. `BacklogScreen` measures each entry with the `TextMeasure` it gets and shows the entries that fit from `first_visible()`. A line taller than the canvas overflows.
 
 ### UI (`engine/ui/`)
 
@@ -297,7 +304,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
 - `wait(tag)` and `wait_all()` are blocking calls too (`WaitRequest`). `advance()` ends them. See Anim.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it. It ends a wait at once and needs no input for it.
-- `project.toml` has `title` (required), `version`, `resolution`, `languages`, `auto_save` (a list of `"label"` and `"menu"`) and `rollback_depth` (0 to 10000, default 100).
+- `project.toml` has `title` (required), `version`, `resolution`, `languages`, `auto_save` (a list of `"label"` and `"menu"`), `rollback_depth` and `backlog_length` (each 0 to 10000, default 100).
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
   - A slot is an integer from 1. `load` with a number is a slot. With a string or function it is Lua's `load`.
 - `on_load(function(old_version, store) ... end)` registers the migration hook while the scripts load. `run_on_load(snapshot, old_version)` runs it on the store of a snapshot, not on the live `store`.
@@ -305,7 +312,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `persistent_snapshot()` and `restore_persistent()` give the host the data. Call `restore_persistent` before `load_scripts()`.
   - A replay runs script code again, so code that writes to `persistent` must be idempotent (`persistent.won = true`, not `persistent.n = persistent.n + 1`).
 - Rollback keeps its history in the runtime. `roll_back()` and `rollback_steps()` are the interface.
-  - A step (`RollbackStep`) is a position where the story waited at a say, narrate, menu or `call_screen`. A `wait` is not a step. It holds the label-entry snapshot and input log of the outermost running label, and the number (`ordinal`) of the yield point. So each step stands alone, and the history works across `jump`, `call` and `ret`.
+  - A step (`RollbackStep`) is a position where the story waited at a say, narrate, menu or `call_screen`. A `wait` is not a step. It holds the label-entry snapshot and input log of the outermost running label, the number (`ordinal`) of the yield point, and `voice`, the last `voice(name)` before it (see Backlog in Dialogue). So each step stands alone, and the history works across `jump`, `call` and `ret`.
   - `roll_back()` replays the outermost label from its snapshot, with the labels it called, to that yield point (`begin_replay` with an ordinal). Replay does not report the label entries, and it does not add a step. The observer then hears the request, as for a load.
   - From a say or menu it goes to the step before. From a wait it goes to the last step. It returns false when there is nothing to go back to, and then it changes nothing.
   - The history keeps `ScriptRuntimeOptions::rollback_depth` steps back (default 100, `project.toml` key `rollback_depth`, 0 is off). The oldest steps go first.
