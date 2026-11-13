@@ -24,6 +24,9 @@ UiNode make_node(NodeKind kind) {
     case NodeKind::kBar:
       node.role = NodeRole::kProgress;
       break;
+    case NodeKind::kInput:
+      node.role = NodeRole::kTextInput;
+      break;
     case NodeKind::kBox:
     case NodeKind::kHbox:
     case NodeKind::kVbox:
@@ -35,8 +38,12 @@ UiNode make_node(NodeKind kind) {
 
 bool is_focusable(const UiNode& node) {
   const bool takes_focus = node.kind == NodeKind::kButton || node.kind == NodeKind::kToggle ||
-                           node.kind == NodeKind::kSlider;
+                           node.kind == NodeKind::kSlider || node.kind == NodeKind::kInput;
   return takes_focus && !node.state.disabled;
+}
+
+const std::string& display_text(const UiNode& node) {
+  return node.kind == NodeKind::kInput && node.text.empty() ? node.placeholder : node.text;
 }
 
 }  // namespace vnmaki

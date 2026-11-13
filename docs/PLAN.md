@@ -117,21 +117,21 @@ Do 29, 30a and 31 in parallel after 19. They do not share files, except `script_
 
 Files: `engine/runtime/`, `engine/dialogue/`, `engine/runtime/default_screens.cpp`, `engine/saves/` (unlocks in `persistent`).
 
-- [ ] `pause(seconds)` is a step. A click or skip mode ends it. Replay does not wait. Rollback goes over it like over a `wait`.
-- [ ] `nvl(true|false)` and `character{ kind = "nvl" }` show lines in a full-screen NVL screen. `nvl_clear()` empties it. Menus in NVL mode show inside the NVL screen. The backlog is the same.
-- [ ] The NVL page is in the snapshot, so load and rollback show the same page.
-- [ ] `unlock(kind, name)` writes to `persistent.unlocks`. Images shown with `show`/`scene` unlock `cg/<name>` when `project.toml` lists `gallery = [...]`.
-- [ ] The gallery screen shows a grid of unlocked images and a locked placeholder for the others. Mouse, keyboard and gamepad work.
-- [ ] Headless tests: pause and skip, NVL page across rollback and load, unlock after `show`, gallery grid state.
+- [x] `pause(seconds)` is a step. A click or skip mode ends it. Replay does not wait. Rollback goes over it like over a `wait`.
+- [x] `nvl(true|false)` and `character{ kind = "nvl" }` show lines in a full-screen NVL screen. `nvl_clear()` empties it. Menus in NVL mode show inside the NVL screen. The backlog is the same.
+- [x] The NVL page is in the snapshot, so load and rollback show the same page.
+- [x] `unlock(kind, name)` writes to `persistent.unlocks`. Images shown with `show`/`scene` unlock `cg/<name>` when `project.toml` lists `gallery = [...]`.
+- [x] The gallery screen shows a grid of unlocked images and a locked placeholder for the others. Mouse, keyboard and gamepad work.
+- [x] Headless tests: pause and skip, NVL page across rollback and load, unlock after `show`, gallery grid state.
 
 ### 30a: UI styles, themes and the `input` node (SPEC §15)
 
 Files: `engine/ui/`, `engine/runtime/` (prelude, screen nodes), `engine/runtime/default_screens.cpp`.
 
-- [ ] `style(name, { font, size, color, background, padding, gap, border, focus = {...}, hover = {...} })` declares a style. A node takes `style = "name"`. Node fields override style fields.
-- [ ] `theme("name")` loads `styles/<name>.lua` and replaces the style table. The default screens use only named styles.
-- [ ] The `input` node edits a string bound with `bind`. It turns on SDL text input only while it has the focus (see the Platform contract). It has a max length and a placeholder.
-- [ ] Headless tests: style merge order, theme switch changes node rectangles, input typing, backspace and focus loss.
+- [x] `style(name, { font, size, color, background, padding, gap, border, focus = {...}, hover = {...} })` declares a style. A node takes `style = "name"`. Node fields override style fields.
+- [x] `theme("name")` loads `styles/<name>.lua` and replaces the style table. The default screens use only named styles.
+- [x] The `input` node edits a string bound with `bind`. It turns on SDL text input only while it has the focus (see the Platform contract). It has a max length and a placeholder.
+- [x] Headless tests: style merge order, theme switch changes node rectangles, input typing, backspace and focus loss.
 
 ### 31: WebP images and static analysis (SPEC §4, §5)
 
@@ -225,12 +225,12 @@ Files: `engine/render/` (shader loading), `engine/scene/scene.cpp` (draw), `vcpk
 
 Files: new `engine/video/`, `engine/audio/` (movie stream), `vcpkg.json`, `engine/scene/scene.cpp`, runtime, `tests/fixtures/video/`.
 
-- [ ] Use dav1d and libwebm (vcpkg). Read WebM from the VFS. Decode AV1 on a job thread. Upload frames on the main thread.
-- [ ] The Opus audio of the movie plays on a custom `movie` channel. The picture follows the audio clock. If the movie has no audio, the picture follows the main loop clock.
-- [ ] `movie(path, { skippable = true })` plays over all layers and blocks. Replay and skip mode do not play it.
-- [ ] `show(tag, { movie = path, loop = true })` makes a movie displayable. After a load, it restarts at time 0.
-- [ ] Add a fuzz target for the WebM and AV1 loader. A bad file gives an error at the script line.
-- [ ] Fixture: Python cannot write AV1. Commit one small CC0 clip of solid-color frames, with the ffmpeg command that made it, and add this exception to CONVENTIONS. Tests: the color of frame N (with a tolerance), the duration, the loop, and sync with the null audio device.
+- [x] Use dav1d and libwebm (vcpkg). Read WebM from the VFS. Decode AV1 on a job thread. Upload frames on the main thread.
+- [x] The Opus audio of the movie plays on a custom `movie` channel. The picture follows the audio clock. If the movie has no audio, the picture follows the main loop clock.
+- [x] `movie(path, { skippable = true })` plays over all layers and blocks. Replay and skip mode do not play it.
+- [x] `show(tag, { movie = path, loop = true })` makes a movie displayable. After a load, it restarts at time 0.
+- [x] Add a fuzz target for the WebM and AV1 loader. A bad file gives an error at the script line.
+- [x] Fixture: Python cannot write AV1. Commit one small CC0 clip of solid-color frames, with the ffmpeg command that made it, and add this exception to CONVENTIONS. Tests: the color of frame N (with a tolerance), the duration, the loop, and sync with the null audio device.
 
 ### 26: Lip sync (SPEC §10, §14)
 

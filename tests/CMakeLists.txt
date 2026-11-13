@@ -125,6 +125,9 @@ target_sources(vnmaki_unit_tests PRIVATE unit/character_test.cpp
 # UI: nodes, Yoga layout, focus, the screen host, menus and call_screen (ticket 10).
 target_sources(vnmaki_unit_tests PRIVATE unit/ui_test.cpp)
 
+# UI styles, themes and the `input` node (ticket 30a).
+target_sources(vnmaki_unit_tests PRIVATE unit/styles_test.cpp)
+
 # Saves: file format, slots, quick save, auto save, on_load (ticket 12).
 target_sources(vnmaki_unit_tests PRIVATE unit/saves_test.cpp)
 
@@ -150,6 +153,12 @@ target_sources(vnmaki_unit_tests PRIVATE unit/screens_test.cpp)
 
 # Backlog: entries from the step log, voice replay, the scrolling screen (ticket 15).
 target_sources(vnmaki_unit_tests PRIVATE unit/backlog_test.cpp)
+
+# Video: WebM, AV1 and Opus, the player and its clocks, `movie` and the movie displayable (ticket
+# 25). clip.webm is the one committed binary fixture; its README has the ffmpeg command.
+target_sources(vnmaki_unit_tests PRIVATE unit/video_test.cpp)
+target_compile_definitions(
+  vnmaki_unit_tests PRIVATE VNMAKI_VIDEO_FIXTURES_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/video")
 
 # pause, NVL mode and the gallery (ticket 29).
 target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)

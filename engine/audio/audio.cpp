@@ -101,6 +101,7 @@ struct Track {
   double gain_step = 0;  ///< Added to `gain` after every frame.
   bool fading_out = false;
   bool ended = false;
+  std::uint64_t movie = 0;  ///< The token of a movie's audio (MovieAudio); 0 for any other track.
 };
 
 struct Channel {
@@ -258,8 +259,9 @@ struct Audio::Impl {
   std::vector<float> block;  ///< One block of one track, before it is mixed in.
 
   // Used by the engine's thread only.
-  bool pending = false;  ///< restore() changed the music; the tracks follow at update().
-  double carry = 0;      ///< The part of a frame update() has not mixed yet.
+  bool pending = false;            ///< restore() changed the music; the tracks follow at update().
+  std::uint64_t movie_tokens = 0;  ///< The last token start_movie_audio() gave.
+  double carry = 0;                ///< The part of a frame update() has not mixed yet.
   std::vector<float> discard;
 
 #if VNMAKI_AUDIO_DEVICE
@@ -615,6 +617,50 @@ std::string Audio::volume(std::string_view channel_name, double level) {
   const std::scoped_lock lock{impl_->mutex};
   impl_->channel(channel_name).volume = level;
   return {};
+}
+
+std::uint64_t Audio::start_movie_audio(std::vector<std::byte> ogg_opus, bool loop) {
+  std::optional<AudioDecoder> decoder;
+  try {
+    decoder.emplace(std::move(ogg_opus));
+  } catch (const AudioError&) {
+    return 0;  // The movie plays without sound.
+  }
+  Track track{.name = std::string{kMovieChannel},
+              .music = std::nullopt,
+              .decoder = std::move(*decoder),
+              .loop_points = {},
+              .loop = loop};
+  track.movie = ++impl_->movie_tokens;
+  const std::uint64_t token = track.movie;
+  const std::scoped_lock lock{impl_->mutex};
+  Channel& target = impl_->channel(kMovieChannel);
+  std::erase_if(target.tracks, [](const Track& old) { return old.movie != 0; });
+  target.tracks.push_back(std::move(track));
+  return token;
+}
+
+std::optional<double> Audio::movie_audio_position(std::uint64_t token) const {
+  const std::scoped_lock lock{impl_->mutex};
+  const auto found = impl_->channels.find(kMovieChannel);
+  if (found == impl_->channels.end() || token == 0) {
+    return std::nullopt;
+  }
+  for (const Track& track : found->second.tracks) {
+    if (track.movie == token) {
+      return static_cast<double>(track.position) / kFramesPerSecond;
+    }
+  }
+  return std::nullopt;
+}
+
+void Audio::stop_movie_audio(std::uint64_t token) {
+  if (token == 0) {
+    return;
+  }
+  const std::scoped_lock lock{impl_->mutex};
+  Channel& target = impl_->channel(kMovieChannel);
+  std::erase_if(target.tracks, [token](const Track& old) { return old.movie == token; });
 }
 
 std::string Audio::set_preference_volume(std::string_view channel_name, double level) {

@@ -27,6 +27,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `sdl3` has no default features. On Linux, it has `x11` and `wayland`.
   - mpack has no vcpkg port, and `third_party/` has no copy of it. The save format (`engine/saves/save_file.cpp`) has a small MessagePack reader and writer of its own. It is plain MessagePack, so mpack can replace it.
   - libwebp is a vcpkg dependency. `engine/render/CMakeLists.txt` finds it with `find_package(WebP CONFIG REQUIRED)` (target `WebP::webp`). Debian: `libwebp-dev`.
+  - dav1d (AV1) and libwebm (WebM, its `mkvparser`) are vcpkg dependencies. Neither has a CMake config that the engine uses, so `engine/video/CMakeLists.txt` finds both with `find_path` and `find_library` (libwebm's headers are in `include/webm`).
+  - dav1d 1.5.4 does not build with MSVC 14.5 (Visual Studio 2026): its `stdatomic.h` shim uses `__has_include_next` in a non-clang build. `vcpkg-configuration.json` adds the overlay port `tools/vcpkg-overlay/dav1d`, which is the vcpkg port with one patch for this. Remove the overlay when the vcpkg baseline has a dav1d that builds.
   - zstd is a vcpkg dependency. `engine/saves/CMakeLists.txt` finds `zstd::libzstd` (vcpkg) or the plain library (Debian: `libzstd-dev`).
 
 ## Code
@@ -68,8 +70,10 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - The script uses only the standard library. Its only argument is `OUT_DIR`.
   - Register it with `vnmaki_add_fixture_generator(<name> SCRIPT ... TEST_TARGETS ...)`.
   - Tests read the fixtures from `VNMAKI_FIXTURES_DIR "/<name>"`.
+- One binary fixture is committed: `tests/fixtures/video/clip.webm`. Python cannot write AV1, so the clip is not generated. It is a small CC0 clip of solid-color frames and a tone, and `tests/fixtures/video/README.md` has the exact ffmpeg command that made it. Do not commit another binary fixture without the owner's approval.
 - Script tests use `vnmaki::test::memory_vfs({{path, text}...})` from `tests/support/memory_vfs.hpp`.
 - `RecordingRenderer` (`tests/support/recording_renderer.hpp`) is an `IRenderer` that records the quads of each draw. Use it to test what a displayable draws, without a GPU.
+- Threaded tests that wait for a job poll with a timeout (`settle` in `tests/unit/video_test.cpp`).
 - Fuzz targets use `vnmaki_add_fuzzer(<name> <sources>)`. ctest gives each target a smoke test of 10,000 runs.
   - A fuzz target checks properties of the output, for example idempotence or an independent oracle. If a property is false, it calls `std::abort()`.
   - `fuzz_image` and `fuzz_webp` share `fuzz/image_properties.hpp` (also run by `tests/unit/image_test.cpp`). `fuzz_webp` adds the RIFF/VP8L container to the input, so the bytes are the chunk data. libwebp is a vcpkg library, so it has no fuzz instrumentation; only the engine code around it has.
@@ -109,7 +113,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `MainLoop` runs a fixed timestep: events, updates, then `draw(alpha)`. You can inject the clock.
 - Pointer positions are in window pixels. Convert them with `window_to_virtual(compute_viewport(...), pos)`.
 - Clicks in the letterbox bars are outside the virtual area.
-- Text input is off when no text field has the focus.
+- Text input is off when no text field has the focus. `UiHost::set_platform(&platform)` does this for the `input` node (see UI).
 - `set_fullscreen(bool)` and `set_window_opacity(float)` apply the player's preferences. `HeadlessPlatform` only records them (`fullscreen()`, `window_opacity()`).
 - `user_data_directory(organization, application)` (`sdl_platform.hpp`) is SDL's per-user preference path. Saves go there.
 - Only one `SdlPlatform` can exist. Other SDL users call `SDL_InitSubSystem` and `SDL_QuitSubSystem`. They do not call `SDL_Quit`.
@@ -201,6 +205,12 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `SceneCommands` calls also run during replay.
 - `SceneCommands` has `animation`, `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
 - A displayable draws its quads with `draw_state(texture)` (`Displayable`, protected). What a displayable adds to its draws, for example a shader, goes there, so it applies to every kind of displayable.
+- `show(tag, { movie = "movies/x.webm", loop = true })` shows a movie (`MovieDisplayable`) in place of an image. `movie` is the Vfs path with its extension. A bad or missing file is an error at the script line (`ShowRequest::movie`; a replay checks only that the file exists). `movie` and `loop` are in the prelude `show_options`.
+  - `Scene::prepare` loads a movie on a job (`MovieDisplayable::prepare`) and uploads its pictures. `Scene::update` is its clock. After a restore (a load, a rollback), or when it is shown again, a movie plays from time 0.
+  - `Scene::set_movie_audio(audio)` gives the movie its sound (see Video). The `MovieAudio` must outlive the scene, so make `Audio` before `Scene`.
+  - A movie that does not loop is what `wait(tag)` waits for, as for a frame animation, and `finish_tweens` ends it. A movie never blocks a wait when it loops.
+  - The snapshot part `movies` has the layer, the index in the layer (movies are put back last, so the `layered` index does not count them), the tag, the path, the loop flag and the properties. It has no time.
+  - A movie texture is made again for each new picture. A displayable that goes away gives its texture to `Scene::prepare` to destroy.
 - `place_corners(properties, size, part)` and `bounding_box(corners)` (`displayable.hpp`) place a box with the properties. Use them in a new displayable.
 
 ### Layered sprites (`engine/scene/layered_sprite.*`)
@@ -223,6 +233,21 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - A value of a layered group can be an animation: `eyes = { open = "eyes_open", blink = "blink" }`. It plays from frame 1 when the value is chosen, and a group that keeps its value keeps playing. In a crossfade, the old value shows the frame that it had when it left.
 - `wait(tag)` and `wait_all()` wait for an animation that does not loop: `Scene::tweening(tag)` is true until its last frame has played for its full time. A loop never blocks a wait. `finish_tweens` (a click, skip mode) puts the animation at its last frame. The same is true for the animation values of a layered sprite (`LayeredSprite::animating()` and `finish_animations()`).
 - The snapshot part `animations` has the layer position, the tag, the definition name and the properties. It has no definition and no time. `restore()` throws if the scene does not know the definition, so the scripts must load first. After a restore (a load, a rollback), an animation restarts at frame 1.
+
+### Video (`engine/video/`)
+
+- A movie is AV1 video and Opus audio in a WebM file. `open_movie(bytes)` (libwebm `mkvparser`) gives a `MovieData`: the encoded video packets with their times, the size, the duration and the audio. `load_movie(vfs, path)` reads it from the Vfs. A bad file throws `MovieError`, and the message is `movie '<path>' ...`. `movie_problem(vfs, path)` gives that text, or an empty string.
+  - The duration is the time of the last video packet plus one frame. There must be one AV1 video track. The audio track is optional and must be Opus. Laced blocks are an error.
+  - The audio is made again as an Ogg Opus file (`MovieData::audio`), so `AudioDecoder` reads it like any other file.
+- `VideoDecoder` (dav1d, one thread, no frame delay) turns packets into opaque RGBA `MovieFrame`s with `decode(n)`, and goes back to the start with `rewind()`. It handles 8 to 12 bit pictures, all chroma layouts, BT.601 and BT.709 (BT.709 by default), and limited and full range.
+- `MoviePlayer` plays one movie from time 0. The decoding runs on a job (`JobSystem`): one job at a time makes a few pictures, so the memory stays small. Call `update(seconds)` and `prepare(renderer)` from the main thread.
+  - The clock starts when the first picture is decoded. With a `MovieAudio` and a movie that has audio, the audio starts then and the picture follows the audio position (the audio clock). Without audio, or after the audio has ended, the picture follows the seconds that `update` gets (the loop clock). A loop starts again when the clock passes the end, and never finishes.
+  - A bad AV1 stream throws `MovieError` from `update`.
+- `MovieAudio` (`movie_audio.hpp`) is the interface to the audio. `Audio` implements it: the movie's Ogg Opus plays on the `movie` channel in place of the movie there, and `start_movie_audio` returns a token. The audio is not state: `Audio::restore` stops it, and a `MoviePlayer` stops its audio when it goes away. It is silent, with the loop clock, if the file cannot be played.
+- `movie(path, { skippable = true })` is a blocking call (`MovieRequest`). `SceneCommands::check_movie` checks the file first, and an error is raised at the script line. It is a step like a `wait`: `advance()` ends it, a replay passes it without playing it, and rollback goes back over it (`ScriptPosition::wait`). `skippable` is false by default.
+  - `MoviePresenter` (`movie_presenter.hpp`) plays it in the host. `update(seconds)` once per update, `prepare(renderer)` before drawing, and `draw(renderer, size)` after `Scene::draw` (it draws black and the picture, centered, over everything). `click()` ends a skippable movie and returns true if the story waits at a movie. `skip()` is for skip mode: it ends any movie (`PlaybackOptions::skip_wait`).
+  - The headless runner does not play a movie. It writes `movie <path>` to the transcript and goes on.
+- Fuzz target: `fuzz_video` (the container, the Ogg audio, the decoder).
 
 ### Anim (`engine/anim/`)
 
@@ -254,7 +279,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Script API: `camera { x, y, zoom, rotation, duration, ease, delay }` is `tween("@camera", ...)` that is instant when it has no duration. `x` and `y` are fractions of the virtual width and height, as for `show`. `scale` also works for `zoom`. `shake { strength, duration }` has a strength from 0 to 1 (a fraction of the virtual height, required) and a duration above 0 (0.5 s if none). `layer(name, { parallax = f })` sets the factor of a layer, with or without the `shader` option.
   - `tween("@camera", ...)` allows only `x`, `y`, `zoom` (or `scale`) and `rotation`, and no uniforms. The zoom must be above 0. `wait("@camera")` waits for a move or a shake. `camera` and `shake` do not block. A loop on `@camera` never blocks a wait.
   - `TweenRequest::instant` is `replaying` for a request that is not a replay: the tweens that end go to their end values at once.
-- `ScriptPosition::wait` marks a wait step. Rollback goes back over wait steps to the previous say, narrate, menu or `call_screen` (a wait is never a rollback step).
+- `pause(seconds)` (0 to 86400) is a `WaitRequest` with the tag `kPauseTag` (`"@pause"`) and `WaitRequest::seconds`. `WaitPresenter::update(seconds)` counts the time (give it the frame time; the default 0 never ends a pause with time left) and ends the pause. `skip()` (a click, skip mode through `PlaybackOptions::skip_wait`) ends it at once. A replay does not wait. The headless runner ends it at once and prints `pause <seconds>`.
+- `ScriptPosition::wait` marks a wait step (also a pause). Rollback goes back over wait steps to the previous say, narrate, menu or `call_screen` (a wait is never a rollback step).
 
 ### Dialogue (`engine/dialogue/`)
 
@@ -285,7 +311,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 
 ### UI (`engine/ui/`)
 
-- A screen is a `UiNode` tree with a name. Kinds: `box`, `hbox`, `vbox`, `text`, `image`, `button`, `toggle`, `slider`, `bar`. The Lua constructors have the same names, and `grid { columns = n, ... }` (`build_ui_tree` makes it a `vbox` of `hbox` rows; give the cells one width).
+- A screen is a `UiNode` tree with a name. Kinds: `box`, `hbox`, `vbox`, `text`, `image`, `button`, `toggle`, `slider`, `bar`, `input`. The Lua constructors have the same names, and `grid { columns = n, ... }` (`build_ui_tree` makes it a `vbox` of `hbox` rows; give the cells one width).
 - Lua: `screen "name" { nodes }`, or `screen("name", function(args) return nodes end)`. A table of several nodes is wrapped in a `box`. `show_screen`, `hide_screen` and `call_screen` take the screen name and an `args` table for the function form.
 - `build_ui_tree` documents the options (`width`, `padding`, `bg`, `returns`, ...). An unknown option is an error that names the node.
 - A text or button string is the first string in the table: `button { "Save", returns = "save" }`. A button hands `returns` to its screen when activated.
@@ -294,6 +320,18 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `UiHost::set_bindings(&runtime)` connects them. `UiHost` reads each bound node's datum (`ScriptRuntime::binding`) every time it lays out, draws or handles an event. It writes the datum (`set_binding`) when the player flips the toggle or moves the slider. Without it the node keeps its own value.
   - A toggle follows a boolean. A slider or bar follows a number between its `min` and `max` (default 0 and 1). A `step` snaps a slider. A click or a drag on a slider sets it. Left and Right (also the d-pad) move it by `step` (a twentieth of the range if unset).
   - A write to `store` is not in the input log, so a rollback or a load takes it back. `persistent` and `prefs` are not rolled back.
+- Styles (SPEC §15): `style(name, { font, size, color, background, padding, gap, margin, width, height, grow, align, justify, fill, border = { width, color }, focus = { background, color, border }, hover = { ... }, extends = "other" })` declares a named style. A node takes `style = "name"`.
+  - Merge order, lowest first: the built-in look of the node kind (`build_ui_tree`), the styles in the `extends` chain (base first), the style, the node's own options.
+  - The prelude does the merge when the node is made. `style` is not an option that reaches C++. A style is flat node options (`background` is `bg`, `border = {...}` is `border_width` and `border_color`, `focus = {...}` is `focus_bg`, `focus_color` and `focus_border`, `hover` is `hover_*`). A style option that does not fit the kind is left out: only a button, toggle, slider or input gets `focus_*`. So one style can serve a text node and a button.
+  - An unknown style, an `extends` loop (more than 16 levels), an unknown style option and a style that is not a string are errors at the script line. Styles are looked up when a screen is built, so a style may be declared after the screen that uses it.
+  - A focused node uses `focus_*`, a hovered one `hover_*`, else the base. A hovered node that has no `hover_*` uses `focus_*` (pointer hover also moves the focus). `UiStyle` has the fields (`focus_background`, `hover_background`, `focus_color`, `border_width`, `font`, ...). `font` is a family of the `FontSet`.
+  - `theme("name")` makes the style table of the engine's default screens, then runs `styles/<name>.lua` (a script that calls `style`). It replaces the game's own styles that were declared before. It is not in a snapshot and `show_screen` is not undone by a rollback, so call it before the story starts, or in the label that changes the look. A screen that is already shown keeps its look until it is built again. A missing or bad file is an error at the script line.
+  - The styles that `engine/runtime/default_screens.cpp` declares are the defaults of every theme (the prelude knows them by the chunk name `=engine/screens.lua`). The default screens use only named styles for their look. Position options that depend on the arguments (`x`, `y` and widths of the say box) stay on the node. A game or theme restyles a default screen by declaring a style of the same name again (it replaces the whole style, `extends` can reuse the old one only under another name).
+- `input { bind = bind(store, "name"), placeholder = "Name", max_length = 20 }` edits a string datum. The string in the table is the start text of an unbound input. `max_length` counts characters (default 256, at most 4096). `returns` is what Enter gives the screen. An input is focusable, has the role `kTextInput` and `UiNode::label` defaults to the placeholder.
+  - It has the keys when it is the focused node of the keyboard screen (`UiHost::wants_text_input()`). A modal screen focuses its first focusable node, so an input there has them at once. On a screen that is not modal, a click on an input gives the screen the keys (like Tab), and Esc takes them back. Moving the pointer over other nodes does not take the focus from an input; a click does.
+  - `UiHost` calls `Platform::set_text_input(true)` when an input has the keys and `false` when it loses them (focus moves, a screen is hidden, Esc). It does this after each event, `show` and `hide`. The story window gives it the platform (`ui.set_platform`).
+  - While an input has the keys, `TextInputEvent` adds its text at the end (whole characters, no control characters, up to `max_length`), Backspace removes the last character, and the other keys are consumed and do nothing, except Tab, the arrows and Esc (focus and cancel work as before) and Enter. So the story keys (A, S, L, Space) do not fire. The story window does not give events to the backlog while `wants_text_input()` is true. There is no caret movement, selection or paste: the caret is always at the end.
+  - A bound input follows the datum (`ScriptRuntime::binding`), a string; any other value reads as empty. A change re-lays the screen out, because an input without a `width` has the size of its text.
 - A screen root can have `modal = true` (`show_screen` then shows it modal) and `cancel = value`. Esc or the gamepad's east button give the screen that value, like a button's `returns`.
 - Tab or the gamepad's west button give the keyboard to the top non-modal screen that has a focusable node (`UiHost`). It keeps the keys until the player presses Esc or the east button.
 - Yoga does the layout (`layout_tree`). Only `ui_layout.cpp` includes it, and it is linked PRIVATE.
@@ -317,7 +355,9 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 ### Default screens and preferences
 
 - `engine/runtime/default_screens.cpp` is a Lua chunk. `load_scripts()` runs it before the game's scripts, so a game replaces a screen by defining `screen "name"` again.
-  - The screens: `title`, `say`, `choice`, `confirm`, `save`, `load`, `preferences`, `quick_menu`, and the placeholders `nvl` and `gallery`.
+  - The screens: `title`, `say`, `choice`, `confirm`, `save`, `load`, `preferences`, `quick_menu`, `nvl`, `gallery` and `gallery_view`. They take their look from named styles that the same chunk declares first (`title_screen`, `say_box`, `panel`, `back_button`, `slot_cell`, `quick_button`, `nvl_screen`, `gallery_cell`, ...; see the top of the file). A new default screen uses named styles only, not inline options.
+  - `nvl`: `args.lines` (how many page lines come first), `args.typing` (the last line is the one on the typewriter: its text node has `reveal`), the lines (`speaker`, `text`, `color`) and then the options of a menu (`text`; an option returns its number from 1). `make_nvl_args(page, typing, options)` (`ui_build.hpp`) builds them. The story window builds `nvl` instead of `say` for a line with `DialogueLine::nvl` and draws it through `SayBoxView`. `ScreenPresenter` shows a menu with `MenuRequest::nvl` as `nvl` (modal), so the options are inside the NVL screen. A page has no scroll: scripts call `nvl_clear()`.
+  - `gallery` takes no args. It reads `gallery_images()` and `unlocked("cg", name)` itself: a button `@view:<name>` with the image for an unlocked image, a disabled "Locked" button for the others. `@view:<image>` opens `gallery_view` (args `image`; modal, one button `@close`). The title screen shows a Gallery button only when `gallery_images()` is not empty.
   - The backlog is the C++ `BacklogScreen` (`vnmaki:backlog`).
 - Screens size themselves by the read-only global `canvas` (`canvas.width`, `canvas.height`). `ScriptRuntimeOptions::canvas_width` and `canvas_height` set it (default 1920 by 1080). Write a screen as a function: `screen("x", function(args) ... end)`.
 - `ScriptRuntime::build_screen(name, args, tree)` runs the screen function for the engine. `args` is a `ScreenNodeDef`: its `props` are the named fields of the Lua table, and its `children` are the list (each a table of the same form). The arguments:
@@ -344,7 +384,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Set `ScriptRuntimeOptions::audio` to it. Also put it in `scene_state`, inside a `CompositeSceneState` when there is a `Scene`.
 - The runtime includes no audio headers.
 - Audio name `N` is the VFS file `audio/N.opus`, else `.ogg`, `.flac` or `.wav`. `voice(N)` plays `voice/N`.
-- Channels: `music`, `sound`, `voice`, `ambient`, `ui`. A script makes another by naming it.
+- Channels: `music`, `sound`, `voice`, `ambient`, `ui`. A script makes another by naming it. The `movie` channel (`kMovieChannel`) is made when a movie's audio first plays (see Video).
 - `AudioOutput::kManual` has no device. `update(seconds)` mixes that much. Tests and headless runs use it.
 - `kNullDevice` mixes on a device thread to nowhere. `kDevice` is the system output.
 - Call the commands, `update()` and `restore()` from one thread.
@@ -390,11 +430,15 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Other motion (tweens of displayables, transitions) is not changed by this flag yet.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
 - `wait(tag)`, `wait_all()` and transitions (`transition(...)`, the `with` option) are blocking calls too (`WaitRequest`; a transition has the tag `@transition`). `advance()` ends them. See Anim.
+- `movie(path, { skippable = })` is a blocking call (`MovieRequest`) that works as a wait for rollback and replay. See Video.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it. It ends a wait at once and needs no input for it.
-- `project.toml` has `title` (required), `version`, `resolution`, `languages`, `auto_save` (a list of `"label"` and `"menu"`), `rollback_depth` and `backlog_length` (each 0 to 10000, default 100).
+- NVL mode (SPEC §7). The page is `store.__nvl = { on = bool, { speaker =, text =, color = }, ... }`, written by the prelude, so snapshots, saves, rollback and load cover it with no change to the save format. `nvl(true)` sets `on`; `nvl(false)` removes the page; `nvl_clear()` empties it. A line is NVL when `on` is set or the character has `kind = "nvl"` (`"adv"` is the default). The prelude adds the line to the page, then `engine.stage_nvl(page)` gives it to the next `say`, `narrate` or `menu`, which put it into `SayRequest::nvl`, `NarrateRequest::nvl` or `MenuRequest::nvl` (a menu only in NVL mode). The request holds a copy of the page, with the current line last. `DialoguePresenter` copies it into `DialogueLine::nvl`, so a line with the same text on another page is another line for `SayBoxView`. The backlog needs nothing: NVL lines are say and narrate steps.
+- Unlocks: `unlock(kind, name)` sets `persistent.unlocks["<kind>/<name>"] = true`; `unlocked(kind, name)` reads it. `ScriptRuntimeOptions::gallery` (`project.toml` `gallery = ["cg/a", ...]`: image names, as for `show`) is the list; `scene` and `show` unlock `cg/<image>` for an image in it. A replay writes it again (idempotent). `gallery_images()` returns the list.
+- `project.toml` has `title` (required), `version`, `resolution`, `languages`, `gallery`, `auto_save` (a list of `"label"` and `"menu"`), `rollback_depth` and `backlog_length` (each 0 to 10000, default 100).
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
   - A slot is an integer from 1. `load` with a number is a slot. With a string or function it is Lua's `load`.
 - `on_load(function(old_version, store) ... end)` registers the migration hook while the scripts load. `run_on_load(snapshot, old_version)` runs it on the store of a snapshot, not on the live `store`.
+- `style`, `theme`, `input` and the style merge of the node constructors are in the prelude, in a literal of their own before the screens literal. `engine.load_theme(name)` reads `styles/<name>.lua` through the VFS and returns the compiled chunk (or the reason).
 - `bind`, `prefs`, `canvas`, `toggle`, `slider`, `bar` and `grid` are in the prelude (the part after `local persistent` is its own raw literal; MSVC limits one literal to 16380 bytes). `ScriptRuntime::binding(table, key)` and `set_binding(table, key, value)` read and write a bound datum for the UI.
 - `persistent` is a second Lua table, like `store`, but it is not in any snapshot or save. Rollback and load never change it.
   - `persistent_snapshot()` and `restore_persistent()` give the host the data. Call `restore_persistent` before `load_scripts()`.

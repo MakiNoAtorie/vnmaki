@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -14,6 +15,7 @@
 
 #include "engine/audio/audio_decoder.hpp"
 #include "engine/runtime/script_runtime.hpp"
+#include "engine/video/movie_audio.hpp"
 
 namespace vnmaki {
 
@@ -25,6 +27,9 @@ inline constexpr std::string_view kSoundChannel = "sound";
 inline constexpr std::string_view kVoiceChannel = "voice";
 inline constexpr std::string_view kAmbientChannel = "ambient";
 inline constexpr std::string_view kUiChannel = "ui";
+/// Where a movie's audio plays (see MovieAudio). Made when a movie first plays, not at the start,
+/// and ordinary after that: `volume("movie", 0.5)` and `stop("movie")` work.
+inline constexpr std::string_view kMovieChannel = "movie";
 
 /// The longest fade, and the latest loop point, a script may give, in seconds.
 inline constexpr double kMaxAudioSeconds = 86'400.0;
@@ -82,9 +87,12 @@ struct AudioChannelState {
 /// snapshot and then runs the script calls again, and music that comes out the same never
 /// stops. The runtime does not pass `sound` and `voice` on while it replays.
 ///
+/// A movie's audio (MovieAudio) is an Ogg Opus file that plays on the `movie` channel in place of
+/// the movie there. It is not state: restore() stops it, like a sound.
+///
 /// Call the commands, update() and restore() from one thread. With a device, mixing runs on the
 /// device's thread; the state queries may be called from any thread.
-class Audio final : public SceneState, public AudioCommands {
+class Audio final : public SceneState, public AudioCommands, public MovieAudio {
  public:
   /// `vfs` must outlive this. Throws AudioError when the output device cannot be opened, and
   /// for any output but kManual in a build without threads (see device_supported()).
@@ -104,6 +112,11 @@ class Audio final : public SceneState, public AudioCommands {
   [[nodiscard]] std::string voice(std::string_view name) override;
   [[nodiscard]] std::string stop(std::string_view channel_name, double fade) override;
   [[nodiscard]] std::string volume(std::string_view channel_name, double level) override;
+
+  [[nodiscard]] std::uint64_t start_movie_audio(std::vector<std::byte> ogg_opus,
+                                                bool loop) override;
+  [[nodiscard]] std::optional<double> movie_audio_position(std::uint64_t token) const override;
+  void stop_movie_audio(std::uint64_t token) override;
 
   /// The player's volume preference for a channel, from 0 to 1, on top of the script's `volume`
   /// and ducking. It is not in the snapshot: a load or a rollback leaves it alone. Returns why it

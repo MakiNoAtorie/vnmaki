@@ -299,10 +299,12 @@ function show(tag, options)
   local x = option("show", options, "x", "number")
   local y = option("show", options, "y", "number")
   local layer = option("show", options, "layer", "string")
+  local movie = option("show", options, "movie", "string")
+  local loop = option("show", options, "loop", "boolean")
   local attributes, attribute_text = layered_attributes(options, image or tag)
   require_label("show")
   local with = begin_with("show", options, 3)
-  local problem = engine.show(tag, image or tag, at, x, y, layer, attributes)
+  local problem = engine.show(tag, image or tag, at, x, y, layer, movie, loop, attributes)
   if problem then
     error(problem, 2)
   end
@@ -322,6 +324,9 @@ function show(tag, options)
   end
   if layer then
     command = command .. " layer " .. layer
+  end
+  if movie then
+    command = command .. " movie " .. movie .. (loop and " loop" or "")
   end
   command = command .. engine.shader_options("show", tag, false, options)
   engine.scene_command(command .. attribute_text)
@@ -460,10 +465,133 @@ function menu(options)
   return engine.menu(texts, fixed == true)
 end
 )lua" R"lua(
+-- Styles and themes (docs/SPEC.md section 15). A style is a named table of node options: font,
+-- size, color, background, padding, gap, margin, width, height, grow, align, justify, fill,
+-- border = { width, color }, focus = { background, color, border } and hover = { ... }; `extends`
+-- names a style whose options come first. A node takes `style = "name"`; its own options win.
+-- The styles that the engine's default screens declare are the defaults of every theme.
+local styles, default_styles = {}, {}
+local plain_style_options = {
+  font = true, size = true, color = true, padding = true, gap = true, margin = true, width = true,
+  height = true, grow = true, align = true, justify = true, fill = true,
+}
+local border_style_options = { width = "border_width", color = "border_color" }
+local state_style_options = { background = "bg", color = "color", border = "border" }
+-- Only nodes that take the focus have focus options.
+local focus_node_options = { focus_bg = true, focus_color = true, focus_border = true }
+local focus_node_kinds = { button = true, toggle = true, slider = true, input = true }
+
+local function style_group(group, value, names, prefix)
+  if type(value) ~= "table" then
+    error(format("bad style option '%s' (table expected, got %s)", group, type(value)), 4)
+  end
+  local props = {}
+  for key, item in pairs(value) do
+    if names[key] == nil then
+      error(format("unknown option '%s' in style option '%s'", tostring(key), group), 4)
+    end
+    props[prefix .. names[key]] = item
+  end
+  return props
+end
+
+-- The node options that the style table `definition` stands for.
+local function flatten_style(definition)
+  local props = {}
+  local function add(group)
+    for key, value in pairs(group) do
+      props[key] = value
+    end
+  end
+  for key, value in pairs(definition) do
+    if plain_style_options[key] then
+      props[key] = value
+    elseif key == "background" then
+      props.bg = value
+    elseif key == "border" then
+      add(style_group(key, value, border_style_options, ""))
+    elseif key == "focus" or key == "hover" then
+      add(style_group(key, value, state_style_options, key .. "_"))
+    elseif key ~= "extends" then
+      error(format("unknown style option '%s'", tostring(key)), 3)
+    end
+  end
+  return props
+end
+
+function style(name, definition)
+  if type(name) ~= "string" or name == "" then
+    bad_argument("style", 1, "string", name)
+  end
+  if type(definition) ~= "table" then
+    bad_argument("style", 2, "table", definition)
+  end
+  local extends = definition.extends
+  if extends ~= nil and type(extends) ~= "string" then
+    error(format("bad style option 'extends' (string expected, got %s)", type(extends)), 2)
+  end
+  local entry = { props = flatten_style(definition), extends = extends }
+  styles[name] = entry
+  if debug_getinfo(2, "S").source == "=engine/screens.lua" then
+    default_styles[name] = entry
+  end
+end
+
+-- The options of style `name` for a node of `kind`: the styles it extends first, then its own.
+local function resolve_style(kind, name)
+  if type(name) ~= "string" then
+    error(format("bad option 'style' to '%s' (string expected, got %s)", kind, type(name)), 3)
+  end
+  local chain, current = {}, name
+  while current ~= nil do
+    local entry = styles[current]
+    if entry == nil then
+      error(format("unknown style '%s'", current), 3)
+    end
+    if #chain >= 16 then
+      error(format("style '%s' extends itself", name), 3)
+    end
+    chain[#chain + 1] = entry
+    current = entry.extends
+  end
+  local props = {}
+  for i = #chain, 1, -1 do
+    for key, value in pairs(chain[i].props) do
+      if focus_node_kinds[kind] or not focus_node_options[key] then
+        props[key] = value
+      end
+    end
+  end
+  return props
+end
+
+-- theme("name") makes the styles of the engine's screens, then runs styles/<name>.lua, which
+-- declares styles with style(). Screens built from now on look as it says. It is not in
+-- snapshots: call it before the story starts, or in the label that changes the look.
+function theme(name)
+  if type(name) ~= "string" or not name:find("^[%w_%-]+$") then
+    bad_argument("theme", 1, "name of letters, digits, _ and -", name)
+  end
+  local chunk = engine.load_theme(name)
+  if type(chunk) ~= "function" then
+    error(chunk, 2)
+  end
+  local before = styles
+  styles = {}
+  for key, entry in pairs(default_styles) do
+    styles[key] = entry
+  end
+  local ok, problem = pcall(chunk)
+  if not ok then
+    styles = before
+    error(problem, 0)
+  end
+end
+)lua" R"lua(
 -- Screens (docs/SPEC.md section 15). A node is a plain table the engine reads: kind, text (the
 -- caption or image name), props (booleans, numbers and strings) and children.
 local pairs, math_type = pairs, math.type
-local node_takes_text = { text = true, button = true, image = true, toggle = true }
+local node_takes_text = { text = true, button = true, image = true, toggle = true, input = true }
 local function is_node(value)
   return type(value) == "table" and type(value.kind) == "string" and type(value.props) == "table"
          and type(value.children) == "table"
@@ -477,6 +605,9 @@ local function node_constructor(kind)
       bad_argument(kind, 1, "table", spec)
     end
     local node = { kind = kind, text = "", props = {}, children = {} }
+    if spec.style ~= nil then
+      node.props = resolve_style(kind, spec.style)  -- the node's own options override these
+    end
     local has_text = false
     for i = 1, #spec do
       local item = spec[i]
@@ -492,6 +623,8 @@ local function node_constructor(kind)
     for key, value in pairs(spec) do
       if key == "bind" and type(value) == "table" and value.bind_table ~= nil then
         node.props.bind_table, node.props.bind_key = value.bind_table, value.bind_key
+      elseif key == "style" then
+        -- applied above
       elseif type(key) == "string" then
         local value_type = type(value)
         if value_type ~= "boolean" and value_type ~= "number" and value_type ~= "string" then
@@ -509,7 +642,7 @@ end
 box, hbox, vbox = node_constructor("box"), node_constructor("hbox"), node_constructor("vbox")
 text, image, button = node_constructor("text"), node_constructor("image"), node_constructor("button")
 toggle, slider, bar = node_constructor("toggle"), node_constructor("slider"), node_constructor("bar")
-grid = node_constructor("grid")
+grid, input = node_constructor("grid"), node_constructor("input")
 
 local screens = {}
 local function register_screen(name, definition)
@@ -929,7 +1062,7 @@ end
 local pairs, ipairs, sort = pairs, ipairs, table.sort
 local layered_defs = {}
 local show_options = { image = true, at = true, x = true, y = true, layer = true,
-                       shader = true, uniforms = true, with = true }
+                       shader = true, uniforms = true, movie = true, loop = true, with = true }
 
 -- `level` is the error() level of the caller of this function.
 local function layered_option(key, expected, value, level)
@@ -1071,6 +1204,22 @@ function animation(name, definition)
   if problem then
     error(problem, 2)
   end
+end
+)lua" R"lua(
+-- Movies (docs/SPEC.md section 14). movie(path, { skippable = true }) plays a movie over all
+-- layers and blocks until it has played. Replay and skip mode do not play it.
+function movie(path, options)
+  if type(path) ~= "string" then
+    bad_argument("movie", 1, "string", path)
+  end
+  options = options_argument("movie", options)
+  local skippable = option("movie", options, "skippable", "boolean")
+  require_label("movie")
+  local problem = engine.movie_check(path)
+  if problem then
+    error(problem, 2)
+  end
+  engine.movie(path, skippable == true)
 end
 )lua" R"lua(
 
@@ -1810,6 +1959,13 @@ void read_animation(const sol::table& table, AnimationRequest& request) {
   }
 }
 
+// A `wait` or `movie`: advance() ends it, it is a step that a replay passes by itself, and it is
+// not a rollback step.
+bool is_pause(const BlockingRequest& request) {
+  return std::holds_alternative<WaitRequest>(request) ||
+         std::holds_alternative<MovieRequest>(request);
+}
+
 // Continues `coroutine` with the answer of a blocking call as its result.
 sol::protected_function_result resume_with(sol::coroutine& coroutine, const ScreenValue& value) {
   return std::visit(
@@ -1893,7 +2049,7 @@ class ScriptRuntime::Impl {
     }
     return {.label = frames_.back().label,
             .step = frames_.back().step,
-            .wait = state_ == RunState::kWaiting && std::holds_alternative<WaitRequest>(request_)};
+            .wait = state_ == RunState::kWaiting && is_pause(request_)};
   }
   [[nodiscard]] const std::string& error() const { return error_; }
 
@@ -2098,6 +2254,22 @@ void ScriptRuntime::Impl::bind_engine() {
   engine_["gallery"] = gallery;
   engine_["in_label"] = [this](sol::this_state state) { return in_label(state); };
   engine_["has_label"] = [this](const std::string& name) { return has_label(name); };
+  // Compiles styles/<name>.lua for theme(): returns the chunk as a function, or why it cannot.
+  engine_["load_theme"] = [this](sol::this_state state, const std::string& name) -> sol::object {
+    const MemoryLimitScope unlimited{allocator_, false};
+    const std::string path = "styles/" + name + ".lua";
+    const std::optional<std::vector<std::byte>> bytes = vfs_->read(path);
+    if (!bytes) {
+      return sol::make_object(state, "unknown theme '" + name + "' (no file " + path + ")");
+    }
+    sol::load_result chunk = lua_.load(to_string(*bytes), "@" + path, sol::load_mode::text);
+    if (!chunk.valid()) {
+      const sol::error error = chunk;
+      return sol::make_object(state, std::string{error.what()});
+    }
+    sol::protected_function function = chunk;
+    return sol::make_object(state, function);
+  };
   // Primitives that create Lua values do so inside an unlimited scope and
   // return them as references, so the push back to Lua cannot run out of
   // memory either.
@@ -2234,11 +2406,16 @@ void ScriptRuntime::Impl::bind_engine() {
                         sol::this_state state, const std::string& tag, const std::string& image,
                         const sol::optional<std::string>& at, sol::optional<double> x,
                         sol::optional<double> y, const sol::optional<std::string>& layer,
+                        const sol::optional<std::string>& movie, sol::optional<bool> loop,
                         const sol::optional<sol::table>& attributes) {
     if (options_.scene == nullptr) {
       return problem_or_nil(state, {});
     }
     ShowRequest request{.tag = tag, .image = image, .replaying = replaying_};
+    if (movie) {
+      request.movie = *movie;
+      request.loop = loop.value_or(false);
+    }
     if (attributes) {
       const MemoryLimitScope unlimited{allocator_, false};
       request.attributes = read_pairs(*attributes);
@@ -2382,6 +2559,18 @@ void ScriptRuntime::Impl::bind_engine() {
       [this](sol::this_state state, const std::string& tag, std::optional<double> seconds) {
         yield_at(state, WaitRequest{.tag = tag, .seconds = seconds.value_or(0)});
       });
+  // The check reads the file, so a replay (a load, a rollback) does not repeat it.
+  engine_["movie_check"] = [this, problem_or_nil](sol::this_state state, const std::string& path) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr || replaying_) {
+      return problem_or_nil(state, {});
+    }
+    return problem_or_nil(state, options_.scene->check_movie(path));
+  };
+  engine_["movie"] = sol::yielding([this](sol::this_state state, const std::string& path,
+                                          bool skippable) {
+    yield_at(state, MovieRequest{.path = path, .skippable = skippable});
+  });
   engine_["scene_command"] = [this](const std::string& command) {
     if (!replaying_) {
       observer_->on_scene_command(command);
@@ -2876,8 +3065,7 @@ bool ScriptRuntime::Impl::enter(const std::string& name) {
 
 void ScriptRuntime::Impl::advance() {
   const bool at_line = std::holds_alternative<SayRequest>(request_) ||
-                       std::holds_alternative<NarrateRequest>(request_) ||
-                       std::holds_alternative<WaitRequest>(request_);
+                       std::holds_alternative<NarrateRequest>(request_) || is_pause(request_);
   if (state_ != RunState::kWaiting || !at_line) {
     return;
   }
@@ -2927,7 +3115,7 @@ bool ScriptRuntime::Impl::can_roll_back() const {
     return false;
   }
   // At a wait the last step is the line before it; elsewhere the last step is this request.
-  return rollback_.size() >= (std::holds_alternative<WaitRequest>(request_) ? 1U : 2U);
+  return rollback_.size() >= (is_pause(request_) ? 1U : 2U);
 }
 
 // Replays the label that was outermost at an earlier step, with every label it had called, to
@@ -2936,7 +3124,7 @@ bool ScriptRuntime::Impl::roll_back() {
   if (!can_roll_back()) {
     return false;
   }
-  if (!std::holds_alternative<WaitRequest>(request_)) {
+  if (!is_pause(request_)) {
     rollback_.pop_back();
   }
   const RollbackStep target = rollback_.back();  // a copy: begin_replay changes the frames
@@ -3113,7 +3301,7 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
       ++frames_.front().stops;
       request_ = std::get<BlockingRequest>(std::move(*pending_));
       std::string voice;
-      if (!std::holds_alternative<WaitRequest>(request_)) {
+      if (!is_pause(request_)) {
         voice = std::exchange(pending_voice_, std::string{});
       }
       if (replaying_ && !at_replay_target()) {
@@ -3127,14 +3315,14 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
       }
       replaying_ = false;
       state_ = RunState::kWaiting;
-      if (!rolling_back_ && !std::holds_alternative<WaitRequest>(request_)) {
+      if (!rolling_back_ && !is_pause(request_)) {
         push_rollback_step(std::move(voice));
       }
       rolling_back_ = false;
       observer_->on_blocked(request_,
                             ScriptPosition{.label = frame.label,
                                            .step = frame.step,
-                                           .wait = std::holds_alternative<WaitRequest>(request_)});
+                                           .wait = is_pause(request_)});
       return;
     }
     TransferKind kind = TransferKind::kReturn;

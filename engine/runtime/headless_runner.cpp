@@ -47,6 +47,8 @@ class TranscriptRecorder final : public ScriptObserver {
       } else {
         result_->transcript.push_back(wait->tag.empty() ? "wait_all" : "wait " + wait->tag);
       }
+    } else if (const auto* movie = std::get_if<MovieRequest>(&request)) {
+      add("movie ", movie->path);
     }
   }
 
@@ -108,6 +110,11 @@ void run_into(HeadlessResult& result, const Vfs& vfs, std::span<const ScriptInpu
         runtime_options.scene->finish_tweens(wait->tag);
       }
       runtime.advance();
+      poll();
+      continue;
+    }
+    if (std::holds_alternative<MovieRequest>(*runtime.request())) {
+      runtime.advance();  // A movie is not played here, as in a replay.
       poll();
       continue;
     }

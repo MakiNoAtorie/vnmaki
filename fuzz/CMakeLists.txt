@@ -77,3 +77,11 @@ endif()
 
 # Save loader (ticket 12). It edits a valid payload, so no seed corpus is needed.
 vnmaki_add_fuzzer(save_loader save_loader_fuzzer.cpp)
+
+# Movies (ticket 25): the WebM reader and the AV1 decoder. Random bytes never make a WebM file, so
+# a second smoke run starts from the committed clip (a seed, never written to).
+vnmaki_add_fuzzer(video video_fuzzer.cpp)
+set(vnmaki_video_corpus "${CMAKE_CURRENT_BINARY_DIR}/corpus/video")
+file(MAKE_DIRECTORY "${vnmaki_video_corpus}")
+add_test(NAME fuzz.video.seeded COMMAND fuzz_video -runs=10000 -seed=1 "${vnmaki_video_corpus}"
+                                        "${PROJECT_SOURCE_DIR}/tests/fixtures/video")

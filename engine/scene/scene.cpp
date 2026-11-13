@@ -23,6 +23,7 @@
 #include "engine/render/image.hpp"
 #include "engine/render/shader_compiler.hpp"
 #include "engine/vfs/vfs.hpp"
+#include "engine/video/movie.hpp"
 
 namespace vnmaki {
 
@@ -129,6 +130,10 @@ std::string unknown_layer(std::string_view name) {
 // layer, u32 index in the layer (counting the images and animations before it), tag, definition
 // name and the properties as for "displayables". It has no definition and no time: an animation
 // plays again from frame 1.
+// "movies": a u32 count, then for each movie (layer by layer, back to front): u8 layer, u32 index
+// in the layer (counting every displayable before it; movies are put back last), tag, the movie
+// path, u8 loop and the properties as for "displayables". It has no time: a movie plays again
+// from the start.
 // "tweens": Timeline::capture().
 // "shaders", only when a shader is set: a u32 count of displayables, then for each: tag, shader
 // name and the 16 f32 uniform values; then a u32 count of layers, then for each: u8 layer, shader
@@ -141,6 +146,7 @@ constexpr std::uint32_t kFormatVersion = 2;
 constexpr std::string_view kDisplayablesPart = "displayables";
 constexpr std::string_view kLayeredPart = "layered";
 constexpr std::string_view kAnimationsPart = "animations";
+constexpr std::string_view kMoviesPart = "movies";
 constexpr std::string_view kTweensPart = "tweens";
 constexpr std::string_view kShadersPart = "shaders";
 constexpr std::string_view kCameraPart = "camera";
@@ -243,6 +249,9 @@ bool animation_runs(const Displayable& displayable) {
   if (const auto* animation = dynamic_cast<const FrameAnimation*>(&displayable)) {
     return animation->playing();
   }
+  if (const auto* movie = dynamic_cast<const MovieDisplayable*>(&displayable)) {
+    return movie->playing();
+  }
   const auto* sprite = dynamic_cast<const LayeredSprite*>(&displayable);
   return sprite != nullptr && sprite->animating();
 }
@@ -250,6 +259,8 @@ bool animation_runs(const Displayable& displayable) {
 void finish_animation(Displayable& displayable) {
   if (auto* animation = dynamic_cast<FrameAnimation*>(&displayable)) {
     animation->finish();
+  } else if (auto* movie = dynamic_cast<MovieDisplayable*>(&displayable)) {
+    movie->finish();
   } else if (auto* sprite = dynamic_cast<LayeredSprite*>(&displayable)) {
     sprite->finish_animations();
   }
@@ -610,7 +621,15 @@ std::string Scene::show(const ShowRequest& request) {
   const auto definition = definitions_.find(request.image);
   const auto animation = animations_.find(request.image);
   std::optional<std::string> path;
-  if (definition == definitions_.end() && animation == animations_.end()) {
+  if (request.movie.has_value()) {
+    // A replay shows what the script showed before, so it checks only that the file is there.
+    std::string problem = request.replaying && vfs_->exists(*request.movie)
+                              ? std::string{}
+                              : movie_problem(*vfs_, *request.movie);
+    if (!problem.empty()) {
+      return problem;
+    }
+  } else if (definition == definitions_.end() && animation == animations_.end()) {
     path = resolve_image(*vfs_, request.image);
     if (!path.has_value()) {
       return missing_image(request.image);
@@ -667,7 +686,10 @@ std::string Scene::show(const ShowRequest& request) {
   }
 
   std::unique_ptr<Displayable> displayable;
-  if (definition != definitions_.end()) {
+  if (request.movie.has_value()) {
+    displayable =
+        std::make_unique<MovieDisplayable>(*request.movie, request.loop, retired_textures_);
+  } else if (definition != definitions_.end()) {
     // A sprite that is shown again keeps its groups, and the named ones change.
     const auto* before = shown.has_value()
                              ? dynamic_cast<const LayeredSprite*>(
@@ -696,6 +718,8 @@ std::string Scene::show(const ShowRequest& request) {
   entries(layer).push_back(Entry{.tag = request.tag, .displayable = std::move(displayable)});
   return {};
 }
+
+std::string Scene::check_movie(std::string_view path) { return movie_problem(*vfs_, path); }
 
 void Scene::hide(std::string_view tag) {
   capture_old_frame();
@@ -999,13 +1023,17 @@ std::vector<std::byte> Scene::capture() const {
   layered.u32(layered_count);
   for (const Layer layer : kLayerOrder) {
     const std::vector<Entry>& shown = entries(layer);
+    std::size_t movies_before = 0;  // Movies are put back after the sprites, so they do not count.
     for (std::size_t index = 0; index < shown.size(); ++index) {
       const auto* sprite = dynamic_cast<const LayeredSprite*>(shown[index].displayable.get());
       if (sprite == nullptr) {
+        movies_before +=
+            dynamic_cast<const MovieDisplayable*>(shown[index].displayable.get()) != nullptr ? 1
+                                                                                             : 0;
         continue;
       }
       layered.u8(static_cast<std::uint8_t>(layer));
-      layered.u32(static_cast<std::uint32_t>(index));
+      layered.u32(static_cast<std::uint32_t>(index - movies_before));
       layered.string(shown[index].tag);
       layered.string(sprite->name());
       const auto adjusted = resting.find(shown[index].tag);
@@ -1055,10 +1083,42 @@ std::vector<std::byte> Scene::capture() const {
     }
   }
 
+  Writer movies;
+  std::uint32_t movie_count = 0;
+  for (const std::vector<Entry>& shown : layers_) {
+    movie_count += static_cast<std::uint32_t>(std::ranges::count_if(shown, [](const Entry& entry) {
+      return dynamic_cast<const MovieDisplayable*>(entry.displayable.get()) != nullptr;
+    }));
+  }
+  movies.u32(movie_count);
+  for (const Layer layer : kLayerOrder) {
+    const std::vector<Entry>& shown = entries(layer);
+    for (std::size_t index = 0; index < shown.size(); ++index) {
+      const Entry& entry = shown.at(index);
+      const auto* movie = dynamic_cast<const MovieDisplayable*>(entry.displayable.get());
+      if (movie == nullptr) {
+        continue;
+      }
+      movies.u8(static_cast<std::uint8_t>(layer));
+      movies.u32(static_cast<std::uint32_t>(index));
+      movies.string(entry.tag);
+      movies.string(movie->path());
+      movies.u8(movie->loop() ? 1 : 0);
+      const auto adjusted = resting.find(entry.tag);
+      const DisplayProperties& properties =
+          adjusted != resting.end() ? adjusted->second : movie->properties();
+      movies.properties(properties);
+      if (properties.shader != 0) {
+        shaded.emplace_back(entry.tag, &properties);
+      }
+    }
+  }
+
   std::map<std::string, std::vector<std::byte>> parts{
       {std::string{kDisplayablesPart}, displayables.take()},
       {std::string{kLayeredPart}, layered.take()},
       {std::string{kAnimationsPart}, animations.take()},
+      {std::string{kMoviesPart}, movies.take()},
       {std::string{kTweensPart}, timeline_.capture()},
   };
   if (!shaded.empty() || !shaded_layers.empty()) {
@@ -1252,6 +1312,32 @@ void Scene::read_animations(std::span<const std::byte> bytes, Layers& layers) co
   }
 }
 
+void Scene::read_movies(std::span<const std::byte> bytes, Layers& layers,
+                        const std::shared_ptr<std::vector<TextureId>>& retired) {
+  Reader reader{bytes};
+  const std::uint32_t count = reader.u32();
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const std::size_t layer = reader.u8();
+    if (layer >= layers.size()) {
+      throw std::invalid_argument{"scene state: unknown layer"};
+    }
+    const std::uint32_t index = reader.u32();
+    std::string tag = reader.string();
+    std::string path = reader.string();
+    const bool loop = reader.u8() != 0;
+    auto movie = std::make_unique<MovieDisplayable>(std::move(path), loop, retired);
+    movie->properties() = reader.properties();
+    // Movies come in the order of their positions, so each goes back where it was.
+    std::vector<Entry>& shown = layers.at(layer);
+    const auto position = static_cast<std::ptrdiff_t>(std::min<std::size_t>(index, shown.size()));
+    shown.insert(shown.begin() + position,
+                 Entry{.tag = std::move(tag), .displayable = std::move(movie)});
+  }
+  if (!reader.at_end()) {
+    throw std::invalid_argument{"scene state: unexpected data after the last movie"};
+  }
+}
+
 void Scene::restore(std::span<const std::byte> state) {
   Layers layers;
   LayerState layer_state;
@@ -1284,6 +1370,9 @@ void Scene::restore(std::span<const std::byte> state) {
     }
     if (const auto found = parts.find(kLayeredPart); found != parts.end()) {
       read_layered(found->second, layers);
+    }
+    if (const auto found = parts.find(kMoviesPart); found != parts.end()) {
+      read_movies(found->second, layers, retired_textures_);
     }
     // After every displayable is back: it finds them by tag.
     if (const auto found = parts.find(kShadersPart); found != parts.end()) {
@@ -1361,6 +1450,10 @@ void Scene::update(double seconds) {
 
 void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
   renderer_ = &renderer;
+  for (const TextureId retired : *retired_textures_) {
+    renderer.destroy_texture(retired);
+  }
+  retired_textures_->clear();
   for (TextureId& frame : frames_) {
     if (frame == TextureId{}) {
       frame = renderer.create_render_target(virtual_size_, TextureFilter::kNearest);
@@ -1384,6 +1477,10 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
           const Texture& texture = texture_of(path);
           sprite->set_texture(path, texture.id, texture.size);
         }
+        continue;
+      }
+      if (auto* movie = dynamic_cast<MovieDisplayable*>(entry.displayable.get())) {
+        movie->prepare(renderer, jobs, *vfs_, movie_audio_);
         continue;
       }
       if (auto* animation = dynamic_cast<FrameAnimation*>(entry.displayable.get())) {
