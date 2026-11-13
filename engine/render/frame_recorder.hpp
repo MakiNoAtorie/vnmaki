@@ -46,11 +46,21 @@ struct Batch {
   std::uint32_t quad_count = 0;
 };
 
+/// One mesh draw: the MeshDraw with its uniform bytes moved into FrameRecorder::uniform_bytes().
+struct MeshRecord {
+  MeshDraw draw;
+  std::size_t uniform_offset = 0;
+  std::size_t uniform_size = 0;
+};
+
 struct RecordedPass {
   RenderPass pass;
   /// The pass's batches: a range of FrameRecorder::batches().
   std::size_t first_batch = 0;
   std::size_t batch_count = 0;
+  /// The pass's mesh draws: a range of FrameRecorder::meshes().
+  std::size_t first_mesh = 0;
+  std::size_t mesh_count = 0;
 };
 
 class FrameRecorder {
@@ -67,7 +77,11 @@ class FrameRecorder {
   /// the draw state (texture, shader, blend mode and uniform bytes) is the same.
   void add(std::span<const Quad> quads, const DrawState& state);
 
+  /// Appends a mesh draw to the current pass (requires in_pass()).
+  void add_mesh(const MeshDraw& draw);
+
   [[nodiscard]] std::span<const SpriteVertex> vertices() const { return vertices_; }
+  [[nodiscard]] std::span<const MeshRecord> meshes() const { return meshes_; }
   [[nodiscard]] std::span<const Batch> batches() const { return batches_; }
   [[nodiscard]] std::span<const RecordedPass> passes() const { return passes_; }
   [[nodiscard]] std::span<const std::byte> uniform_bytes() const { return uniform_bytes_; }
@@ -81,6 +95,7 @@ class FrameRecorder {
   std::vector<SpriteVertex> vertices_;
   std::vector<Batch> batches_;
   std::vector<RecordedPass> passes_;
+  std::vector<MeshRecord> meshes_;
   std::vector<std::byte> uniform_bytes_;
 };
 

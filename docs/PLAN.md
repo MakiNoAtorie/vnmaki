@@ -465,12 +465,12 @@ Files: new `engine/vfs/pak_mount.*`, `engine/vfs/pak_writer.*`, new `cli/build_c
 
 Files: new `engine/model3d/`, `engine/render/` (depth targets, meshes), `shaders/mesh_*.hlsl`, runtime, `tools/generators/model_fixtures.py`.
 
-- [ ] cgltf loads glTF 2.0 (meshes, materials, textures) from the VFS. Add a fuzz target.
-- [ ] `scene3d(name, { layer = "3d" })` renders into a target with a depth buffer. The 3D layer mixes with 2D layers.
-- [ ] `model(tag, path, { scene, position, rotation, scale })`, `light(...)` (directional, point), and `camera(scene, { position, look_at, fov })`. Tweens and `wait` work on them.
-- [ ] Shaders: unlit, toon, simple PBR, and custom (task 24).
-- [ ] The 3D state is in the snapshot.
-- [ ] Tests: the generator writes a cube glTF with Python `json` and `struct`. GPU golden for unlit. Pixel probes with a tolerance for toon and PBR.
+- [x] cgltf loads glTF 2.0 (meshes, materials, textures) from the VFS. Add a fuzz target.
+- [x] `scene3d(name, { layer = "3d" })` renders into a target with a depth buffer. The 3D layer mixes with 2D layers.
+- [x] `model(tag, path, { scene, position, rotation, scale })`, `light(...)` (directional, point), and `camera(scene, { position, look_at, fov })`. Tweens and `wait` work on them.
+- [x] Shaders: unlit, toon, simple PBR, and custom (task 24).
+- [x] The 3D state is in the snapshot.
+- [x] Tests: the generator writes a cube glTF with Python `json` and `struct`. GPU golden for unlit. Pixel probes with a tolerance for toon and PBR.
 
 ### 47: 3D animation (SPEC §12, §10)
 
