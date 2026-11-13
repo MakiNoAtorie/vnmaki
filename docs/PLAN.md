@@ -109,11 +109,11 @@ This task is the Phase 2 acceptance demo.
 - [x] End-to-end headless test on the three CI platforms: new, both branches, save, load, rollback.
 - [x] "Getting started" document for `new` and `run`.
 
-### Order for 29–31
+### Order for 29a–29c
 
-Do 29, 30a and 31 in parallel after 19. They do not share files, except `script_runtime.cpp` prelude literals (add new code in a new literal).
+Do 29a, 29b and 29c in parallel after 19. They do not share files, except `script_runtime.cpp` prelude literals (add new code in a new literal).
 
-### 29: `pause`, NVL mode and gallery (SPEC §7, §8, §15)
+### 29a: `pause`, NVL mode and gallery (SPEC §7, §8, §15)
 
 Files: `engine/runtime/`, `engine/dialogue/`, `engine/runtime/default_screens.cpp`, `engine/saves/` (unlocks in `persistent`).
 
@@ -124,7 +124,7 @@ Files: `engine/runtime/`, `engine/dialogue/`, `engine/runtime/default_screens.cp
 - [x] The gallery screen shows a grid of unlocked images and a locked placeholder for the others. Mouse, keyboard and gamepad work.
 - [x] Headless tests: pause and skip, NVL page across rollback and load, unlock after `show`, gallery grid state.
 
-### 30a: UI styles, themes and the `input` node (SPEC §15)
+### 29b: UI styles, themes and the `input` node (SPEC §15)
 
 Files: `engine/ui/`, `engine/runtime/` (prelude, screen nodes), `engine/runtime/default_screens.cpp`.
 
@@ -133,7 +133,7 @@ Files: `engine/ui/`, `engine/runtime/` (prelude, screen nodes), `engine/runtime/
 - [x] The `input` node edits a string bound with `bind`. It turns on SDL text input only while it has the focus (see the Platform contract). It has a max length and a placeholder.
 - [x] Headless tests: style merge order, theme switch changes node rectangles, input typing, backspace and focus loss.
 
-### 31: WebP images and static analysis (SPEC §4, §5)
+### 29c: WebP images and static analysis (SPEC §4, §5)
 
 Files: `engine/render/image.cpp`, `vcpkg.json`, `fuzz/`, `.github/workflows/ci.yml`, `tools/generators/`.
 
