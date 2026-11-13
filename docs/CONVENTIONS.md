@@ -6,6 +6,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 ## Build and test
 
 - Presets: `debug`, `release`, `asan-ubsan`, `tsan`, `fuzz`, `clang-tidy`. They use Ninja and write to `build/<preset>/`.
+- The option `VNMAKI_DEV_TOOLS` builds `engine/tools/` and links Dear ImGui. It is ON for builds with a debug type and OFF for `Release`, `MinSizeRel` and `RelWithDebInfo`. It sets `VNMAKI_DEV_TOOLS` to 1 or 0 in the engine's public compile definitions, so code that uses the tools has `#if VNMAKI_DEV_TOOLS`. A release build compiles no tool code, and its tests do not have the tool tests.
 - `cmake --workflow --preset <name>` configures, builds and runs ctest.
 - Plain presets get dependencies from vcpkg (`VCPKG_ROOT`).
 - Each preset has a `system-*` version. It finds installed dependencies with `find_package(<pkg> CONFIG REQUIRED)`. Lua uses CMake's FindLua.
@@ -29,6 +30,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - libwebp is a vcpkg dependency. `engine/render/CMakeLists.txt` finds it with `find_package(WebP CONFIG REQUIRED)` (target `WebP::webp`). Debian: `libwebp-dev`.
   - dav1d (AV1) and libwebm (WebM, its `mkvparser`) are vcpkg dependencies. Neither has a CMake config that the engine uses, so `engine/video/CMakeLists.txt` finds both with `find_path` and `find_library` (libwebm's headers are in `include/webm`).
   - dav1d 1.5.4 does not build with MSVC 14.5 (Visual Studio 2026): its `stdatomic.h` shim uses `__has_include_next` in a non-clang build. `vcpkg-configuration.json` adds the overlay port `tools/vcpkg-overlay/dav1d`, which is the vcpkg port with one patch for this. Remove the overlay when the vcpkg baseline has a dav1d that builds.
+  - Dear ImGui (`imgui`, feature `sdlgpu3-binding`) is a vcpkg dependency of the dev tools. `engine/tools/CMakeLists.txt` finds it with `find_package(imgui CONFIG REQUIRED)` (target `imgui::imgui`). `tools/dev/bootstrap-deps.sh` does not build it yet, so a `system-*` preset needs an installed ImGui with CMake config files, or `-DVNMAKI_DEV_TOOLS=OFF`.
   - zstd is a vcpkg dependency. `engine/saves/CMakeLists.txt` finds `zstd::libzstd` (vcpkg) or the plain library (Debian: `libzstd-dev`).
 
 ## Code
@@ -54,7 +56,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Link third-party libraries PRIVATE. Engine headers do not include them.
   - First-party targets link `vnmaki::options` for warnings, hardening and sanitizers. Do not link it into third-party code.
 - Game code reads files only through `Vfs`.
-- Only `engine/platform/sdl_*` and the renderer allow-list include SDL. The ctest `lint.no_sdl_outside_platform` does a check of this.
+- Only `engine/platform/sdl_*`, `engine/render/sdl_*` and `engine/tools/imgui_backend.cpp` include SDL. The ctest `lint.no_sdl_outside_platform` does a check of this.
 - `project(vnmaki VERSION ...)` sets the version. Code reads it through `vnmaki::engine_version()`.
 
 ## Tests
@@ -143,6 +145,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - The compiler is only in `engine/render/sdl_shader_compiler.cpp`, because it includes SDL headers.
 - `load_image(vfs, jobs, path)` loads an image and returns `JobHandle<Image>`. `decode_image` reads PNG and JPEG (stb_image) and WebP, lossless or lossy, not animated (libwebp). It finds WebP by the `RIFF....WEBP` header, not by the file name. All three are premultiplied after decoding.
 - Upload images with `create_texture` on the main thread.
+- `SdlGpuRenderer::set_overlay(fn)` sets a hook that `end_frame()` calls once the passes are recorded. It gets the frame's command buffer and the target of the last pass (`GpuOverlayTarget`), so the hook can draw over the screen. It is not called when the screen pass was skipped. `gpu_info()` gives the device and the screen's format. The dev tools use it for ImGui (see Tools). Remove the hook before the renderer is destroyed.
 
 ### Text (`engine/text/text.hpp`)
 
@@ -397,6 +400,10 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - It keeps booleans, numbers, strings and tables with scalar keys.
   - A different value stops the story at the next label entry.
   - `rand` is `math.random`. Its state is `store.__rng`.
+- `eval(code)` runs Lua for the dev REPL (see Tools) and `set_observer(observer)` changes the observer after the runtime was made.
+  - `eval` runs in the sandbox of the scripts, with the instruction and memory limits. It tries `return <code>` first, then `code` as statements. It returns `EvalResult` (`ok`, and `text`: the values separated by tabs, or the error). It never throws. A table is listed one level deep.
+  - A blocking call (`say`, `menu`, ...) in `eval` is an error, because no label is running.
+  - A change to `store` stays until the next rollback or load, because neither is in the input log. `persistent` and `prefs` keep it.
 - `ScriptRuntime::replaying()` is the only replay flag.
   - Subsystems update their state during replay.
   - They check the flag only for effects that the player can see or hear.
@@ -486,3 +493,21 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - An asset must be MIT, OFL or CC0, or be made by a generator. `templates/default/ASSETS.txt` records the license.
 - The end-to-end test is `tests/unit/new_project_test.cpp` (`SampleGame`): `create_project`, then a `ScriptRuntime` with `Scene`, `Audio` and `Saves` (in a temporary directory) plays both branches, rolls back over the menu, saves, loads and rolls back again. It needs no window and no GPU, so it runs on every CI platform. `cli.new_makes_a_game_and_stops_at_a_second_one` and `cli.new_game_runs_in_a_window` (a GPU test) use `tests/cli/run_new.cmake`.
 - The sample story starts with `call_screen("title", ...)`, so `vnmaki run <game> --headless` stops there. Use a unit test to play it.
+
+### Tools (`engine/tools/`)
+
+- Dev builds only. `engine/CMakeLists.txt` adds the module when `VNMAKI_DEV_TOOLS` is ON. A release build compiles none of it, links no ImGui, and `cli/story_window.cpp` guards its calls with `#if VNMAKI_DEV_TOOLS`.
+- `ImguiBackend` (`imgui_backend.*`) owns the ImGui context and the SDL GPU backend. Only `imgui_backend.cpp` includes SDL (`lint.no_sdl_outside_platform` allows it). Its header has no ImGui and no SDL.
+  - It draws through `SdlGpuRenderer::set_overlay`, so the ImGui frame goes over the last pass of the renderer frame (the screen pass in the game). Per frame: `begin_frame(pixels, seconds)`, the windows, `end_frame()`, then the renderer's `end_frame()` draws it.
+  - ImGui does not read SDL events. `DevOverlay::handle_event` gives it the engine's `InputEvent`s. Text arrives as `TextInputEvent`, so the overlay turns `Platform::set_text_input` on while ImGui wants text.
+  - There is no `imgui.ini`. Destroy it before the renderer. Only one can exist.
+- `DevOverlay` (`overlay.*`) is the set of windows. Panels are drawn in `draw()`. Add a panel as a `draw_<name>()` function and call it there.
+  - F12 shows and hides it (`handle_event` returns true for F12, so the game never gets it). A hidden overlay does no ImGui work.
+  - While it is visible, `handle_event` returns true for the pointer events over an overlay window and for the keys and text that a text field of the overlay wants. The game then gets no input. Clicks outside the windows go to the game. ImGui's wants flags are from the last frame.
+  - In `story_window.cpp`: `DevOverlay` is made after the renderer, `handle_event` runs first in `on_event`, and `draw(window_pixels)` runs before `renderer->end_frame()`.
+- `LogBuffer` (`log_buffer.*`) is the log: the last 1000 entries with a level (`kInfo`, `kWarning`, `kError`). It is a `ScriptObserver`: Lua `print` is info and dev-mode warnings are warnings. `story_window.cpp` also adds the warnings of the saves and the persistent store. The console has a filter for each level and a Clear button.
+- The REPL is the input line of the console. `run_repl_line` logs `> line`, then the values (info) or the error (error), by `ScriptRuntime::eval`.
+  - It runs in the script sandbox: the same globals, limits and no `io`, `debug`, `package` or `require`. `print` goes to the log.
+  - A change to `store` stays until the next rollback or load, which restore the snapshot of a label entry. `persistent` and `prefs` keep their changes. A new global gives the dev-mode warning.
+  - A blocking call is an error.
+- Tests: `tests/unit/repl_test.cpp` (REPL and log) and `tests/render/overlay_render_test.cpp` (a headless GPU frame, F12, input). Both are only built with the tools.

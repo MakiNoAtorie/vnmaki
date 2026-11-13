@@ -294,12 +294,12 @@ Tasks 30, 32, 33 and 36 add one hook call each to `cli/story_window.cpp`. Tasks 
 
 Files: new `engine/tools/overlay.*`, `engine/tools/imgui_backend.cpp`, `vcpkg.json`, `CMakeLists.txt`, `cli/story_window.cpp`, `tests/platform/no_sdl_outside_platform.cmake`.
 
-- [ ] Dear ImGui (vcpkg, with the SDL3 and SDL GPU backend features). Only `imgui_backend.cpp` includes SDL. Add it to the SDL allow-list.
-- [ ] F12 shows and hides the overlay. The overlay draws in the screen-resolution pass, after the game. While it has the input focus, the game gets no input.
-- [ ] A log console shows the engine log and Lua `print`. It has filters for each level.
-- [ ] The REPL runs Lua in the script sandbox and prints the result or the error. A change to `store` stays until the next rollback or load. Document this.
-- [ ] The `release` preset builds without ImGui and without `engine/tools/`. A CLI test checks that a release `vnmaki --version` works.
-- [ ] Tests: unit tests for the REPL (result, error, sandbox), and a headless GPU smoke test that draws one overlay frame.
+- [x] Dear ImGui (vcpkg, with the SDL3 and SDL GPU backend features). Only `imgui_backend.cpp` includes SDL. Add it to the SDL allow-list.
+- [x] F12 shows and hides the overlay. The overlay draws in the screen-resolution pass, after the game. While it has the input focus, the game gets no input.
+- [x] A log console shows the engine log and Lua `print`. It has filters for each level.
+- [x] The REPL runs Lua in the script sandbox and prints the result or the error. A change to `store` stays until the next rollback or load. Document this.
+- [x] The `release` preset builds without ImGui and without `engine/tools/`. A CLI test checks that a release `vnmaki --version` works.
+- [x] Tests: unit tests for the REPL (result, error, sandbox), and a headless GPU smoke test that draws one overlay frame.
 
 ### 31: Inspectors (SPEC §18)
 
