@@ -151,6 +151,10 @@ target_sources(vnmaki_unit_tests PRIVATE unit/screens_test.cpp)
 # Backlog: entries from the step log, voice replay, the scrolling screen (ticket 15).
 target_sources(vnmaki_unit_tests PRIVATE unit/backlog_test.cpp)
 
+# Story graph: the Lua scan, the graph with its traces, DOT and CSV (ticket 34). The template is
+# one more input. The fuzz target shares fuzz/script_scan_properties.hpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/script_scan_test.cpp unit/story_graph_test.cpp)
+
 # Video: WebM, AV1 and Opus, the player and its clocks, `movie` and the movie displayable (ticket
 # 25). clip.webm is the one committed binary fixture; its README has the ffmpeg command.
 target_sources(vnmaki_unit_tests PRIVATE unit/video_test.cpp)
