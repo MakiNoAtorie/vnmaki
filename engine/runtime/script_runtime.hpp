@@ -306,6 +306,18 @@ struct TweenRequest {
   /// Set on the outermost request while the runtime replays: tweens that end go to their end
   /// value at once, and loops start at time 0.
   bool replaying = false;
+  /// As `replaying`, for a request that is not a replay: a camera move that is instant.
+  bool instant = false;
+};
+
+/// `shake { strength, duration }`: the camera shakes for `duration` seconds, from `strength`
+/// down to nothing. The shake is a fixed function of time; it is not part of any snapshot.
+struct ShakeRequest {
+  double strength = 0;    ///< The largest offset, as a fraction of the virtual height.
+  double duration = 0.5;  ///< Seconds.
+  /// Set while the runtime replays, or when motion is reduced: the request is checked and
+  /// nothing shakes.
+  bool replaying = false;
 };
 
 /// What `scene`, `show`, `hide`, `tween` and `wait` do to the engine (engine/scene/scene.hpp
@@ -362,6 +374,16 @@ class SceneCommands {
   /// `finish_tweens(kTransitionTag)` ends it). The default does nothing, for implementations
   /// that cannot draw transitions.
   [[nodiscard]] virtual std::string transition(const TransitionRequest& /*request*/) { return {}; }
+
+  /// `layer(name, { parallax = f })`: the pan of the layer is `f` times the camera's pan. Returns
+  /// why it cannot (an unknown layer, one the camera does not move, a number out of range). The
+  /// default does nothing, for implementations without a camera.
+  [[nodiscard]] virtual std::string set_parallax(std::string_view /*layer*/, double /*factor*/) {
+    return {};
+  }
+  /// Starts a camera shake. `tweening("@camera")` is true while it runs, and
+  /// `finish_tweens("@camera")` ends it. The default does nothing.
+  [[nodiscard]] virtual std::string shake(const ShakeRequest& /*request*/) { return {}; }
 };
 
 /// What `show_screen`, `hide_screen` and `call_screen` need from the engine (engine/ui/ui_host.hpp
