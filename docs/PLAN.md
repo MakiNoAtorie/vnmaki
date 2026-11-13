@@ -476,11 +476,11 @@ Files: new `engine/model3d/`, `engine/render/` (depth targets, meshes), `shaders
 
 Files: `engine/model3d/`, `engine/audio/` (voice level from task 26), runtime.
 
-- [ ] Skinning and morph targets on the CPU. Upload the vertices each frame.
-- [ ] `play(tag, clip, { loop, fade, speed, seek })`. A fade crossfades from the old clip. `wait(tag)` waits for a clip with no loop.
-- [ ] Replay puts a clip at its end. A loop clip restarts at time 0. The clip state is in the snapshot.
-- [ ] `model(..., { lip_sync = { morph = "mouth_open" } })` uses the voice level of the model's `voice_tag`.
-- [ ] Tests with a fake clock: joint matrices of a generated two-bone fixture, morph weights, crossfade weights, and one GPU probe.
+- [x] Skinning and morph targets on the CPU. Upload the vertices each frame.
+- [x] `play(tag, clip, { loop, fade, speed, seek })`. A fade crossfades from the old clip. `wait(tag)` waits for a clip with no loop.
+- [x] Replay puts a clip at its end. A loop clip restarts at time 0. The clip state is in the snapshot.
+- [x] `model(..., { lip_sync = { morph = "mouth_open" } })` uses the voice level of the model's `voice_tag`.
+- [x] Tests with a fake clock: joint matrices of a generated two-bone fixture, morph weights, crossfade weights, and one GPU probe.
 
 ### 48: Plugin API (SPEC §20)
 
