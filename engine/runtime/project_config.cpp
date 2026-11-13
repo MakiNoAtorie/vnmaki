@@ -149,6 +149,29 @@ std::map<std::string, T> read_language_table(const toml::node& node, std::string
   return result;
 }
 
+// Reads `[vertical]`: a boolean for each language.
+std::map<std::string, bool> read_vertical(const toml::node& node,
+                                          const std::vector<std::string>& languages) {
+  const toml::table* table = node.as_table();
+  if (table == nullptr) {
+    fail_at(node, "'vertical' must be a table with a value for each language");
+  }
+  std::map<std::string, bool> result;
+  for (auto&& [key, value] : *table) {
+    const std::string language{key.str()};
+    if (std::ranges::find(languages, language) == languages.end()) {
+      fail_at(value,
+              "'vertical' has language '" + language + "', which 'languages' does not list");
+    }
+    const std::optional<bool> flag = value.value_exact<bool>();
+    if (!flag) {
+      fail_at(value, "'vertical." + language + "' must be true or false");
+    }
+    result[language] = *flag;
+  }
+  return result;
+}
+
 std::vector<AutoSaveEvent> read_auto_save(const toml::node& node) {
   constexpr std::string_view kReason = R"('auto_save' must be a list of "label" and "menu")";
   const toml::array* array = node.as_array();
@@ -248,6 +271,9 @@ ProjectConfig parse_project_config(std::string_view toml_text) {
           direction = text == "rtl" ? TextDirection::kRtl : TextDirection::kLtr;
           return text == "rtl" || text == "ltr";
         });
+  }
+  if (const toml::node* vertical = table.get("vertical")) {
+    config.vertical = read_vertical(*vertical, config.languages);
   }
   if (const toml::node* styles = table.get("styles")) {
     config.language_styles =

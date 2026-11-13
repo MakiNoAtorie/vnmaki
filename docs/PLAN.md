@@ -549,10 +549,10 @@ Files: new `cli/launcher.*`, `cli/main.cpp`.
 
 Files: `engine/text/`, `engine/dialogue/say_box.*`, `tools/generators/text_fixtures.py`.
 
-- [ ] `layout_text` has a vertical mode: HarfBuzz top-to-bottom direction with the `vert` feature. Columns go from right to left.
-- [ ] Latin runs turn 90 degrees. Kinsoku rules apply to columns. Ruby goes to the right of the column.
-- [ ] `project.toml` and `styles/<lang>.lua` can set `vertical = true` for the say box and NVL.
-- [ ] Tests: glyph positions with the box font, kinsoku at a column end, and one GPU golden of a vertical say box.
+- [x] `layout_text` has a vertical mode: HarfBuzz top-to-bottom direction with the `vert` feature. Columns go from right to left.
+- [x] Latin runs turn 90 degrees. Kinsoku rules apply to columns. Ruby goes to the right of the column.
+- [x] `project.toml` and `styles/<lang>.lua` can set `vertical = true` for the say box and NVL.
+- [x] Tests: glyph positions with the box font, kinsoku at a column end, and one GPU golden of a vertical say box.
 
 ### 53: Later demo (SPEC §22)
 

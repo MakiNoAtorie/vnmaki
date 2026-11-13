@@ -17,7 +17,8 @@ struct MeasuredSize {
 };
 
 /// The size of the content of a text node or a button caption when it wraps at `max_width`
-/// (infinite for no wrap), without the node's padding.
+/// (infinite for no wrap), without the node's padding. For vertical text (UiStyle::vertical) the
+/// limit is the column length, the node's height, and the size is that of the columns.
 using TextMeasure = std::function<MeasuredSize(const UiNode& node, float max_width)>;
 
 /// A guess for tests and headless runs that have no font: half an em for each character, one em

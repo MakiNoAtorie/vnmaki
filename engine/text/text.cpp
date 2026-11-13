@@ -193,9 +193,14 @@ struct BidiLevels {
   std::vector<std::uint8_t> paragraph{};
 };
 
+/// Everything left to right, for vertical text, which has no bidirectional reordering.
+BidiLevels no_bidi(std::size_t size) {
+  return {.level = std::vector<std::uint8_t>(size, 0),
+          .paragraph = std::vector<std::uint8_t>(size, 0)};
+}
+
 BidiLevels bidi_levels(std::string_view text) {
-  BidiLevels levels{.level = std::vector<std::uint8_t>(text.size(), 0),
-                    .paragraph = std::vector<std::uint8_t>(text.size(), 0)};
+  BidiLevels levels = no_bidi(text.size());
   const SBCodepointSequence sequence{.stringEncoding = SBStringEncodingUTF8,
                                      .stringBuffer = text.data(),
                                      .stringLength = text.size()};
@@ -224,7 +229,43 @@ BidiLevels bidi_levels(std::string_view text) {
   return levels;
 }
 
-/// One shaped glyph. A paragraph's glyphs are kept in logical order.
+constexpr std::uint32_t kVariationSelectorsFirst = 0xFE00;
+constexpr std::uint32_t kVariationSelectorsLast = 0xFE0F;
+constexpr std::uint32_t kIdeographicVariationFirst = 0xE0100;
+constexpr std::uint32_t kIdeographicVariationLast = 0xE01EF;
+
+/// Whether a character stands upright in a vertical column: the CJK, kana, Hangul and fullwidth
+/// blocks, a short form of the Unicode vertical orientation data (UAX #50). Everything else (Latin
+/// letters, digits, spaces) is turned 90 degrees clockwise.
+bool is_upright(std::uint32_t code) {
+  struct Range {
+    std::uint32_t first;
+    std::uint32_t last;
+  };
+  static constexpr std::array<Range, 10> kUpright{{{0x1100, 0x11FF},      // Hangul Jamo
+                                                   {0x2E80, 0x33FF},      // CJK, kana, symbols
+                                                   {0x3400, 0x4DBF},      // CJK extension A
+                                                   {0x4E00, 0x9FFF},      // CJK ideographs
+                                                   {0xAC00, 0xD7FF},      // Hangul
+                                                   {0xF900, 0xFAFF},      // CJK compatibility
+                                                   {0xFE10, 0xFE6F},      // vertical, small forms
+                                                   {0xFF00, 0xFFEF},      // fullwidth forms
+                                                   {0x1B000, 0x1B16F},    // old kana
+                                                   {0x20000, 0x3FFFF}}};  // CJK extension B on
+  return std::any_of(kUpright.begin(), kUpright.end(), [code](const Range& range) {
+    return code >= range.first && code <= range.last;
+  });
+}
+
+/// A variation selector takes the orientation of the character before it.
+bool is_variation_selector(std::uint32_t code) {
+  return (code >= kVariationSelectorsFirst && code <= kVariationSelectorsLast) ||
+         (code >= kIdeographicVariationFirst && code <= kIdeographicVariationLast);
+}
+
+/// One shaped glyph. A paragraph's glyphs are kept in logical order. In a vertical layout
+/// `advance` is the advance down the column, `x_offset` is the offset to the right and `y_offset`
+/// the offset down (not up, as in horizontal text), whatever the orientation of the glyph.
 struct Shaped {
   std::uint32_t glyph = 0;
   /// The byte offset in the text of the glyph's first character.
@@ -238,6 +279,8 @@ struct Shaped {
   float line_height = 0;
   std::uint16_t font = 0;
   std::uint8_t level = 0;
+  /// Vertical layout: the glyph is turned 90 degrees clockwise (see is_upright).
+  bool sideways = false;
   /// The index in StyledText::runs of the glyph's style, or kNoRun.
   std::size_t run = kNoRun;
 };
@@ -262,8 +305,8 @@ const Font* first_set(std::initializer_list<const Font*> fonts) {
 class Shaper {
  public:
   /// `layout->fonts` gets every font in use; the base regular font is its first entry.
-  Shaper(const FontSet& fonts, TextLayout& layout)
-      : fonts_(&fonts), layout_(&layout), buffer_(hb_buffer_create()) {
+  Shaper(const FontSet& fonts, TextLayout& layout, bool vertical)
+      : fonts_(&fonts), layout_(&layout), vertical_(vertical), buffer_(hb_buffer_create()) {
     (void)font_index(fonts.base.regular);
   }
 
@@ -294,19 +337,25 @@ class Shaper {
     // that the font of its base character does not have can go to a different font; select
     // fonts for each grapheme cluster if that shows.
     const Font* piece_font = primary;
+    bool piece_upright = false;
     std::size_t piece_begin = begin;
     for (std::size_t i = begin; i < end;) {
       const Decoded character = decode_utf8(text.substr(0, end), i);
       const Font* font = font_for(character.code, primary, i == begin ? primary : piece_font);
-      if (font != piece_font && i > piece_begin) {
-        shape_piece(text, piece_begin, i, piece_font, pixel_size, level, run, out);
+      const bool upright = i > begin && is_variation_selector(character.code)
+                               ? piece_upright
+                               : is_upright(character.code);
+      // A vertical column changes piece where the orientation changes; horizontal text never does.
+      if ((font != piece_font || (vertical_ && upright != piece_upright)) && i > piece_begin) {
+        shape_piece(text, piece_begin, i, piece_font, pixel_size, level, run, piece_upright, out);
         piece_begin = i;
       }
       piece_font = font;
+      piece_upright = upright;
       i += character.length;
     }
     if (end > piece_begin) {
-      shape_piece(text, piece_begin, end, piece_font, pixel_size, level, run, out);
+      shape_piece(text, piece_begin, end, piece_font, pixel_size, level, run, piece_upright, out);
     }
   }
 
@@ -365,7 +414,7 @@ class Shaper {
   }
 
   void shape_piece(std::string_view text, std::size_t begin, std::size_t end, const Font* font,
-                   float pixel_size, std::uint8_t level, std::size_t run,
+                   float pixel_size, std::uint8_t level, std::size_t run, bool upright,
                    std::vector<Shaped>& out) {
     const std::uint16_t index = font_index(font);
     const SizedFont& sized_font = sized(index, pixel_size);
@@ -378,8 +427,18 @@ class Shaper {
     // ponytail: the script is guessed from the piece's first letter, so a piece with two
     // scripts in one direction is shaped as the first. Split pieces by script if that shows.
     hb_buffer_guess_segment_properties(buffer_.get());
-    hb_buffer_set_direction(buffer_.get(), rtl ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
-    hb_shape(sized_font.font.get(), buffer_.get(), nullptr, 0);
+    // An upright piece of a column runs top to bottom. HarfBuzz turns `vert` on for it; the
+    // feature is named too, so that this does not depend on that.
+    const bool top_to_bottom = vertical_ && upright;
+    hb_buffer_set_direction(buffer_.get(), top_to_bottom ? HB_DIRECTION_TTB
+                                           : rtl         ? HB_DIRECTION_RTL
+                                                         : HB_DIRECTION_LTR);
+    const hb_feature_t vert{.tag = HB_TAG('v', 'e', 'r', 't'),
+                            .value = 1,
+                            .start = HB_FEATURE_GLOBAL_START,
+                            .end = HB_FEATURE_GLOBAL_END};
+    hb_shape(sized_font.font.get(), buffer_.get(), top_to_bottom ? &vert : nullptr,
+             top_to_bottom ? 1 : 0);
 
     unsigned count = 0;
     const hb_glyph_info_t* first_info = hb_buffer_get_glyph_infos(buffer_.get(), &count);
@@ -391,22 +450,34 @@ class Shaper {
     for (std::size_t i = 0; i < infos.size(); ++i) {
       // HarfBuzz gives right-to-left glyphs in visual order: the last character first.
       const std::size_t from = rtl ? infos.size() - 1 - i : i;
-      out.push_back(Shaped{.glyph = infos[from].codepoint,
-                           .cluster = infos[from].cluster,
-                           .advance = static_cast<float>(positions[from].x_advance) / kSubpixels,
-                           .x_offset = static_cast<float>(positions[from].x_offset) / kSubpixels,
-                           .y_offset = static_cast<float>(positions[from].y_offset) / kSubpixels,
-                           .pixel_size = pixel_size,
-                           .ascent = sized_font.ascent,
-                           .line_height = sized_font.line_height,
-                           .font = index,
-                           .level = level,
-                           .run = run});
+      const hb_glyph_position_t& position = positions[from];
+      Shaped glyph{.glyph = infos[from].codepoint,
+                   .cluster = infos[from].cluster,
+                   .advance = static_cast<float>(position.x_advance) / kSubpixels,
+                   .x_offset = static_cast<float>(position.x_offset) / kSubpixels,
+                   .y_offset = static_cast<float>(position.y_offset) / kSubpixels,
+                   .pixel_size = pixel_size,
+                   .ascent = sized_font.ascent,
+                   .line_height = sized_font.line_height,
+                   .font = index,
+                   .level = level,
+                   .sideways = vertical_ && !upright,
+                   .run = run};
+      if (top_to_bottom) {
+        // HarfBuzz counts y up and moves a vertical pen by a negative y advance.
+        glyph.advance = -static_cast<float>(position.y_advance) / kSubpixels;
+        glyph.y_offset = -glyph.y_offset;
+      } else if (vertical_) {
+        // A turned glyph's baseline runs down the column and its up is to the right.
+        std::swap(glyph.x_offset, glyph.y_offset);
+      }
+      out.push_back(glyph);
     }
   }
 
   const FontSet* fonts_ = nullptr;
   TextLayout* layout_ = nullptr;
+  bool vertical_ = false;
   std::unique_ptr<hb_buffer_t, FreeBuffer> buffer_;
   std::map<std::pair<std::uint16_t, int>, SizedFont> sized_{};
   /// Fonts without a size, to ask which characters they have.
@@ -427,15 +498,16 @@ struct Ruby {
 class Paragraphs {
  public:
   Paragraphs(const StyledText& styled, float pixel_size, float wrap_width, Shaper& shaper,
-             TextLayout& layout)
+             TextLayout& layout, bool vertical)
       : styled_(&styled),
         text_(styled.text),
         pixel_size_(pixel_size),
         wrap_width_(wrap_width),
         shaper_(&shaper),
         layout_(&layout),
+        vertical_(vertical),
         breaks_(line_breaks(text_)),
-        bidi_(bidi_levels(text_)),
+        bidi_(vertical ? no_bidi(text_.size()) : bidi_levels(text_)),
         run_of_(text_.size(), kNoRun) {
     for (std::size_t run = 0; run < styled.runs.size(); ++run) {
       const std::size_t end = std::min(styled.runs[run].end, text_.size());
@@ -458,6 +530,9 @@ class Paragraphs {
       }
       paragraph(start, end);
       start = i + 1;
+    }
+    if (vertical_) {
+      mirror_columns();
     }
   }
 
@@ -557,7 +632,7 @@ class Paragraphs {
       }
       if (ruby.width > base_width) {
         const float space = (ruby.width - base_width) * kHalf;
-        glyphs[first].x_offset += space;
+        (vertical_ ? glyphs[first].y_offset : glyphs[first].x_offset) += space;
         glyphs[first].advance += space;
         glyphs[last - 1].advance += space;
       }
@@ -596,6 +671,10 @@ class Paragraphs {
   /// Appends glyphs [first, last) of a paragraph as one line.
   void add_line(std::span<const Shaped> glyphs, std::size_t first, std::size_t last,
                 std::span<const Ruby> rubies, std::uint8_t base_level) {
+    if (vertical_) {
+      add_column(glyphs, first, last, rubies);
+      return;
+    }
     const std::span<const Shaped> shaped = glyphs.subspan(first, last - first);
     const SizedFont& base = shaper_->sized(0, pixel_size_);
     // An empty line is as high as the base font. Other lines make room for their glyphs.
@@ -651,13 +730,7 @@ class Paragraphs {
                       .reveal_speed = glyph_style.speed};
       pen += glyph.advance;
     }
-    for (LayoutGlyph& glyph : line.glyphs) {
-      while (next_pause_ < styled_->pauses.size() &&
-             styled_->pauses[next_pause_].offset <= glyph.text_offset) {
-        glyph.reveal_pause += styled_->pauses[next_pause_].seconds;
-        ++next_pause_;
-      }
-    }
+    apply_pauses(line);
 
     // The part of the line that the glyphs [from, to) of the paragraph take, left and right.
     const auto extent = [&](std::size_t from, std::size_t to) {
@@ -715,12 +788,153 @@ class Paragraphs {
     layout_->lines.push_back(std::move(line));
   }
 
+  /// Gives each glyph of `line` the pauses (`pause` tags) that come before it.
+  void apply_pauses(TextLine& line) {
+    for (LayoutGlyph& glyph : line.glyphs) {
+      while (next_pause_ < styled_->pauses.size() &&
+             styled_->pauses[next_pause_].offset <= glyph.text_offset) {
+        glyph.reveal_pause += styled_->pauses[next_pause_].seconds;
+        ++next_pause_;
+      }
+    }
+  }
+
+  /// Where a glyph's origin is, for a column whose centre line is at `centre` and a glyph that
+  /// starts `along` pixels down. An upright glyph is centred on the line by its offsets; a
+  /// turned one has its em box centred on it.
+  [[nodiscard]] static PointF column_origin(const Shaped& glyph, float centre, float along) {
+    const float baseline = glyph.sideways ? centre - glyph.ascent + (glyph.line_height * kHalf)
+                                          : centre;
+    return {.x = baseline + glyph.x_offset, .y = along + glyph.y_offset};
+  }
+
+  /// Appends glyphs [first, last) of a paragraph as a column. The columns are put side by side
+  /// from the left (the thickness adds up in top_), and mirror_columns() turns them around.
+  void add_column(std::span<const Shaped> glyphs, std::size_t first, std::size_t last,
+                  std::span<const Ruby> rubies) {
+    const std::span<const Shaped> shaped = glyphs.subspan(first, last - first);
+    float thickness = shaped.empty() ? shaper_->sized(0, pixel_size_).line_height : 0;
+    for (const Shaped& glyph : shaped) {
+      thickness = std::max(thickness, glyph.line_height);
+    }
+    float ruby_thickness = 0;
+    for (const Ruby& ruby : rubies) {
+      if (ruby.first >= first && ruby.first < last) {
+        ruby_thickness = std::max(ruby_thickness, ruby.line_height);
+      }
+    }
+    TextLine line;
+    line.top = top_;
+    line.height = thickness + ruby_thickness;  // the ruby is to the right of the base text
+    line.baseline = top_ + (thickness * kHalf);
+    top_ += line.height;
+
+    // Spaces at the column's end hang: they are not part of its length.
+    std::size_t content = shaped.size();
+    while (content > 0 && is_space(shaped[content - 1])) {
+      --content;
+    }
+    std::vector<float> pens(shaped.size());
+    line.glyphs.resize(shaped.size());
+    float pen = 0;
+    for (std::size_t i = 0; i < shaped.size(); ++i) {
+      const Shaped& glyph = shaped[i];
+      const TextStyle& glyph_style = style(glyph.run);
+      pens[i] = pen;
+      line.glyphs[i] = LayoutGlyph{.glyph = glyph.glyph,
+                                   .text_offset = glyph.cluster,
+                                   .origin = column_origin(glyph, line.baseline, pen),
+                                   .font = glyph.font,
+                                   .rtl = false,
+                                   .sideways = glyph.sideways,
+                                   .pixel_size = glyph.pixel_size,
+                                   .advance = glyph.advance,
+                                   .color = glyph_style.color,
+                                   .reveal_pause = 0,
+                                   .reveal_speed = glyph_style.speed};
+      pen += glyph.advance;
+      if (i < content) {
+        line.width = pen;
+      }
+    }
+    apply_pauses(line);
+
+    // The part of the column that the glyphs [from, to) of the paragraph take, top and bottom.
+    const auto extent = [&](std::size_t from, std::size_t to) {
+      return std::pair{pens[from - first], pens[to - 1 - first] + shaped[to - 1 - first].advance};
+    };
+    const float ruby_centre = line.top + thickness + (ruby_thickness * kHalf);
+    for (const Ruby& ruby : rubies) {
+      if (ruby.first < first || ruby.first >= last) {
+        continue;
+      }
+      const auto [from, to] = extent(ruby.first, std::min(ruby.last, last));
+      float along = ((from + to) * kHalf) - (ruby.width * kHalf);
+      RubyText text{.base_glyph = ruby.first - first, .glyphs = {}};
+      text.glyphs.reserve(ruby.glyphs.size());
+      for (const Shaped& glyph : ruby.glyphs) {
+        text.glyphs.push_back(LayoutGlyph{.glyph = glyph.glyph,
+                                          .text_offset = glyphs[ruby.first].cluster,
+                                          .origin = column_origin(glyph, ruby_centre, along),
+                                          .font = glyph.font,
+                                          .rtl = false,
+                                          .sideways = glyph.sideways,
+                                          .pixel_size = glyph.pixel_size,
+                                          .advance = glyph.advance,
+                                          .color = style(glyph.run).color,
+                                          .reveal_pause = 0,
+                                          .reveal_speed = 0});
+        along += glyph.advance;
+      }
+      line.ruby.push_back(std::move(text));
+    }
+    std::size_t run_end = first;
+    for (std::size_t i = first; i < last; i = run_end) {
+      run_end = i + 1;
+      while (run_end < last && glyphs[run_end].run == glyphs[i].run) {
+        ++run_end;
+      }
+      const std::string& link = style(glyphs[i].run).link;
+      if (!link.empty()) {
+        const auto [from, to] = extent(i, run_end);
+        layout_->links.push_back(LinkRegion{
+            .id = link,
+            .rect = {.x = line.top, .y = from, .width = line.height, .height = to - from}});
+      }
+    }
+
+    layout_->glyph_count += line.glyphs.size();
+    layout_->lines.push_back(std::move(line));
+  }
+
+  /// Puts the columns in the order of a vertical text: the first one at the right edge.
+  void mirror_columns() {
+    const float total = top_;
+    for (TextLine& line : layout_->lines) {
+      const float shift = total - (line.top + line.height) - line.top;
+      line.top += shift;
+      line.baseline += shift;
+      for (LayoutGlyph& glyph : line.glyphs) {
+        glyph.origin.x += shift;
+      }
+      for (RubyText& ruby : line.ruby) {
+        for (LayoutGlyph& glyph : ruby.glyphs) {
+          glyph.origin.x += shift;
+        }
+      }
+    }
+    for (LinkRegion& link : layout_->links) {
+      link.rect.x = total - link.rect.x - link.rect.width;
+    }
+  }
+
   const StyledText* styled_ = nullptr;
   std::string_view text_;
   float pixel_size_ = 0;
   float wrap_width_ = 0;
   Shaper* shaper_ = nullptr;
   TextLayout* layout_ = nullptr;
+  bool vertical_ = false;
   std::vector<char> breaks_{};
   BidiLevels bidi_{};
   /// For each byte of the text, the index of its StyledRun, or kNoRun.
@@ -851,8 +1065,26 @@ FontSet with_dyslexia_font(const FontSet& fonts, const Font& dyslexia) {
   return result;
 }
 
+PointF layout_extent(const TextLayout& layout) {
+  if (layout.lines.empty()) {
+    return {};
+  }
+  if (layout.vertical) {
+    float longest = 0;
+    for (const TextLine& line : layout.lines) {
+      longest = std::max(longest, line.width);
+    }
+    return {.x = layout.lines.front().top + layout.lines.front().height, .y = longest};
+  }
+  float widest = 0;
+  for (const TextLine& line : layout.lines) {
+    widest = std::max(widest, line.width);
+  }
+  return {.x = widest, .y = layout.lines.back().top + layout.lines.back().height};
+}
+
 TextLayout layout_text(const FontSet& fonts, const StyledText& text, float pixel_size,
-                       float wrap_width) {
+                       float wrap_width, TextOrientation orientation) {
   if (fonts.base.regular == nullptr) {
     throw std::invalid_argument{"FontSet::base.regular is not set"};
   }
@@ -861,10 +1093,11 @@ TextLayout layout_text(const FontSet& fonts, const StyledText& text, float pixel
   }
   TextLayout layout{};
   layout.pixel_size = pixel_size;
-  Shaper shaper{fonts, layout};
+  layout.vertical = orientation == TextOrientation::kVertical;
+  Shaper shaper{fonts, layout, layout.vertical};
   layout.line_height = shaper.sized(0, pixel_size).line_height;
   if (!text.text.empty()) {
-    Paragraphs{text, pixel_size, wrap_width, shaper, layout}.layout_all();
+    Paragraphs{text, pixel_size, wrap_width, shaper, layout, layout.vertical}.layout_all();
   }
   return layout;
 }
@@ -1123,16 +1356,28 @@ std::vector<Quad> text_quads(const TextLayout& layout, const GlyphAtlas& atlas, 
     // Whole pixels, so the bitmap's pixels land on the target's pixels.
     const float x = std::round(origin.x + (glyph.origin.x * scale));
     const float y = std::round(origin.y + (glyph.origin.y * scale));
-    quads.push_back(
-        quad_from_rect(RectF{.x = x + static_cast<float>(placed->left),
-                             .y = y - static_cast<float>(placed->top),
-                             .width = static_cast<float>(placed->width),
-                             .height = static_cast<float>(placed->height)},
-                       RectF{.x = static_cast<float>(placed->x) / atlas_width,
-                             .y = static_cast<float>(placed->y) / atlas_height,
-                             .width = static_cast<float>(placed->width) / atlas_width,
-                             .height = static_cast<float>(placed->height) / atlas_height},
-                       glyph.color.value_or(tint)));
+    const auto left = static_cast<float>(placed->left);
+    const auto top = static_cast<float>(placed->top);
+    const auto width = static_cast<float>(placed->width);
+    const auto height = static_cast<float>(placed->height);
+    const RectF uv{.x = static_cast<float>(placed->x) / atlas_width,
+                   .y = static_cast<float>(placed->y) / atlas_height,
+                   .width = width / atlas_width,
+                   .height = height / atlas_height};
+    if (!glyph.sideways) {
+      quads.push_back(quad_from_rect(
+          RectF{.x = x + left, .y = y - top, .width = width, .height = height}, uv,
+          glyph.color.value_or(tint)));
+      return;
+    }
+    // Turned 90 degrees clockwise about the origin: (dx, dy) goes to (-dy, dx), so the bitmap's
+    // top-left corner (left, -top) lands at (top, left), and the corners keep their order.
+    quads.push_back(Quad{.corners = {PointF{.x = x + top, .y = y + left},
+                                     PointF{.x = x + top, .y = y + left + width},
+                                     PointF{.x = x + top - height, .y = y + left + width},
+                                     PointF{.x = x + top - height, .y = y + left}},
+                         .uv = uv,
+                         .tint = glyph.color.value_or(tint)});
   };
   std::size_t remaining = visible_glyphs;
   for (const TextLine& line : layout.lines) {

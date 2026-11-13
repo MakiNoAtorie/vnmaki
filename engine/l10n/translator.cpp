@@ -94,6 +94,7 @@ Translator::Translator(const Vfs& vfs, const ProjectConfig& config)
       languages_(config.languages),
       directions_(config.text_directions.begin(), config.text_directions.end()),
       styles_(config.language_styles),
+      vertical_(config.vertical),
       language_(config.languages.front()) {
   if (const auto found = directions_.find(language_); found != directions_.end()) {
     direction_ = found->second;

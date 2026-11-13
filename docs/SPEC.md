@@ -211,7 +211,7 @@ Playback and staging only.
 - A font fallback chain for each language.
 - Inline tags: color, size, font, bold, italic, speed, pause, ruby, link.
 - Typewriter reveal. Effects per character: wave, shake, fade-in.
-- Vertical text comes later.
+- Vertical text (Japanese and Chinese tategaki): columns run down and from right to left. Upright characters use the font's `vert` forms, Latin runs turn 90 degrees, kinsoku works on columns and ruby goes to the right. A language sets it in `project.toml` or its style file (section 16). It applies to the say box and NVL; other UI text and mixed layouts come later.
 
 ## 14. Audio and Video
 

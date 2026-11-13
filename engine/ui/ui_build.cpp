@@ -317,6 +317,8 @@ void apply_option(const ScreenNodeDef& def, UiNode& node, const std::string& nam
     node.markup = read_flag(def, name, value);
   } else if (node.kind == NodeKind::kText && name == "reveal") {
     node.reveal = read_flag(def, name, value);
+  } else if (node.kind == NodeKind::kText && name == "vertical") {
+    style.vertical = read_flag(def, name, value);
   } else if (name == "cancel") {
     node.cancel = value;
   } else if (name == "modal") {

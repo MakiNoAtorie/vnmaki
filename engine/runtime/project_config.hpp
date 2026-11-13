@@ -23,6 +23,9 @@
 //   [text_direction]              # for a language: "ltr" or "rtl"; default "ltr". Right to
 //   ar = "rtl"                    # left reverses the order of the children of an hbox
 //
+//   [vertical]                    # for a language: true sets the say box and the NVL screen in
+//   ja = true                     # vertical text (columns, right to left); default false
+//
 //   [styles]                      # for a language: the style override file, run after the
 //   ja = "styles/ja_look.lua"     # game's styles; default styles/<language>.lua if it exists
 //
@@ -69,6 +72,8 @@ struct ProjectConfig {
   /// file of each language that has one. Every key is in `languages`.
   std::map<std::string, TextDirection> text_directions{};
   std::map<std::string, std::string> language_styles{};
+  /// The languages whose story text is vertical (`[vertical]`). Every key is in `languages`.
+  std::map<std::string, bool> vertical{};
   std::vector<AutoSaveEvent> auto_save{};
   std::vector<std::string> gallery{};
   std::size_t rollback_depth = kDefaultRollbackDepth;
