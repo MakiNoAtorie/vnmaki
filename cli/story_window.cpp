@@ -1,5 +1,6 @@
 #include "cli/story_window.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -84,6 +85,37 @@ constexpr std::string_view kUserDataOrganization = "VNMaki";
 /// option.
 constexpr std::string_view kDyslexiaFontPath = "fonts/dyslexia.ttf";
 
+// The fonts of one language: the default font and the fallback chain of project.toml (the subset
+// of a pack for the language, when there is one) and the dyslexia-friendly font, if the game has
+// it. `set` points into this object, so it is not moved.
+struct LanguageFonts {
+  LanguageFonts(const Vfs& vfs, const ProjectConfig& config, const std::string& code)
+      : base(load_font_for_language(vfs, kDefaultFontPath, code)) {
+    set.base.regular = &base;
+    if (const auto chain = config.font_fallbacks.find(code); chain != config.font_fallbacks.end()) {
+      chain_fonts.reserve(chain->second.size());
+      for (const std::string& path : chain->second) {
+        chain_fonts.push_back(load_font_for_language(vfs, path, code));
+        set.fallbacks.push_back(&chain_fonts.back());
+      }
+    }
+    if (const std::string path = font_path_for_language(vfs, kDyslexiaFontPath, code);
+        vfs.exists(path)) {
+      dyslexia.emplace(load_font(vfs, path));
+    }
+  }
+  LanguageFonts(const LanguageFonts&) = delete;
+  LanguageFonts& operator=(const LanguageFonts&) = delete;
+  LanguageFonts(LanguageFonts&&) = delete;
+  LanguageFonts& operator=(LanguageFonts&&) = delete;
+  ~LanguageFonts() = default;
+
+  Font base;
+  std::vector<Font> chain_fonts;
+  std::optional<Font> dyslexia;
+  FontSet set;
+};
+
 // The system output; if there is none, a device that plays to nowhere, so that a game with no
 // sound card still runs. Builds without threads mix by hand (Audio::update does it).
 std::unique_ptr<Audio> make_audio(const Vfs& vfs, std::ostream& err) {
@@ -114,29 +146,16 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                       {.enabled = VNMAKI_DEV_TOOLS != 0 || profile_csv.has_value(),
                        .max_frames = profile_csv ? 0 : Profiler::kGraphFrames}};
     // Everything that needs no window comes first, so a broken project fails before one opens.
-    const Font font = load_font(vfs, kDefaultFontPath);
-    // The font chain of each language (`[fonts.fallback]` of project.toml). A font file loads once.
-    std::map<std::string, Font> chain_fonts;
-    std::map<std::string, FontSet> font_sets;
-    for (const std::string& code : config.languages) {
-      FontSet set{.base = {.regular = &font}};
-      if (const auto chain = config.font_fallbacks.find(code);
-          chain != config.font_fallbacks.end()) {
-        for (const std::string& path : chain->second) {
-          auto loaded = chain_fonts.find(path);
-          if (loaded == chain_fonts.end()) {
-            loaded = chain_fonts.emplace(path, load_font(vfs, path)).first;
-          }
-          set.fallbacks.push_back(&loaded->second);
-        }
+    // The fonts of each language load when the language is first shown (the one the player starts
+    // in loads below, before the window): a pack has the subset of a font for each language.
+    std::map<std::string, std::unique_ptr<LanguageFonts>> language_fonts;
+    const auto fonts_of = [&](const std::string& code) -> const LanguageFonts& {
+      std::unique_ptr<LanguageFonts>& slot = language_fonts[code];
+      if (!slot) {
+        slot = std::make_unique<LanguageFonts>(vfs, config, code);  // a FontError leaves it empty
       }
-      font_sets.emplace(code, std::move(set));
-    }
-    FontSet fonts = font_sets.at(config.languages.front());
-    std::optional<Font> dyslexia_font;
-    if (vfs.exists(kDyslexiaFontPath)) {
-      dyslexia_font.emplace(load_font(vfs, kDyslexiaFontPath));
-    }
+      return *slot;
+    };
     // The audio comes first, so that it outlives the scene: a movie stops its audio when it goes.
     const std::unique_ptr<Audio> audio = make_audio(vfs, err);
     Scene scene{vfs, virtual_size};
@@ -189,6 +208,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       }
     }
     static_cast<void>(runtime.set_language_styles(translator.style_file()));
+    FontSet fonts = fonts_of(translator.language()).set;  // a missing font fails before the window
     runtime.load_scripts();
 #if VNMAKI_DEV_TOOLS
     // `vnmaki debug`: the pump (below) draws and handles OS events while the story is stopped.
@@ -246,12 +266,22 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     // preference is on.
     bool dyslexia_on = false;
     const auto current_fonts = [&] {
-      const FontSet& plain = font_sets.at(translator.language());
-      return dyslexia_on && dyslexia_font ? with_dyslexia_font(plain, *dyslexia_font) : plain;
+      const LanguageFonts& shown = fonts_of(translator.language());
+      return dyslexia_on && shown.dyslexia ? with_dyslexia_font(shown.set, *shown.dyslexia)
+                                           : shown.set;
     };
     const auto apply_language = [&](const std::string& code) {
       const std::string target = code.empty() ? translator.source_language() : code;
       if (target != translator.language()) {
+        // The fonts of the language (its subset of a pack) load now; if they cannot, it stays.
+        if (std::ranges::find(config.languages, target) != config.languages.end()) {
+          try {
+            static_cast<void>(fonts_of(target));
+          } catch (const FontError& error) {
+            warn(std::string{"language "} + target + ": " + error.what());
+            return;
+          }
+        }
         if (const std::string problem = translator.set_language(target); !problem.empty()) {
           warn(problem);
         }
@@ -318,7 +348,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     self_voicing.set_translator(&translator);
     backlog_screen.set_input_map(&input_map);
     const auto use_dyslexia_font = [&](bool on) {
-      if (on && !dyslexia_font) {
+      if (on && !fonts_of(translator.language()).dyslexia) {
         warn(std::string{kDyslexiaFontPath} + " is missing: the dyslexia-friendly font is off");
       }
       dyslexia_on = on;

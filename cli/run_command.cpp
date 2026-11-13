@@ -22,6 +22,7 @@
 #include "engine/runtime/project_config.hpp"
 #include "engine/saves/saves.hpp"
 #include "engine/scene/scene.hpp"
+#include "engine/vfs/pak_mount.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki::cli {
@@ -126,8 +127,15 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
   }
 
   Vfs vfs;
-  if (!vfs.mount(make_directory_mount(arguments->project_dir))) {
-    err << "vnmaki: " << arguments->project_dir << " is not a directory\n";
+  try {
+    // A folder with a game.vnpak is a built game: the packs are the whole project.
+    if (!mount_game_packs(vfs, arguments->project_dir) &&
+        !vfs.mount(make_directory_mount(arguments->project_dir))) {
+      err << "vnmaki: " << arguments->project_dir << " is not a directory\n";
+      return kExitError;
+    }
+  } catch (const PakError& error) {
+    err << "vnmaki: " << error.what() << '\n';
     return kExitError;
   }
   ProjectConfig config;

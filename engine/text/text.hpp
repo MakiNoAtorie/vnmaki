@@ -63,6 +63,16 @@ class Font {
 /// or is not a scalable font.
 [[nodiscard]] Font load_font(const Vfs& vfs, std::string_view path);
 
+/// The font file to use for `language`: the per-language subset `fonts/X.<language>.ttf` of
+/// `fonts/X.ttf` (what `vnmaki import` makes and a pack holds in place of the font) when the Vfs
+/// has it, else `path`. The extension of the subset is the lower-case one of `path`.
+[[nodiscard]] std::string font_path_for_language(const Vfs& vfs, std::string_view path,
+                                                 std::string_view language);
+
+/// load_font of font_path_for_language.
+[[nodiscard]] Font load_font_for_language(const Vfs& vfs, std::string_view path,
+                                          std::string_view language);
+
 /// One glyph of laid-out text.
 struct LayoutGlyph {
   /// The glyph's index in the font; 0 is the font's "missing character" glyph.

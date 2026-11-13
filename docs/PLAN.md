@@ -455,11 +455,11 @@ Files: new `engine/assets/`, `vcpkg.json`, `cli/`.
 
 Files: new `engine/vfs/pak_mount.*`, `engine/vfs/pak_writer.*`, new `cli/build_command.*`, `vcpkg.json`.
 
-- [ ] Format: magic, version, a sorted index (path, offset, size, raw size, hash), and zstd data for each file. Document it.
-- [ ] `PakMount` is a `VfsMount`. `patch-*.vnpak` files mount after `game.vnpak` in name order and override by path.
-- [ ] `vnmaki build windows <dir> --out <folder>` imports, packs, and copies the release runner as `<title>.exe`. The runner plays `game.vnpak` next to it.
-- [ ] A bad pak gives an error, not a crash. Add a fuzz target for the pak reader.
-- [ ] Tests: pack round trip, patch override, and a headless play of the built template from packs only.
+- [x] Format: magic, version, a sorted index (path, offset, size, raw size, hash), and zstd data for each file. Document it.
+- [x] `PakMount` is a `VfsMount`. `patch-*.vnpak` files mount after `game.vnpak` in name order and override by path.
+- [x] `vnmaki build windows <dir> --out <folder>` imports, packs, and copies the release runner as `<title>.exe`. The runner plays `game.vnpak` next to it.
+- [x] A bad pak gives an error, not a crash. Add a fuzz target for the pak reader.
+- [x] Tests: pack round trip, patch override, and a headless play of the built template from packs only.
 
 ### 46: 3D scenes (SPEC §12, §9)
 
@@ -476,11 +476,11 @@ Files: new `engine/model3d/`, `engine/render/` (depth targets, meshes), `shaders
 
 Files: `engine/model3d/`, `engine/audio/` (voice level from task 26), runtime.
 
-- [ ] Skinning and morph targets on the CPU. Upload the vertices each frame.
-- [ ] `play(tag, clip, { loop, fade, speed, seek })`. A fade crossfades from the old clip. `wait(tag)` waits for a clip with no loop.
-- [ ] Replay puts a clip at its end. A loop clip restarts at time 0. The clip state is in the snapshot.
-- [ ] `model(..., { lip_sync = { morph = "mouth_open" } })` uses the voice level of the model's `voice_tag`.
-- [ ] Tests with a fake clock: joint matrices of a generated two-bone fixture, morph weights, crossfade weights, and one GPU probe.
+- [x] Skinning and morph targets on the CPU. Upload the vertices each frame.
+- [x] `play(tag, clip, { loop, fade, speed, seek })`. A fade crossfades from the old clip. `wait(tag)` waits for a clip with no loop.
+- [x] Replay puts a clip at its end. A loop clip restarts at time 0. The clip state is in the snapshot.
+- [x] `model(..., { lip_sync = { morph = "mouth_open" } })` uses the voice level of the model's `voice_tag`.
+- [x] Tests with a fake clock: joint matrices of a generated two-bone fixture, morph weights, crossfade weights, and one GPU probe.
 
 ### 48: Plugin API (SPEC §20)
 

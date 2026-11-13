@@ -109,3 +109,7 @@ if(TARGET vnmaki_fixtures_model3d)
   add_test(NAME fuzz.model.seeded COMMAND fuzz_model -runs=10000 -seed=1 "${vnmaki_model_corpus}"
                                           "${PROJECT_BINARY_DIR}/fixtures/model3d/game/models")
 endif()
+
+# `.vnpak` archives (ticket 45). The target reads the bytes as a pak, and also writes a pak from
+# them (as file contents) and damages it, so it gets past the header.
+vnmaki_add_fuzzer(pak pak_fuzzer.cpp pak_properties.hpp)

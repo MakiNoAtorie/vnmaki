@@ -48,3 +48,13 @@ Options:
 ## Change the story
 
 Open `scripts/main.lua`. Each `label` is a function. `say`, `narrate`, `menu` and `call_screen` wait for the player. `jump("name")` goes to another label. State that saves and rollback must keep goes in `store`. The full list of functions is in `docs/SPEC.md`, section 7.
+
+## Build the game for players
+
+```
+vnmaki build windows my_game --out my_game_build
+```
+
+- The command imports the assets, packs them into `game.vnpak`, and copies the release runner as `<title>.exe` with its DLLs. Give the folder to a player. `<title>.exe` plays `game.vnpak` with no arguments.
+- Run it with a dev build (it compiles the game shaders). The runner is `build/release/cli/vnmaki.exe`, so build the `release` preset too, or pass `--runner <path>`.
+- A file `patch-*.vnpak` next to `game.vnpak` overrides the files of the game by path, in name order.

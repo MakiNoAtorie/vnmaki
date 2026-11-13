@@ -149,7 +149,11 @@ inline constexpr std::string_view kLayerTagPrefix = "@layer.";
 /// model, a light or the "camera". prepare() uploads the models and makes the target, and draw()
 /// renders each 3D scene in a pass of its own before the layer that holds it, then goes on in a
 /// new pass on its target. A model that has a game shader needs the shader to include
-/// shaders/mesh.hlsli.
+/// shaders/mesh.hlsli. `play("@3d.<scene>.<model>", clip, ...)` plays a clip of a model's file
+/// (skeleton and morph targets, engine/model3d/animation.hpp), update() moves it on, and `wait`
+/// on the tag waits for a clip that does not loop. A model with a `lip_sync` follows the voice
+/// level of set_voice_level() like a layered sprite. A restore or a replay puts a clip that does
+/// not loop at its end and starts a loop at time 0.
 ///
 /// The snapshot is a map from a part's name to its bytes, so a later feature adds a part without
 /// changing the others: "displayables" (the images), "layered" (the layered sprites),

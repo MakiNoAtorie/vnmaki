@@ -76,6 +76,7 @@ class SdlGpuRenderer final : public IRenderer {
   [[nodiscard]] ShaderId create_shader(const ShaderBytecode& fragment) override;
   [[nodiscard]] MeshId create_mesh(std::span<const MeshVertex> vertices,
                                    std::span<const std::uint32_t> indices) override;
+  void update_mesh(MeshId mesh, std::span<const MeshVertex> vertices) override;
   void destroy_mesh(MeshId mesh) override;
   void destroy_texture(TextureId texture) override;
   void destroy_shader(ShaderId shader) override;

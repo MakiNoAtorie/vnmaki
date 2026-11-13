@@ -22,6 +22,10 @@ inline constexpr std::string_view kRunUsage =
 /// Without it, the game plays in a window (cli/story_window.hpp), for <n>
 /// frames at most.
 ///
+/// A <project-dir> that has a `game.vnpak` is a built game (docs/SPEC.md section 19): the project
+/// is that pack and the `patch-*.vnpak` files next to it (engine/vfs/pak_mount.hpp), not the loose
+/// files. A pak that cannot be read gives exit code 1.
+///
 /// Saves and the persistent file go to the user-data directory of the game's title, or to
 /// <path> with --data-dir (in a window and headless). Tests use it to leave the user's data alone.
 ///

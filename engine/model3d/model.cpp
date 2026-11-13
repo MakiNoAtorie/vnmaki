@@ -13,6 +13,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <cgltf.h>
@@ -187,6 +188,8 @@ class Loader {
       result_.materials.push_back(read_material(material));
     }
     result_.materials.push_back(ModelMaterial{.roughness = kDefaultRoughness});
+    load_nodes();
+    load_skins();
     for (const cgltf_node& node : std::span{data_->nodes, data_->nodes_count}) {
       if (node.mesh == nullptr) {
         continue;
@@ -195,13 +198,194 @@ class Loader {
       cgltf_node_transform_world(&node, world.data());
       for (const cgltf_primitive& primitive :
            std::span{node.mesh->primitives, node.mesh->primitives_count}) {
-        add_primitive(primitive, world);
+        add_primitive(primitive, world, node);
       }
     }
+    load_clips();
     return std::move(result_);
   }
 
  private:
+  [[nodiscard]] std::size_t node_index(const cgltf_node& node) const {
+    return static_cast<std::size_t>(&node - data_->nodes);
+  }
+
+  // The nodes with their transforms at rest, and the order that puts parents first.
+  void load_nodes() {
+    const std::span<const cgltf_node> nodes{data_->nodes, data_->nodes_count};
+    result_.nodes.resize(nodes.size());
+    std::vector<std::pair<std::size_t, std::size_t>> depths;  // (depth, index)
+    depths.reserve(nodes.size());
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+      const cgltf_node& node = nodes[i];
+      ModelNode& out = result_.nodes.at(i);
+      out.parent = node.parent != nullptr ? static_cast<int>(node_index(*node.parent)) : -1;
+      if (node.has_matrix) {
+        Mat4 matrix{};  // cgltf has the columns first
+        for (std::size_t row = 0; row < 4; ++row) {
+          for (std::size_t column = 0; column < 4; ++column) {
+            matrix.at((row * 4) + column) = node.matrix[(column * 4) + row];
+          }
+        }
+        decompose(matrix, out.translation, out.rotation, out.scale);
+      } else {
+        if (node.has_translation) {
+          out.translation = {
+              .x = node.translation[0], .y = node.translation[1], .z = node.translation[2]};
+        }
+        if (node.has_rotation) {
+          out.rotation = vnmaki::normalized(
+              Quat{node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3]});
+        }
+        if (node.has_scale) {
+          out.scale = {.x = node.scale[0], .y = node.scale[1], .z = node.scale[2]};
+        }
+      }
+      if (node.mesh != nullptr && node.mesh->primitives_count != 0) {
+        out.weights.assign(node.mesh->primitives[0].targets_count, 0.0F);
+        const cgltf_float* given = node.weights != nullptr ? node.weights : node.mesh->weights;
+        const cgltf_size given_count =
+            node.weights != nullptr ? node.weights_count : node.mesh->weights_count;
+        for (std::size_t w = 0; w < std::min<std::size_t>(given_count, out.weights.size()); ++w) {
+          out.weights.at(w) = given[w];
+        }
+      }
+      std::size_t depth = 0;
+      for (const cgltf_node* up = node.parent; up != nullptr; up = up->parent) {
+        if (++depth > nodes.size()) {
+          fail(path_, "the nodes are in a loop");
+        }
+      }
+      depths.emplace_back(depth, i);
+    }
+    std::ranges::stable_sort(depths);
+    result_.node_order.reserve(depths.size());
+    for (const auto& [depth, index] : depths) {
+      result_.node_order.push_back(index);
+    }
+  }
+
+  void load_skins() {
+    for (const cgltf_skin& skin : std::span{data_->skins, data_->skins_count}) {
+      if (skin.joints_count > kMaxJoints) {
+        fail(path_, "a skin has too many joints");
+      }
+      ModelSkin out;
+      out.joints.reserve(skin.joints_count);
+      for (const cgltf_node* joint : std::span{skin.joints, skin.joints_count}) {
+        out.joints.push_back(node_index(*joint));
+      }
+      out.inverse_bind.assign(skin.joints_count, identity_matrix());
+      if (const cgltf_accessor* matrices = skin.inverse_bind_matrices; matrices != nullptr) {
+        if (matrices->count < skin.joints_count || matrices->count > kMaxJoints) {
+          fail(path_, "a skin does not have a matrix for each joint");
+        }
+        const std::vector<float> values =
+            read_floats(*matrices, matrices->count, kMatrixSize, path_, "inverse bind matrices");
+        for (std::size_t joint = 0; joint < skin.joints_count; ++joint) {
+          for (std::size_t row = 0; row < 4; ++row) {
+            for (std::size_t column = 0; column < 4; ++column) {
+              out.inverse_bind.at(joint).at((row * 4) + column) =
+                  values.at((joint * kMatrixSize) + (column * 4) + row);
+            }
+          }
+        }
+      }
+      result_.skins.push_back(std::move(out));
+    }
+  }
+
+  void load_clips() {
+    if (data_->animations_count > kMaxClips) {
+      fail(path_, "the model has too many animations");
+    }
+    for (std::size_t i = 0; i < data_->animations_count; ++i) {
+      const cgltf_animation& animation = data_->animations[i];
+      ModelClip clip;
+      clip.name = animation.name != nullptr ? animation.name : "animation" + std::to_string(i);
+      for (const cgltf_animation_channel& channel :
+           std::span{animation.channels, animation.channels_count}) {
+        if (std::optional<AnimationChannel> made = read_channel(channel); made.has_value()) {
+          clip.duration = std::max(clip.duration, made->times.back());
+          clip.channels.push_back(std::move(*made));
+        }
+      }
+      result_.clips.push_back(std::move(clip));
+    }
+  }
+
+  // The channel as data, or nothing for one that targets no node or a property that is not drawn.
+  std::optional<AnimationChannel> read_channel(const cgltf_animation_channel& channel) {
+    if (channel.target_node == nullptr || channel.sampler == nullptr ||
+        channel.sampler->input == nullptr || channel.sampler->output == nullptr) {
+      return std::nullopt;
+    }
+    AnimationChannel made;
+    made.node = node_index(*channel.target_node);
+    switch (channel.target_path) {
+      case cgltf_animation_path_type_translation:
+        made.path = AnimationPath::kTranslation;
+        made.width = 3;
+        break;
+      case cgltf_animation_path_type_rotation:
+        made.path = AnimationPath::kRotation;
+        made.width = 4;
+        break;
+      case cgltf_animation_path_type_scale:
+        made.path = AnimationPath::kScale;
+        made.width = 3;
+        break;
+      case cgltf_animation_path_type_weights:
+        made.path = AnimationPath::kWeights;
+        made.width =
+            channel.target_node->mesh != nullptr && channel.target_node->mesh->primitives_count != 0
+                ? channel.target_node->mesh->primitives[0].targets_count
+                : 0;
+        break;
+      default:
+        return std::nullopt;
+    }
+    if (made.width == 0) {
+      return std::nullopt;
+    }
+    const cgltf_animation_sampler& sampler = *channel.sampler;
+    switch (sampler.interpolation) {
+      case cgltf_interpolation_type_step:
+        made.interpolation = Interpolation::kStep;
+        break;
+      case cgltf_interpolation_type_cubic_spline:
+        made.interpolation = Interpolation::kCubicSpline;
+        break;
+      default:
+        made.interpolation = Interpolation::kLinear;
+        break;
+    }
+    const std::size_t keys = sampler.input->count;
+    const std::size_t per_key =
+        made.width * (made.interpolation == Interpolation::kCubicSpline ? 3 : 1);
+    // The sizes are checked before anything is allocated.
+    if (keys == 0 || keys > kMaxAnimationFloats || per_key > kMaxAnimationFloats / keys ||
+        total_animation_floats_ + keys + (keys * per_key) > kMaxAnimationFloats) {
+      fail(path_, keys == 0 ? "an animation has no keys" : "the animations are too big");
+    }
+    total_animation_floats_ += keys + (keys * per_key);
+    if (sampler.output->count * cgltf_num_components(sampler.output->type) != keys * per_key) {
+      fail(path_, "the values of an animation do not match its times");
+    }
+    made.times = read_floats(*sampler.input, keys, 1, path_, "animation times");
+    made.values =
+        read_floats(*sampler.output, sampler.output->count,
+                    cgltf_num_components(sampler.output->type), path_, "animation values");
+    float last = 0;
+    for (const float time : made.times) {
+      if (!std::isfinite(time) || time < last) {
+        fail(path_, "the times of an animation must not fall below 0 or go back");
+      }
+      last = time;
+    }
+    return made;
+  }
+
   ModelMaterial read_material(const cgltf_material& material) {
     ModelMaterial result;
     if (!material.has_pbr_metallic_roughness) {
@@ -261,7 +445,8 @@ class Loader {
     return index;
   }
 
-  void add_primitive(const cgltf_primitive& primitive, const Matrix& world) {
+  void add_primitive(const cgltf_primitive& primitive, const Matrix& node_world,
+                     const cgltf_node& node) {
     if (primitive.type != cgltf_primitive_type_triangles) {
       fail(path_, "only triangle lists can be drawn");
     }
@@ -279,8 +464,22 @@ class Loader {
     if (index_count % 3 != 0 || count == 0) {
       fail(path_, "a primitive does not have whole triangles");
     }
+    const std::size_t target_count = primitive.targets_count;
+    if (target_count > kMaxMorphTargets || target_count != node.mesh->primitives[0].targets_count ||
+        total_morph_vertices_ + (count * target_count) > kMaxModelVertices) {
+      fail(path_, "a mesh has too many morph targets, or its primitives do not have the same");
+    }
     total_vertices_ += count;
     total_indices_ += index_count;
+    total_morph_vertices_ += count * target_count;
+
+    // glTF ignores the node transform of a skinned mesh: the joints place it.
+    const cgltf_accessor* joint_values = attribute_of(primitive, cgltf_attribute_type_joints);
+    const cgltf_accessor* weight_values = attribute_of(primitive, cgltf_attribute_type_weights);
+    const bool skinned = node.skin != nullptr && node.skin->joints_count != 0 &&
+                         joint_values != nullptr && weight_values != nullptr;
+    constexpr Matrix kIdentity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const Matrix& world = skinned ? kIdentity : node_world;
 
     const std::vector<float> position_values =
         read_floats(*positions, count, 3, path_, "positions");
@@ -322,10 +521,82 @@ class Loader {
     if (normal_values.empty()) {
       fill_normals(mesh);
     }
+    mesh.node = node_index(node);
+    if (skinned) {
+      mesh.skin = static_cast<int>(node.skin - data_->skins);
+      mesh.influences =
+          read_influences(*joint_values, *weight_values, count, node.skin->joints_count);
+    }
+    mesh.morphs.reserve(target_count);
+    for (std::size_t target = 0; target < target_count; ++target) {
+      mesh.morphs.push_back(read_morph(primitive, target, count, world, node));
+    }
     mesh.material = primitive.material != nullptr
                         ? static_cast<std::size_t>(primitive.material - data_->materials)
                         : result_.materials.size() - 1;
     result_.meshes.push_back(std::move(mesh));
+  }
+
+  [[nodiscard]] std::vector<SkinInfluence> read_influences(const cgltf_accessor& joints,
+                                                           const cgltf_accessor& weights,
+                                                           std::size_t count,
+                                                           std::size_t joint_count) const {
+    if (joints.count != count || joints.type != cgltf_type_vec4) {
+      fail(path_, "joints do not match the positions");
+    }
+    const std::vector<float> weight_values = read_floats(weights, count, 4, path_, "weights");
+    std::vector<SkinInfluence> result(count);
+    for (std::size_t i = 0; i < count; ++i) {
+      std::array<cgltf_uint, 4> joint{};
+      if (cgltf_accessor_read_uint(&joints, i, joint.data(), joint.size()) == 0) {
+        fail(path_, "joints cannot be read");
+      }
+      SkinInfluence& influence = result.at(i);
+      float sum = 0;
+      for (std::size_t k = 0; k < 4; ++k) {
+        const float weight = weight_values.at((i * 4) + k);
+        if (!(weight > 0) || !std::isfinite(weight)) {
+          continue;  // a joint without weight may have any index
+        }
+        if (joint.at(k) >= joint_count) {
+          fail(path_, "a joint index is past the joints of its skin");
+        }
+        influence.joints.at(k) = static_cast<std::uint16_t>(joint.at(k));
+        influence.weights.at(k) = weight;
+        sum += weight;
+      }
+      if (sum > 0) {
+        for (float& weight : influence.weights) {
+          weight /= sum;
+        }
+      } else {
+        influence.weights.at(0) = 1;  // the first joint, for a vertex that no joint moves
+      }
+    }
+    return result;
+  }
+
+  [[nodiscard]] MorphTarget read_morph(const cgltf_primitive& primitive, std::size_t index,
+                                       std::size_t count, const Matrix& world,
+                                       const cgltf_node& node) const {
+    MorphTarget target;
+    if (index < node.mesh->target_names_count && node.mesh->target_names[index] != nullptr) {
+      target.name = node.mesh->target_names[index];
+    }
+    target.deltas.assign(count, std::array<float, 3>{});
+    const cgltf_morph_target& source = primitive.targets[index];
+    for (const cgltf_attribute& attribute : std::span{source.attributes, source.attributes_count}) {
+      if (attribute.type != cgltf_attribute_type_position) {
+        continue;  // ponytail: only position deltas; normal and tangent deltas are not used
+      }
+      const std::vector<float> values =
+          read_floats(*attribute.data, count, 3, path_, "morph target positions");
+      for (std::size_t i = 0; i < count; ++i) {
+        target.deltas.at(i) = transform(
+            world, {values.at(i * 3), values.at((i * 3) + 1), values.at((i * 3) + 2)}, 0.0F);
+      }
+    }
+    return target;
   }
 
   const Vfs* vfs_;
@@ -335,6 +606,8 @@ class Loader {
   std::map<const cgltf_image*, int> decoded_;
   std::size_t total_vertices_ = 0;
   std::size_t total_indices_ = 0;
+  std::size_t total_morph_vertices_ = 0;
+  std::size_t total_animation_floats_ = 0;
 };
 
 }  // namespace

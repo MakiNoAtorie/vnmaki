@@ -729,3 +729,37 @@ set_tests_properties(
   cli.import_reports_a_missing_folder
   cli.import_needs_a_folder
   cli.import_rejects_a_second_folder PROPERTIES TIMEOUT 120)
+
+# vnmaki build windows (ticket 45). The script builds the template and plays it from the packs.
+# The window run needs a GPU, so the test skips without one, like the other window tests.
+add_test(NAME cli.build_windows_packs_the_template_and_plays_it
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> ${vnmaki_new_precompiled}
+                 -DWORK=${CMAKE_CURRENT_BINARY_DIR}/work/build -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_build.cmake")
+set_tests_properties(
+  cli.build_windows_packs_the_template_and_plays_it
+  PROPERTIES TIMEOUT 600 SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
+
+vnmaki_add_cli_test(
+  build_needs_a_platform
+  ARGS build
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "the platform must be 'windows'.*usage: vnmaki build windows")
+
+vnmaki_add_cli_test(
+  build_needs_an_out_folder
+  ARGS build windows "${vnmaki_import_fixtures}/project"
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "needs a project folder and --out")
+
+vnmaki_add_cli_test(
+  build_reports_a_missing_runner
+  ARGS build windows "${vnmaki_import_fixtures}/project" --out
+       "${CMAKE_CURRENT_BINARY_DIR}/work/build_no_runner" --runner
+       "${CMAKE_CURRENT_BINARY_DIR}/no_such_runner.exe"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "no runner at .*no_such_runner.exe")
+

@@ -1234,7 +1234,9 @@ do
       error("bad option 'scene' to 'model' (the name of a scene3d expected)", 2)
     end
     require_label("model")
+    local lip_morph, lip_voice_tag = engine.lip_sync3d(options)
     send({ kind = "model", scene = scene_name, name = tag, path = path,
+           lip_morph = lip_morph, lip_voice_tag = lip_voice_tag,
            shader = typed("model", options, "shader", "string", 2),
            uniforms = typed("model", options, "uniforms", "table", 2),
            position = point("model", options, "position", 2),
@@ -1294,6 +1296,75 @@ do
     end
     node.x, node.y, node.scale_x, node.scale_y = nil, nil, nil, nil
     node.uniforms = values
+  end
+end
+)lua" R"lua(
+-- 3D animation (docs/SPEC.md section 12).
+--   play("@3d.<scene>.<model>", clip, { loop =, fade =, speed =, seek = })
+--   model(..., { lip_sync = { morph = "mouth_open", voice_tag = }, ... })    (see model above)
+-- `wait("@3d.<scene>.<model>")` waits for a clip that does not loop, with the tweens of the model.
+do
+  local pairs = pairs
+
+  -- Checks the lip_sync option of `model`: returns the morph target's name and the voice tag, or
+  -- nothing when the option is not given. `lip_sync = false` removes the lip sync (the name "").
+  function engine.lip_sync3d(options)
+    local spec = options.lip_sync
+    if spec == nil then
+      return nil, nil
+    end
+    if spec == false then
+      return "", ""
+    end
+    local bad = "bad option 'lip_sync' to 'model' (%s)"
+    if type(spec) ~= "table" then
+      error(format(bad, "a table { morph =, voice_tag = } or false expected, got " .. type(spec)), 3)
+    end
+    for key in pairs(spec) do
+      if key ~= "morph" and key ~= "voice_tag" then
+        error(format(bad, "unknown key '" .. tostring(key) .. "'"), 3)
+      end
+    end
+    if type(spec.morph) ~= "string" or spec.morph == "" then
+      error(format(bad, "'morph' must be the name of a morph target"), 3)
+    end
+    if spec.voice_tag ~= nil and type(spec.voice_tag) ~= "string" then
+      error(format(bad, "'voice_tag' must be a string"), 3)
+    end
+    return spec.morph, spec.voice_tag or ""
+  end
+
+  local play_options = { loop = true, fade = true, speed = true, seek = true }
+
+  function play(tag, clip, options)
+    if type(tag) ~= "string" then
+      bad_argument("play", 1, "string", tag)
+    end
+    local scene_name, model_name = tag:match("^@3d%.([^%.]+)%.([^%.]+)$")
+    if scene_name == nil then
+      error("bad argument #1 to 'play' (a model tag \"@3d.<scene>.<model>\" expected)", 2)
+    end
+    if type(clip) ~= "string" or clip == "" then
+      error(format("bad argument #2 to 'play' (a clip name expected, got %s)",
+                   type(clip) == "string" and "an empty string" or type(clip)), 2)
+    end
+    options = options_argument("play", options)
+    for key in pairs(options) do
+      if not play_options[key] then
+        error(format("bad option '%s' to 'play' (loop, fade, speed and seek are the options)",
+                     tostring(key)), 2)
+      end
+    end
+    require_label("play")
+    local problem = engine.scene3d({ kind = "play", scene = scene_name, name = model_name,
+                                     clip = clip, loop = typed("play", options, "loop", "boolean", 2),
+                                     fade = typed("play", options, "fade", "number", 2),
+                                     speed = typed("play", options, "speed", "number", 2),
+                                     seek = typed("play", options, "seek", "number", 2) })
+    if problem then
+      error(problem, 2)
+    end
+    engine.scene_command("play " .. tag)
   end
 end
 )lua" R"lua(
@@ -2158,6 +2229,8 @@ std::string read_scene3d(const sol::table& table, Scene3dRequest& request) {
     request.kind = Scene3dRequest::Kind::kCamera;
   } else if (kind == "remove") {
     request.kind = Scene3dRequest::Kind::kRemove;
+  } else if (kind == "play") {
+    request.kind = Scene3dRequest::Kind::kPlay;
   } else {
     return "a 3D call is malformed";
   }
@@ -2174,6 +2247,13 @@ std::string read_scene3d(const sol::table& table, Scene3dRequest& request) {
   request.scale = number("scale");
   request.fov = number("fov");
   request.intensity = number("intensity");
+  request.clip = table.get_or<std::string>("clip", "");
+  request.loop = table.get_or("loop", false);
+  request.fade = number("fade").value_or(request.fade);
+  request.speed = number("speed").value_or(request.speed);
+  request.seek = number("seek").value_or(request.seek);
+  request.lip_morph = text("lip_morph");
+  request.lip_voice_tag = table.get_or<std::string>("lip_voice_tag", "");
   if (const auto color = table.get<sol::optional<std::int64_t>>("color")) {
     request.color = static_cast<std::uint32_t>(*color);
   }

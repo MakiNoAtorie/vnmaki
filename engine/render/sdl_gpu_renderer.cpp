@@ -186,6 +186,7 @@ struct SdlGpuRenderer::Impl {
     GpuPtr<SDL_GPUBuffer> vertices;
     GpuPtr<SDL_GPUBuffer> indices;
     std::uint32_t index_count = 0;
+    std::uint32_t vertex_bytes = 0;
   };
   // The shader, the blend mode, the colour format and whether it is the mesh pipeline.
   using PipelineKey = std::tuple<std::uint32_t, BlendMode, SDL_GPUTextureFormat, bool>;
@@ -853,6 +854,7 @@ MeshId SdlGpuRenderer::create_mesh(std::span<const MeshVertex> vertices,
   made.vertices = impl_->make_buffer(SDL_GPU_BUFFERUSAGE_VERTEX, vertex_bytes);
   made.indices = impl_->make_buffer(SDL_GPU_BUFFERUSAGE_INDEX, index_bytes);
   made.index_count = static_cast<std::uint32_t>(indices.size());
+  made.vertex_bytes = vertex_bytes;
   const GpuPtr<SDL_GPUTransferBuffer> upload =
       impl_->make_transfer_buffer(SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, vertex_bytes + index_bytes);
   void* mapped = SDL_MapGPUTransferBuffer(device, upload.get(), false);
@@ -886,6 +888,37 @@ MeshId SdlGpuRenderer::create_mesh(std::span<const MeshVertex> vertices,
   const MeshId id{impl_->next_mesh++};
   impl_->meshes.emplace(id.value, std::move(made));
   return id;
+}
+
+void SdlGpuRenderer::update_mesh(MeshId mesh, std::span<const MeshVertex> vertices) {
+  const Impl::Mesh& target = impl_->mesh(mesh);
+  if (vertices.size_bytes() != target.vertex_bytes) {
+    throw RenderError{"a mesh update needs as many vertices as the mesh has"};
+  }
+  SDL_GPUDevice* device = impl_->device.get();
+  const GpuPtr<SDL_GPUTransferBuffer> upload =
+      impl_->make_transfer_buffer(SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, target.vertex_bytes);
+  void* mapped = SDL_MapGPUTransferBuffer(device, upload.get(), false);
+  if (mapped == nullptr) {
+    throw_sdl_error("cannot map a GPU transfer buffer");
+  }
+  std::memcpy(mapped, vertices.data(), target.vertex_bytes);
+  SDL_UnmapGPUTransferBuffer(device, upload.get());
+
+  SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
+  if (commands == nullptr) {
+    throw_sdl_error("cannot start GPU commands");
+  }
+  SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+  const SDL_GPUTransferBufferLocation source{.transfer_buffer = upload.get(), .offset = 0};
+  const SDL_GPUBufferRegion destination{
+      .buffer = target.vertices.get(), .offset = 0, .size = target.vertex_bytes};
+  // Cycling gives the copy a fresh buffer when a frame that is still on the GPU reads this one.
+  SDL_UploadToGPUBuffer(copy, &source, &destination, true);
+  SDL_EndGPUCopyPass(copy);
+  if (!SDL_SubmitGPUCommandBuffer(commands)) {
+    throw_sdl_error("cannot submit GPU commands");
+  }
 }
 
 void SdlGpuRenderer::destroy_mesh(MeshId mesh) {
