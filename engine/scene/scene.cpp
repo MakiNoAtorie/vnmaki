@@ -114,11 +114,16 @@ std::string quoted(std::string_view prefix, std::string_view name, std::string_v
 // "layered": a u32 count, then for each layered sprite (layer by layer, back to front): u8 layer,
 // u32 index in the layer (counting the images), tag, definition name, the properties as for
 // "displayables", a u32 count of attributes and each one's group and value.
+// "animations": a u32 count, then for each frame animation (layer by layer, back to front): u8
+// layer, u32 index in the layer (counting the images and animations before it), tag, definition
+// name and the properties as for "displayables". It has no definition and no time: an animation
+// plays again from frame 1.
 // "tweens": Timeline::capture().
 
 constexpr std::uint32_t kFormatVersion = 2;
 constexpr std::string_view kDisplayablesPart = "displayables";
 constexpr std::string_view kLayeredPart = "layered";
+constexpr std::string_view kAnimationsPart = "animations";
 constexpr std::string_view kTweensPart = "tweens";
 
 class Writer : public ByteWriter {
@@ -172,6 +177,57 @@ class Reader : public ByteReader {
     return value;
   }
 };
+
+// --- Frame animations ------------------------------------------------------------------------
+
+constexpr double kMaxAnimationFps = 1000;
+constexpr int kMaxAnimationFrames = 4096;
+
+// Sets `result` to `value` if it is a whole number from `low` to `high`, or returns why not.
+std::string whole_number(const std::optional<double>& value, std::string_view option, int low,
+                         int high, int& result) {
+  if (value.has_value() && *value >= low && *value <= high && *value == std::floor(*value)) {
+    result = static_cast<int>(*value);
+    return {};
+  }
+  std::string message = "option '";
+  message += option;
+  message += "' must be a whole number from " + std::to_string(low) + " to " + std::to_string(high);
+  return message;
+}
+
+bool animation_runs(const Displayable& displayable) {
+  if (const auto* animation = dynamic_cast<const FrameAnimation*>(&displayable)) {
+    return animation->playing();
+  }
+  const auto* sprite = dynamic_cast<const LayeredSprite*>(&displayable);
+  return sprite != nullptr && sprite->animating();
+}
+
+void finish_animation(Displayable& displayable) {
+  if (auto* animation = dynamic_cast<FrameAnimation*>(&displayable)) {
+    animation->finish();
+  } else if (auto* sprite = dynamic_cast<LayeredSprite*>(&displayable)) {
+    sprite->finish_animations();
+  }
+}
+
+// The frames of the `columns` x `rows` cells of a sheet, `count` of them, row by row.
+std::vector<AnimationDefinition::Frame> sheet_frames(const std::string& path, int columns, int rows,
+                                                     int count) {
+  const auto width = 1 / static_cast<float>(columns);
+  const auto height = 1 / static_cast<float>(rows);
+  std::vector<AnimationDefinition::Frame> frames;
+  frames.reserve(static_cast<std::size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    frames.push_back({.path = path,
+                      .uv = {.x = static_cast<float>(i % columns) * width,
+                             .y = static_cast<float>(i / columns) * height,
+                             .width = width,
+                             .height = height}});
+  }
+  return frames;
+}
 
 // --- Tweens ----------------------------------------------------------------------------------
 
@@ -345,6 +401,10 @@ std::string Scene::layered(const LayeredRequest& request) {
     added.name = group.name;
     added.values.reserve(group.values.size());
     for (const auto& [value, image] : group.values) {
+      if (const auto animation = animations_.find(image); animation != animations_.end()) {
+        added.values.push_back({.name = value, .animation = animation->second});
+        continue;
+      }
       std::optional<std::string> path = resolve_image(*vfs_, image);
       if (!path.has_value()) {
         return missing_image(image);
@@ -368,10 +428,62 @@ std::string Scene::layered(const LayeredRequest& request) {
   return {};
 }
 
+std::string Scene::animation(const AnimationRequest& request) {
+  if (request.name.empty()) {
+    return "an animation needs a name";
+  }
+  if (!(request.fps.has_value() && *request.fps > 0 && *request.fps <= kMaxAnimationFps)) {
+    return "option 'fps' must be a number above 0 and up to 1000";
+  }
+  if (request.frames.empty() == request.sheet.empty()) {
+    return "an animation needs the option 'frames' or the option 'sheet', and not both";
+  }
+  auto definition = std::make_shared<AnimationDefinition>();
+  definition->name = request.name;
+  definition->fps = *request.fps;
+  definition->loop = request.loop;
+  if (!request.frames.empty()) {
+    if (request.frames.size() > static_cast<std::size_t>(kMaxAnimationFrames)) {
+      return "option 'frames' has at most 4096 images";
+    }
+    definition->frames.reserve(request.frames.size());
+    for (const std::string& image : request.frames) {
+      std::optional<std::string> path = resolve_image(*vfs_, image);
+      if (!path.has_value()) {
+        return missing_image(image);
+      }
+      definition->frames.push_back({.path = std::move(*path)});
+    }
+  } else {
+    const std::optional<std::string> path = resolve_image(*vfs_, request.sheet);
+    if (!path.has_value()) {
+      return missing_image(request.sheet);
+    }
+    int count = 0;
+    std::string problem =
+        whole_number(request.columns, "columns", 1, kMaxAnimationFrames, definition->columns);
+    if (problem.empty()) {
+      problem = whole_number(request.rows, "rows", 1, kMaxAnimationFrames, definition->rows);
+    }
+    if (problem.empty()) {
+      const int cells = definition->columns * definition->rows;
+      problem = whole_number(request.count.value_or(cells), "count", 1,
+                             std::min(cells, kMaxAnimationFrames), count);
+    }
+    if (!problem.empty()) {
+      return problem;
+    }
+    definition->frames = sheet_frames(*path, definition->columns, definition->rows, count);
+  }
+  animations_.insert_or_assign(request.name, std::move(definition));
+  return {};
+}
+
 std::string Scene::show(const ShowRequest& request) {
   const auto definition = definitions_.find(request.image);
+  const auto animation = animations_.find(request.image);
   std::optional<std::string> path;
-  if (definition == definitions_.end()) {
+  if (definition == definitions_.end() && animation == animations_.end()) {
     path = resolve_image(*vfs_, request.image);
     if (!path.has_value()) {
       return missing_image(request.image);
@@ -437,6 +549,8 @@ std::string Scene::show(const ShowRequest& request) {
       return problem;
     }
     displayable = std::move(sprite);
+  } else if (animation != animations_.end()) {
+    displayable = std::make_unique<FrameAnimation>(animation->second);
   } else {
     displayable = std::make_unique<ImageDisplayable>(std::move(*path));
   }
@@ -465,9 +579,27 @@ std::string Scene::tween(const TweenRequest& request) {
   return timeline_.start(node, lookup(), request.replaying);
 }
 
-void Scene::finish_tweens(std::string_view tag) { timeline_.finish(tag, lookup()); }
+void Scene::finish_tweens(std::string_view tag) {
+  timeline_.finish(tag, lookup());
+  for (std::vector<Entry>& shown : layers_) {
+    for (Entry& entry : shown) {
+      if (tag.empty() || entry.tag == tag) {
+        finish_animation(*entry.displayable);
+      }
+    }
+  }
+}
 
-bool Scene::tweening(std::string_view tag) const { return timeline_.busy(tag); }
+bool Scene::tweening(std::string_view tag) const {
+  if (timeline_.busy(tag)) {
+    return true;
+  }
+  return std::ranges::any_of(layers_, [tag](const std::vector<Entry>& shown) {
+    return std::ranges::any_of(shown, [tag](const Entry& entry) {
+      return (tag.empty() || entry.tag == tag) && animation_runs(*entry.displayable);
+    });
+  });
+}
 
 std::vector<std::byte> Scene::capture() const {
   // The properties as a replay would leave them (see the class comment), worked out on copies.
@@ -538,9 +670,36 @@ std::vector<std::byte> Scene::capture() const {
     }
   }
 
+  Writer animations;
+  std::uint32_t animation_count = 0;
+  for (const std::vector<Entry>& shown : layers_) {
+    animation_count +=
+        static_cast<std::uint32_t>(std::ranges::count_if(shown, [](const Entry& entry) {
+          return dynamic_cast<const FrameAnimation*>(entry.displayable.get()) != nullptr;
+        }));
+  }
+  animations.u32(animation_count);
+  for (const Layer layer : kLayerOrder) {
+    std::uint32_t before = 0;  // The images and animations in front of this one, as restore() sees.
+    for (const Entry& entry : entries(layer)) {
+      const auto* animation = dynamic_cast<const FrameAnimation*>(entry.displayable.get());
+      if (animation == nullptr) {
+        before += image_of(entry) != nullptr ? 1 : 0;
+        continue;
+      }
+      animations.u8(static_cast<std::uint8_t>(layer));
+      animations.u32(before++);
+      animations.string(entry.tag);
+      animations.string(animation->name());
+      const auto adjusted = resting.find(entry.tag);
+      animations.properties(adjusted != resting.end() ? adjusted->second : animation->properties());
+    }
+  }
+
   const std::map<std::string, std::vector<std::byte>> parts{
       {std::string{kDisplayablesPart}, displayables.take()},
       {std::string{kLayeredPart}, layered.take()},
+      {std::string{kAnimationsPart}, animations.take()},
       {std::string{kTweensPart}, timeline_.capture()},
   };
   Writer writer;
@@ -613,6 +772,34 @@ void Scene::read_layered(std::span<const std::byte> bytes, Layers& layers) const
   }
 }
 
+void Scene::read_animations(std::span<const std::byte> bytes, Layers& layers) const {
+  Reader reader{bytes};
+  const std::uint32_t count = reader.u32();
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const std::size_t layer = reader.u8();
+    if (layer >= layers.size()) {
+      throw std::invalid_argument{"scene state: unknown layer"};
+    }
+    const std::uint32_t index = reader.u32();
+    std::string tag = reader.string();
+    const std::string name = reader.string();
+    const auto definition = animations_.find(name);
+    if (definition == animations_.end()) {
+      throw std::invalid_argument{"scene state: unknown animation '" + name + "'"};
+    }
+    auto animation = std::make_unique<FrameAnimation>(definition->second);
+    animation->properties() = reader.properties();
+    // Animations come in the order of their positions, so each goes back where it was.
+    std::vector<Entry>& shown = layers.at(layer);
+    const auto position = static_cast<std::ptrdiff_t>(std::min<std::size_t>(index, shown.size()));
+    shown.insert(shown.begin() + position,
+                 Entry{.tag = std::move(tag), .displayable = std::move(animation)});
+  }
+  if (!reader.at_end()) {
+    throw std::invalid_argument{"scene state: unexpected data after the last animation"};
+  }
+}
+
 void Scene::restore(std::span<const std::byte> state) {
   Layers layers;
   Timeline tweens;
@@ -637,6 +824,9 @@ void Scene::restore(std::span<const std::byte> state) {
     // A part this version does not know is left out; a part that is missing is empty.
     if (const auto found = parts.find(kDisplayablesPart); found != parts.end()) {
       layers = read_displayables(found->second);
+    }
+    if (const auto found = parts.find(kAnimationsPart); found != parts.end()) {
+      read_animations(found->second, layers);
     }
     if (const auto found = parts.find(kLayeredPart); found != parts.end()) {
       read_layered(found->second, layers);
@@ -707,6 +897,13 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
         for (const std::string& path : sprite->missing_paths()) {
           const Texture& texture = texture_of(path);
           sprite->set_texture(path, texture.id, texture.size);
+        }
+        continue;
+      }
+      if (auto* animation = dynamic_cast<FrameAnimation*>(entry.displayable.get())) {
+        for (const std::string& path : animation->missing_paths()) {
+          const Texture& texture = texture_of(path);
+          animation->set_texture(path, texture.id, texture.size);
         }
         continue;
       }

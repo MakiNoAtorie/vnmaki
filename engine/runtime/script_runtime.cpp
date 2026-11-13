@@ -815,6 +815,33 @@ layered_attributes = function(options, name)
   return attributes, text
 end
 )lua" R"lua(
+-- Frame animations: animation(name, { frames = { "image", ... }, fps = n, loop = true }) or
+-- animation(name, { sheet = "image", columns = n, rows = n, count = n, fps = n, loop = true }).
+-- `show` and the values of a layered group take the name as they take an image name.
+function animation(name, definition)
+  if type(name) ~= "string" then
+    bad_argument("animation", 1, "string", name)
+  end
+  if type(definition) ~= "table" then
+    bad_argument("animation", 2, "table", definition)
+  end
+  local frames = option("animation", definition, "frames", "table")
+  for i = 1, frames and #frames or 0 do
+    if type(frames[i]) ~= "string" then
+      error(format("bad option 'frames' to 'animation' (item #%d is not a string)", i), 2)
+    end
+  end
+  local request = { frames = frames, loop = option("animation", definition, "loop", "boolean") }
+  for _, key in ipairs { "columns", "rows", "count", "fps" } do
+    request[key] = option("animation", definition, key, "number")
+  end
+  request.sheet = option("animation", definition, "sheet", "string")
+  local problem = engine.animation(name, request)
+  if problem then
+    error(problem, 2)
+  end
+end
+)lua" R"lua(
 
 -- Saves. A call only queues a request; the host carries it out when the story waits.
 local function slot_name(slot)
@@ -1312,6 +1339,27 @@ void read_layered(const sol::table& table, LayeredRequest& request) {
   }
 }
 
+// Copies the definition table that the prelude's `animation` built into `request`.
+void read_animation(const sol::table& table, AnimationRequest& request) {
+  request.sheet = table.get_or<std::string>("sheet", "");
+  const auto number = [&table](const char* key) -> std::optional<double> {
+    const auto value = table.get<sol::optional<double>>(key);
+    return value ? std::optional<double>{*value} : std::nullopt;
+  };
+  request.columns = number("columns");
+  request.rows = number("rows");
+  request.count = number("count");
+  request.fps = number("fps");
+  request.loop = table.get_or("loop", true);
+  if (const auto frames = table.get<sol::optional<sol::table>>("frames")) {
+    const std::size_t count = frames->size();
+    request.frames.reserve(count);
+    for (std::size_t i = 1; i <= count; ++i) {
+      request.frames.push_back(frames->get_or<std::string>(i, ""));
+    }
+  }
+}
+
 // Continues `coroutine` with the answer of a blocking call as its result.
 sol::protected_function_result resume_with(sol::coroutine& coroutine, const ScreenValue& value) {
   return std::visit(
@@ -1713,6 +1761,16 @@ void ScriptRuntime::Impl::bind_engine() {
     LayeredRequest request{.name = name};
     read_layered(definition, request);
     return problem_or_nil(state, options_.scene->layered(request));
+  };
+  engine_["animation"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
+                                                const sol::table& definition) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    AnimationRequest request{.name = name};
+    read_animation(definition, request);
+    return problem_or_nil(state, options_.scene->animation(request));
   };
   engine_["hide"] = [this](const std::string& tag) {
     if (options_.scene != nullptr) {
