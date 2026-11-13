@@ -33,7 +33,8 @@
     "sol2",
     "stb",
     "tomlplusplus",
-    "yoga"
+    "yoga",
+    "zstd"
   ],
   "overrides": [
     {

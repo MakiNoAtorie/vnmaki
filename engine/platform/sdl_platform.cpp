@@ -87,6 +87,19 @@ void SdlPlatform::set_text_input(bool enabled) {
   }
 }
 
+std::filesystem::path user_data_directory(std::string_view organization,
+                                          std::string_view application) {
+  const std::string org{organization};
+  const std::string app{application};
+  char* path = SDL_GetPrefPath(org.c_str(), app.c_str());
+  if (path == nullptr) {
+    throw PlatformError{std::string{"no user data directory: "} + SDL_GetError()};
+  }
+  std::filesystem::path result{path};
+  SDL_free(path);
+  return result;
+}
+
 SDL_Window* SdlPlatform::sdl_window() const { return window_.get(); }
 
 }  // namespace vnmaki

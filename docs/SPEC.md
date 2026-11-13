@@ -48,7 +48,7 @@ Design rules for the later targets:
 | Images | stb_image (PNG/JPEG), libwebp, KTX2 + Basis Universal | MIT, BSD, Apache-2.0 |
 | 3D models | glTF 2.0 via cgltf, glm | MIT |
 | Rigged 2D puppets | Inochi2D (C API, or a native C++ runtime) | BSD-2 |
-| Saves | MessagePack via mpack, zstd | MIT, BSD |
+| Saves | MessagePack (own small codec), zstd | BSD |
 | Config | TOML via toml++ | MIT |
 | Dev tool UI | Dear ImGui | MIT |
 | Accessibility tree | AccessKit (C bindings) | MIT/Apache |

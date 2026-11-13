@@ -39,13 +39,13 @@ Do not do these tasks in parallel, because they change the same files:
 
 ### 12: Saves (SPEC §8)
 
-- [ ] MessagePack with zstd (vcpkg). Write saves to the user-data path, not to the VFS.
-- [ ] Fields: versions, label, step, source hash, snapshot, input log, persistent pointer, thumbnail, time, title.
-- [ ] Load through replay. If the source hash changed, go to the label start and show a dev warning.
-- [ ] Run `on_load(old_version, store)` before play continues.
-- [ ] Slots, quick save, quick load, auto save. `project.toml` sets the auto-save events.
-- [ ] Reject corrupt saves. Add a fuzz target for the loader.
-- [ ] Thumbnail from a renderer readback. Headless mode uses a stub.
+- [x] MessagePack with zstd (vcpkg). Write saves to the user-data path, not to the VFS.
+- [x] Fields: versions, label, step, source hash, snapshot, input log, persistent pointer, thumbnail, time, title.
+- [x] Load through replay. If the source hash changed, go to the label start and show a dev warning.
+- [x] Run `on_load(old_version, store)` before play continues.
+- [x] Slots, quick save, quick load, auto save. `project.toml` sets the auto-save events.
+- [x] Reject corrupt saves. Add a fuzz target for the loader.
+- [x] Thumbnail from a renderer readback. Headless mode uses a stub.
 
 ### 13: Rollback (SPEC §8)
 

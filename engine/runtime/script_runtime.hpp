@@ -270,6 +270,17 @@ class AudioCommands {
   [[nodiscard]] virtual std::string volume(std::string_view channel, double volume) = 0;
 };
 
+/// A script's call of `save(slot)`, `load(slot)`, `quick_save()` or `quick_load()`: the runtime
+/// only queues it (take_save_requests()), and the host carries it out when the story waits.
+/// Calls made during a replay are dropped.
+struct SaveRequest {
+  bool load = false;  ///< False: write a save. True: read one.
+  /// The slot name: the slot number, or "quick".
+  std::string slot{};
+
+  friend bool operator==(const SaveRequest&, const SaveRequest&) = default;
+};
+
 /// Where a script is: the running label and how many yield points it has
 /// reached since it was entered (docs/SPEC.md section 8, "Position and
 /// replay"). While waiting at the first `say` of a label, step is 1.
@@ -396,6 +407,11 @@ struct ScriptRuntimeOptions {
 /// `show_screen(name, args)`, `hide_screen(name)` and `call_screen(name, args)`, which waits for
 /// the screen to return a value (a button's `returns` option).
 ///
+/// Saves: `save(slot)` and `load(slot)` (a slot is an integer from 1; `load` with a number is a
+/// slot, with a string or function it is Lua's `load`), `quick_save()` and `quick_load()`. They
+/// queue a SaveRequest. `on_load(function(old_version, store) ... end)` registers the migration
+/// hook that run_on_load() calls; scripts register it while they load.
+///
 /// `store` is owned by the engine: scripts change its fields but cannot
 /// replace it. It keeps booleans, numbers, strings and tables with such keys
 /// and values; anything else fails the story at the next label entry. The RNG
@@ -460,6 +476,18 @@ class ScriptRuntime {
   /// with these inputs (e.g. the script changed).
   void replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
               std::uint32_t step);
+
+  /// Makes the running label the outermost one, so a load does not return into the labels that
+  /// called the label it replaced. Call it before replay() when a story is already running.
+  void drop_callers();
+
+  /// Runs the script's `on_load(old_version, store)` hook (if it registered one) on the store of
+  /// `snapshot` and puts the result back into `snapshot`. The current `store` is untouched.
+  /// Returns why it failed (the script raised an error or ran too long), or an empty string.
+  [[nodiscard]] std::string run_on_load(LabelSnapshot& snapshot, std::string_view old_version);
+
+  /// The save and load requests scripts made since the last call, in order.
+  [[nodiscard]] std::vector<SaveRequest> take_save_requests();
 
   /// The engine-wide replay flag: true while replay() runs script code.
   /// Subsystems check it to skip visible, audible and other outside effects.
