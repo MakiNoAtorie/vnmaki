@@ -240,7 +240,7 @@ TEST_CASE("shader: declarations are checked when they run") {
   if (compiler_missing()) {
     return;
   }
-  const auto declared = [](const std::string& declaration) {
+  const auto declared = [](const std::string& declaration) -> std::string {
     try {
       const Stage stage{declaration + "\nlabel(\"start\", function()\n  narrate(\"x\")\nend)\n"};
     } catch (const std::exception& error) {

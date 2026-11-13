@@ -514,6 +514,17 @@ StoreValue read_value(Reader& in, bool allow_table) {
   }
 }
 
+void write_store(Writer& out, const StoreSnapshot& store) {
+  out.array(store.tables.size());
+  for (const StoreTable& table : store.tables) {
+    out.array(table.entries.size() * 2);
+    for (const auto& [key, value] : table.entries) {
+      write_value(out, key);
+      write_value(out, value);
+    }
+  }
+}
+
 StoreSnapshot read_store(Reader& in) {
   StoreSnapshot store;
   const std::size_t table_count = in.array();
@@ -588,6 +599,12 @@ Thumbnail read_thumbnail(Reader& in) {
   return thumbnail;
 }
 
+constexpr std::size_t kPersistentFieldCount = 3;
+constexpr std::size_t kSeenFields = 3;
+constexpr std::string_view kPersistentFormatKey = "format";
+constexpr std::string_view kPersistentStoreKey = "store";
+constexpr std::string_view kPersistentSeenKey = "seen";
+
 constexpr int kCompressionLevel = 3;
 
 }  // namespace
@@ -609,14 +626,7 @@ std::vector<std::byte> encode_save_payload(const SaveData& data) {
   out.unsigned_integer(data.source_hash);
 
   out.str(key_name(Key::kStore));
-  out.array(data.snapshot.store.tables.size());
-  for (const StoreTable& table : data.snapshot.store.tables) {
-    out.array(table.entries.size() * 2);
-    for (const auto& [key, value] : table.entries) {
-      write_value(out, key);
-      write_value(out, value);
-    }
-  }
+  write_store(out, data.snapshot.store);
   out.str(key_name(Key::kScene));
   out.bin(data.snapshot.scene);
 
@@ -720,6 +730,65 @@ SaveData decode_save_payload(std::span<const std::byte> payload) {
     }
   }
   data.snapshot.label = data.label;
+  return data;
+}
+
+std::vector<std::byte> encode_persistent(const PersistentData& data) {
+  Writer out;
+  out.map(kPersistentFieldCount);
+  out.str(kPersistentFormatKey);
+  out.unsigned_integer(kPersistentFormatVersion);
+  out.str(kPersistentStoreKey);
+  write_store(out, data.store);
+  out.str(kPersistentSeenKey);
+  out.array(data.seen.size());
+  for (const SeenStep& step : data.seen) {
+    out.array(kSeenFields);
+    out.str(step.label);
+    out.unsigned_integer(step.step);
+    out.unsigned_integer(step.hash);
+  }
+  return out.take();
+}
+
+PersistentData decode_persistent(std::span<const std::byte> bytes) {
+  Reader in{bytes};
+  PersistentData data;
+  bool have_store = false;
+  const std::size_t entries = in.map();
+  for (std::size_t i = 0; i < entries; ++i) {
+    const std::string name = in.str();
+    if (name == kPersistentFormatKey) {
+      if (in.unsigned_integer() != kPersistentFormatVersion) {
+        fail("persistent: made by another format");
+      }
+    } else if (name == kPersistentStoreKey) {
+      data.store = read_store(in);
+      have_store = true;
+    } else if (name == kPersistentSeenKey) {
+      const std::size_t count = in.array();
+      data.seen.reserve(count);
+      for (std::size_t n = 0; n < count; ++n) {
+        if (in.array() != kSeenFields) {
+          fail("a seen step has the wrong size");
+        }
+        SeenStep step;
+        step.label = in.str();
+        step.step = static_cast<std::uint32_t>(
+            in.bounded(std::numeric_limits<std::uint32_t>::max(), "a seen step"));
+        step.hash = in.unsigned_integer();
+        data.seen.push_back(std::move(step));
+      }
+    } else {
+      in.skip(0);
+    }
+  }
+  if (!in.at_end()) {
+    fail("unexpected data after the last key");
+  }
+  if (!have_store) {
+    fail("the persistent store is missing");
+  }
   return data;
 }
 

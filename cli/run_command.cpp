@@ -15,8 +15,10 @@
 #include "cli/story_window.hpp"
 #include "engine/audio/audio.hpp"
 #include "engine/platform/geometry.hpp"
+#include "engine/platform/sdl_platform.hpp"
 #include "engine/runtime/headless_runner.hpp"
 #include "engine/runtime/project_config.hpp"
+#include "engine/saves/saves.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/vfs/vfs.hpp"
 
@@ -120,6 +122,15 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
   options.runtime.scene = &scene;
   options.runtime.audio = &audio;
   options.runtime.scene_state = &state;
+  // The scripts' `save` and `load` work, and `persistent` is kept, in the same directory as in
+  // a window. Without a user-data directory the run goes on without them.
+  try {
+    options.saves = SavesOptions{.directory = user_data_directory("VNMaki", config.title),
+                                 .game_version = config.version,
+                                 .auto_save = config.auto_save};
+  } catch (const PlatformError& error) {
+    err << "vnmaki: " << error.what() << "; saves and persistent data are off\n";
+  }
   const std::vector<ScriptInput> inputs(arguments->max_steps, AdvanceInput{});
   const HeadlessResult result = run_headless(vfs, inputs, options);
   for (const std::string& line : result.transcript) {

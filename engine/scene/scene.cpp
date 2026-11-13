@@ -114,6 +114,9 @@ std::string quoted(std::string_view prefix, std::string_view name, std::string_v
 // "displayables": a u32 count, then for each displayable (layer by layer, back to front): u8
 // layer, tag, image path (each a u32 length and the bytes) and the properties as 16 f32:
 // position, anchor, scale, rotation, alpha, tint, crop.
+// "layered": a u32 count, then for each layered sprite (layer by layer, back to front): u8 layer,
+// u32 index in the layer (counting the images), tag, definition name, the properties as for
+// "displayables", a u32 count of attributes and each one's group and value.
 // "tweens": Timeline::capture().
 // "shaders", only when a shader is set: a u32 count of displayables, then for each: tag, shader
 // name and the 16 f32 uniform values; then a u32 count of layers, then for each: u8 layer, shader
@@ -121,6 +124,7 @@ std::string quoted(std::string_view prefix, std::string_view name, std::string_v
 
 constexpr std::uint32_t kFormatVersion = 2;
 constexpr std::string_view kDisplayablesPart = "displayables";
+constexpr std::string_view kLayeredPart = "layered";
 constexpr std::string_view kTweensPart = "tweens";
 constexpr std::string_view kShadersPart = "shaders";
 
@@ -399,10 +403,56 @@ std::string Scene::scene(std::string_view image) {
   return {};
 }
 
+std::string Scene::layered(const LayeredRequest& request) {
+  if (request.name.empty()) {
+    return "a layered sprite needs a name";
+  }
+  if (request.groups.empty()) {
+    return "a layered sprite needs at least one group";
+  }
+  if (!(request.crossfade >= 0 && request.crossfade <= kMaxTweenSeconds)) {
+    return "option 'crossfade' must be a number from 0 to 86400";
+  }
+  auto definition = std::make_shared<LayeredDefinition>();
+  definition->name = request.name;
+  definition->crossfade = request.crossfade;
+  definition->groups.reserve(request.groups.size());
+  for (const LayeredRequest::Group& group : request.groups) {
+    LayeredDefinition::Group& added = definition->groups.emplace_back();
+    added.name = group.name;
+    added.values.reserve(group.values.size());
+    for (const auto& [value, image] : group.values) {
+      std::optional<std::string> path = resolve_image(*vfs_, image);
+      if (!path.has_value()) {
+        return missing_image(image);
+      }
+      added.values.push_back({.name = value, .path = std::move(*path)});
+    }
+    const bool fixed = added.values.size() == 1 && added.values.front().name.empty();
+    const bool unnamed = std::ranges::any_of(
+        added.values, [](const LayeredDefinition::Value& value) { return value.name.empty(); });
+    if (added.name.empty() || added.values.empty() || (unnamed && !fixed)) {
+      return quoted("the group '", added.name, "' needs a name and values with names");
+    }
+  }
+  // The defaults are checked by choosing them in a sprite made without them.
+  LayeredSprite probe{definition};
+  if (std::string problem = probe.set_attributes(request.defaults, false); !problem.empty()) {
+    return problem;
+  }
+  definition->defaults = request.defaults;
+  definitions_.insert_or_assign(request.name, std::move(definition));
+  return {};
+}
+
 std::string Scene::show(const ShowRequest& request) {
-  std::optional<std::string> path = resolve_image(*vfs_, request.image);
-  if (!path.has_value()) {
-    return missing_image(request.image);
+  const auto definition = definitions_.find(request.image);
+  std::optional<std::string> path;
+  if (definition == definitions_.end()) {
+    path = resolve_image(*vfs_, request.image);
+    if (!path.has_value()) {
+      return missing_image(request.image);
+    }
   }
   if (request.tag.starts_with(kLayerTagPrefix)) {
     return quoted("tags that start with '", kLayerTagPrefix, "' are reserved for layers");
@@ -451,7 +501,25 @@ std::string Scene::show(const ShowRequest& request) {
     properties.position.y = *y;
   }
 
-  auto displayable = std::make_unique<ImageDisplayable>(std::move(*path));
+  std::unique_ptr<Displayable> displayable;
+  if (definition != definitions_.end()) {
+    // A sprite that is shown again keeps its groups, and the named ones change.
+    const auto* before =
+        shown.has_value() ? dynamic_cast<const LayeredSprite*>(
+                                entries(shown->layer).at(shown->index).displayable.get())
+                          : nullptr;
+    const bool again = before != nullptr && before->name() == request.image;
+    auto sprite = again ? std::make_unique<LayeredSprite>(*before)
+                        : std::make_unique<LayeredSprite>(definition->second);
+    if (std::string problem =
+            sprite->set_attributes(request.attributes, again && !request.replaying);
+        !problem.empty()) {
+      return problem;
+    }
+    displayable = std::move(sprite);
+  } else {
+    displayable = std::make_unique<ImageDisplayable>(std::move(*path));
+  }
   displayable->properties() = properties;
   if (shown.has_value() && shown->layer == layer) {
     entries(layer).at(shown->index).displayable = std::move(displayable);
@@ -646,8 +714,45 @@ std::vector<std::byte> Scene::capture() const {
     }
   }
 
+  Writer layered;
+  std::uint32_t layered_count = 0;
+  for (const std::vector<Entry>& shown : layers_) {
+    layered_count += static_cast<std::uint32_t>(
+        std::ranges::count_if(shown, [](const Entry& entry) {
+          return dynamic_cast<const LayeredSprite*>(entry.displayable.get()) != nullptr;
+        }));
+  }
+  layered.u32(layered_count);
+  for (const Layer layer : kLayerOrder) {
+    const std::vector<Entry>& shown = entries(layer);
+    for (std::size_t index = 0; index < shown.size(); ++index) {
+      const auto* sprite = dynamic_cast<const LayeredSprite*>(shown[index].displayable.get());
+      if (sprite == nullptr) {
+        continue;
+      }
+      layered.u8(static_cast<std::uint8_t>(layer));
+      layered.u32(static_cast<std::uint32_t>(index));
+      layered.string(shown[index].tag);
+      layered.string(sprite->name());
+      const auto adjusted = resting.find(shown[index].tag);
+      const DisplayProperties& properties =
+          adjusted != resting.end() ? adjusted->second : sprite->properties();
+      layered.properties(properties);
+      if (properties.shader != 0) {
+        shaded.emplace_back(shown[index].tag, &properties);
+      }
+      const LayerAttributes attributes = sprite->attributes();
+      layered.u32(static_cast<std::uint32_t>(attributes.size()));
+      for (const auto& [group, value] : attributes) {
+        layered.string(group);
+        layered.string(value);
+      }
+    }
+  }
+
   std::map<std::string, std::vector<std::byte>> parts{
       {std::string{kDisplayablesPart}, displayables.take()},
+      {std::string{kLayeredPart}, layered.take()},
       {std::string{kTweensPart}, timeline_.capture()},
   };
   if (!shaded.empty() || !shaded_layers.empty()) {
@@ -724,6 +829,45 @@ void Scene::read_shaders(std::span<const std::byte> bytes, Layers& layers,
   }
 }
 
+void Scene::read_layered(std::span<const std::byte> bytes, Layers& layers) const {
+  Reader reader{bytes};
+  const std::uint32_t count = reader.u32();
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const std::size_t layer = reader.u8();
+    if (layer >= layers.size()) {
+      throw std::invalid_argument{"scene state: unknown layer"};
+    }
+    const std::uint32_t index = reader.u32();
+    std::string tag = reader.string();
+    const std::string name = reader.string();
+    const auto definition = definitions_.find(name);
+    if (definition == definitions_.end()) {
+      throw std::invalid_argument{"scene state: unknown layered sprite '" + name + "'"};
+    }
+    auto sprite = std::make_unique<LayeredSprite>(definition->second);
+    sprite->properties() = reader.properties();
+    LayerAttributes attributes;
+    const std::uint32_t attribute_count = reader.u32();
+    for (std::uint32_t j = 0; j < attribute_count; ++j) {
+      std::string group = reader.string();
+      std::string value = reader.string();
+      // push_back without reserve(): `attribute_count` is untrusted and may be huge.
+      attributes.emplace_back(std::move(group), std::move(value));
+    }
+    if (std::string problem = sprite->set_attributes(attributes, false); !problem.empty()) {
+      throw std::invalid_argument{"scene state: " + problem};
+    }
+    // Sprites come in the order of their positions, so each goes back where it was.
+    std::vector<Entry>& shown = layers.at(layer);
+    const auto position = static_cast<std::ptrdiff_t>(std::min<std::size_t>(index, shown.size()));
+    shown.insert(shown.begin() + position,
+                 Entry{.tag = std::move(tag), .displayable = std::move(sprite)});
+  }
+  if (!reader.at_end()) {
+    throw std::invalid_argument{"scene state: unexpected data after the last layered sprite"};
+  }
+}
+
 void Scene::restore(std::span<const std::byte> state) {
   Layers layers;
   LayerState layer_state;
@@ -750,6 +894,10 @@ void Scene::restore(std::span<const std::byte> state) {
     if (const auto found = parts.find(kDisplayablesPart); found != parts.end()) {
       layers = read_displayables(found->second);
     }
+    if (const auto found = parts.find(kLayeredPart); found != parts.end()) {
+      read_layered(found->second, layers);
+    }
+    // After every displayable is back: it finds them by tag.
     if (const auto found = parts.find(kShadersPart); found != parts.end()) {
       read_shaders(found->second, layers, layer_state);
     }
@@ -802,22 +950,32 @@ void Scene::update(double seconds) {
 }
 
 void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
+  const auto texture_of = [&](const std::string& path) -> const Texture& {
+    auto found = textures_.find(path);
+    if (found == textures_.end()) {
+      // ponytail: decodes while the main thread waits and never frees a texture. Preload on
+      // jobs and evict by memory budget when a real game hitches or runs out.
+      const Image decoded = load_image(*vfs_, jobs, path).get();
+      const TextureId texture = renderer.create_texture(decoded, TextureFilter::kLinear);
+      found = textures_.emplace(path, Texture{.id = texture, .size = decoded.size}).first;
+    }
+    return found->second;
+  };
   for (std::vector<Entry>& shown : layers_) {
     for (Entry& entry : shown) {
+      if (auto* sprite = dynamic_cast<LayeredSprite*>(entry.displayable.get())) {
+        for (const std::string& path : sprite->missing_paths()) {
+          const Texture& texture = texture_of(path);
+          sprite->set_texture(path, texture.id, texture.size);
+        }
+        continue;
+      }
       auto* image = dynamic_cast<ImageDisplayable*>(entry.displayable.get());
       if (image == nullptr || image->has_texture()) {
         continue;
       }
-      const std::string& path = image->path();
-      auto found = textures_.find(path);
-      if (found == textures_.end()) {
-        // ponytail: decodes while the main thread waits and never frees a texture. Preload on
-        // jobs and evict by memory budget when a real game hitches or runs out.
-        const Image decoded = load_image(*vfs_, jobs, path).get();
-        const TextureId texture = renderer.create_texture(decoded, TextureFilter::kLinear);
-        found = textures_.emplace(path, Texture{.id = texture, .size = decoded.size}).first;
-      }
-      image->set_texture(found->second.id, found->second.size);
+      const Texture& texture = texture_of(image->path());
+      image->set_texture(texture.id, texture.size);
     }
   }
   prepare_shaders(renderer);

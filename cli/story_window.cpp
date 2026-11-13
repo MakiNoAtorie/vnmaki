@@ -3,16 +3,20 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "engine/anim/wait_presenter.hpp"
+#include "engine/audio/audio.hpp"
 #include "engine/dialogue/dialogue_presenter.hpp"
+#include "engine/dialogue/playback.hpp"
 #include "engine/dialogue/say_box.hpp"
 #include "engine/jobs/job_system.hpp"
 #include "engine/platform/geometry.hpp"
@@ -24,8 +28,12 @@
 #include "engine/render/renderer.hpp"
 #include "engine/render/sdl_gpu_renderer.hpp"
 #include "engine/runtime/script_runtime.hpp"
+#include "engine/saves/persistent_store.hpp"
+#include "engine/saves/saves.hpp"
+#include "engine/saves/thumbnail.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/text/text.hpp"
+#include "engine/ui/playback_indicator.hpp"
 #include "engine/ui/screen_presenter.hpp"
 #include "engine/ui/ui_host.hpp"
 #include "engine/ui/ui_renderer.hpp"
@@ -40,8 +48,38 @@ constexpr int kExitFailure = 1;
 /// Paces the loop until a renderer with vsync does: about 60 frames a second.
 constexpr Duration kFrameTime = std::chrono::duration_cast<Duration>(std::chrono::seconds{1}) / 60;
 
+/// The organization part of the user-data path, where saves and the persistent file go.
+constexpr std::string_view kUserDataOrganization = "VNMaki";
+
 bool is_advance_key(Key key) {
   return key == Key::kEnter || key == Key::kKeypadEnter || key == Key::kSpace;
+}
+
+// The system output; if there is none, a device that plays to nowhere, so that a game with no
+// sound card still runs. Builds without threads mix by hand (Audio::update does it).
+std::unique_ptr<Audio> make_audio(const Vfs& vfs, std::ostream& err) {
+  if (Audio::device_supported()) {
+    try {
+      return std::make_unique<Audio>(vfs, AudioOptions{.output = AudioOutput::kDevice});
+    } catch (const AudioError& error) {
+      err << "vnmaki: no audio output (" << error.what() << "); playing without sound\n";
+      return std::make_unique<Audio>(vfs, AudioOptions{.output = AudioOutput::kNullDevice});
+    }
+  }
+  return std::make_unique<Audio>(vfs);
+}
+
+// The next skip mode when the player presses the skip key: off, seen text, all text, off.
+SkipMode next_skip_mode(SkipMode mode) {
+  switch (mode) {
+    case SkipMode::kOff:
+      return SkipMode::kSeen;
+    case SkipMode::kSeen:
+      return SkipMode::kAll;
+    case SkipMode::kAll:
+      break;
+  }
+  return SkipMode::kOff;
 }
 
 }  // namespace
@@ -68,8 +106,19 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       fonts.fallbacks.push_back(&fallback);
     }
     Scene scene{vfs, virtual_size};
+    const std::unique_ptr<Audio> audio = make_audio(vfs, err);
+    CompositeSceneState scene_state{{&scene, audio.get()}};
     UiHost ui{virtual_size};
-    ScriptRuntime runtime{vfs, {.scene_state = &scene, .scene = &scene, .screens = &ui}};
+    ScriptRuntime runtime{vfs,
+                          {.scene_state = &scene_state,
+                           .scene = &scene,
+                           .screens = &ui,
+                           .audio = audio.get()}};
+    const auto warn = [&err](std::string_view message) { err << "vnmaki: " << message << '\n'; };
+    const std::filesystem::path data_directory =
+        user_data_directory(kUserDataOrganization, config.title);
+    PersistentStore persistent{runtime, data_directory, warn};
+    persistent.load();  // before the scripts, so that their defaults see the saved values
     runtime.load_scripts();
 
     SdlPlatform platform{WindowConfig{.title = config.title, .size = kDefaultWindowSize}};
@@ -80,7 +129,14 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     ui.set_text_measure(ui_renderer.text_measure());
     SayBoxView say_box{*renderer, std::move(fonts), SayBoxStyle::for_resolution(virtual_size)};
 
+    Saves saves{runtime,
+                {.directory = data_directory,
+                 .game_version = config.version,
+                 .auto_save = config.auto_save,
+                 .thumbnail = [&] { return capture_thumbnail(*renderer, canvas); },
+                 .on_warning = warn}};
     runtime.start("start");
+    saves.poll();
     ScreenPresenter screens{runtime, ui};
     WaitPresenter waits{runtime, scene};
     DialoguePresenter presenter{
@@ -90,6 +146,12 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
         [&](const DialogueLine& line, double speed, double elapsed) {
           return say_box.revealed(line, speed, elapsed);
         }};
+    Playback playback{runtime,
+                      presenter,
+                      persistent,
+                      {.voice_playing = [&] { return audio->voice_playing(); },
+                       .skip_wait = [&] { return waits.skip(); }}};
+    PlaybackIndicator indicator{ui};
 
     SteadyClock clock;
     MainLoop loop{platform, clock, {.min_frame_time = kFrameTime}};
@@ -115,7 +177,12 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       }
       if (const auto* key = std::get_if<KeyEvent>(&event)) {
         if (key->pressed && !key->repeat && is_advance_key(key->key)) {
+          playback.set_skip(SkipMode::kOff);
           advance();
+        } else if (key->pressed && !key->repeat && key->key == Key::kA) {
+          playback.set_auto(!playback.automatic());
+        } else if (key->pressed && !key->repeat && key->key == Key::kS) {
+          playback.set_skip(next_skip_mode(playback.skip()));
         }
       } else if (const auto* click = std::get_if<PointerButtonEvent>(&event)) {
         if (click->pressed && click->button == MouseButton::kLeft &&
@@ -135,10 +202,15 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     };
     hooks.update = [&](Duration step) {
       const double seconds = std::chrono::duration<double>(step).count();
+      saves.poll();  // a script's save or load, or a load in the middle of a line
       presenter.update(seconds);
+      playback.update(seconds);
       scene.update(seconds);
+      audio->update(seconds);
       waits.update();
       screens.sync();
+      indicator.sync(playback.skip(), playback.automatic());
+      persistent.flush();
     };
     hooks.draw = [&](double /*alpha*/) {
       if (presenter.ended()) {

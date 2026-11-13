@@ -69,6 +69,13 @@ target_sources(vnmaki_unit_tests PRIVATE unit/anim_test.cpp)
 
 # Game shaders: the run-time compiler, the script API and uniform tweens (ticket 24).
 target_sources(vnmaki_unit_tests PRIVATE unit/shader_test.cpp)
+# Layered sprites: attributes, crossfade, snapshot, drawing order (ticket 22).
+target_sources(vnmaki_unit_tests PRIVATE unit/layered_test.cpp)
+vnmaki_add_fixture_generator(
+  layered SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/layered_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
 
 # Audio: decoders, mixer state, script commands, snapshots (ticket 16).
 target_sources(vnmaki_unit_tests PRIVATE unit/audio_decoder_test.cpp unit/audio_test.cpp)
@@ -85,3 +92,6 @@ target_sources(vnmaki_unit_tests PRIVATE unit/ui_test.cpp)
 
 # Saves: file format, slots, quick save, auto save, on_load (ticket 12).
 target_sources(vnmaki_unit_tests PRIVATE unit/saves_test.cpp)
+
+# Persistent store, seen text, skip and auto-advance (ticket 14).
+target_sources(vnmaki_unit_tests PRIVATE unit/playback_test.cpp)

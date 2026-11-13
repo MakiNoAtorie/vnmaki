@@ -153,7 +153,7 @@ function ret()
   transfer("ret", "")
 end
 
--- character { name =, color = "#rrggbb", voice_tag = }: a table `say` reads.
+-- character { name =, color = "#rrggbb", voice_tag =, auto_multiplier = }: a table `say` reads.
 function character(definition)
   if type(definition) ~= "table" then
     bad_argument("character", 1, "table", definition)
@@ -170,7 +170,12 @@ function character(definition)
     error(format("bad option 'voice_tag' to 'character' (string expected, got %s)",
                  type(definition.voice_tag)), 2)
   end
-  return { name = definition.name, color = color, voice_tag = definition.voice_tag }
+  local multiplier = definition.auto_multiplier
+  if multiplier ~= nil and (type(multiplier) ~= "number" or multiplier < 0) then
+    error("bad option 'auto_multiplier' to 'character' (number of 0 or more expected)", 2)
+  end
+  return { name = definition.name, color = color, voice_tag = definition.voice_tag,
+           auto_multiplier = multiplier }
 end
 
 -- Raises a bad text tag at the caller of the API function that called this.
@@ -182,7 +187,7 @@ local function check_text(text)
 end
 
 function say(who, text)
-  local speaker, color, voice_tag
+  local speaker, color, voice_tag, multiplier
   if type(who) == "string" then
     speaker = who
   elseif type(who) == "table" and type(who.name) == "string" then
@@ -193,6 +198,7 @@ function say(who, text)
     if type(who.voice_tag) == "string" then
       voice_tag = who.voice_tag
     end
+    multiplier = who.auto_multiplier
   elseif who ~= nil then
     bad_argument("say", 1, "string, character or nil", who)
   end
@@ -204,7 +210,7 @@ function say(who, text)
   if speaker == nil then
     engine.narrate(text)
   else
-    engine.say(speaker, text, color, voice_tag or "")
+    engine.say(speaker, text, color, voice_tag or "", multiplier or 1)
   end
 end
 
@@ -249,6 +255,9 @@ local function options_argument(fname, options)
   return options
 end
 
+-- Defined with the layered sprites below: the attributes `show` gives a layered sprite.
+local layered_attributes
+
 function scene(image, options)
   if type(image) ~= "string" then
     bad_argument("scene", 1, "string", image)
@@ -272,8 +281,9 @@ function show(tag, options)
   local x = option("show", options, "x", "number")
   local y = option("show", options, "y", "number")
   local layer = option("show", options, "layer", "string")
+  local attributes, attribute_text = layered_attributes(options, image or tag)
   require_label("show")
-  local problem = engine.show(tag, image or tag, at, x, y, layer)
+  local problem = engine.show(tag, image or tag, at, x, y, layer, attributes)
   if problem then
     error(problem, 2)
   end
@@ -294,7 +304,7 @@ function show(tag, options)
     command = command .. " layer " .. layer
   end
   command = command .. engine.shader_options("show", tag, false, options)
-  engine.scene_command(command)
+  engine.scene_command(command .. attribute_text)
 end
 
 function hide(tag)
@@ -743,6 +753,129 @@ function layer(name, options)
   engine.scene_command("layer " .. name .. engine.shader_options("layer", name, true, options))
 end
 )lua" R"lua(
+-- Layered sprites: layered(name, { order = { group, ... }, <group> = "image" or
+-- { value = "image", ... }, default = { group = value }, crossfade = seconds }).
+-- `show` of the name then takes a value for each group: show("eileen", { face = "smile" }).
+local pairs, ipairs, sort = pairs, ipairs, table.sort
+local layered_defs = {}
+local show_options = { image = true, at = true, x = true, y = true, layer = true,
+                       shader = true, uniforms = true }
+
+-- `level` is the error() level of the caller of this function.
+local function layered_option(key, expected, value, level)
+  error(format("bad option '%s' to 'layered' (%s expected, got %s)", key, expected, type(value)),
+        level + 1)
+end
+
+-- A group's spec as { name =, values = { value, image, ... } }; a single image has the value "".
+local function layered_group(name, spec)
+  local values = {}
+  if type(spec) == "string" then
+    values[1], values[2] = "", spec
+  elseif type(spec) == "table" then
+    local names = {}
+    for value, image in pairs(spec) do
+      if type(value) ~= "string" or value == "" or type(image) ~= "string" then
+        error(format("bad option '%s' to 'layered' (a table of value = \"image\" expected)", name),
+              3)
+      end
+      names[#names + 1] = value
+    end
+    if #names == 0 then
+      error(format("bad option '%s' to 'layered' (it needs at least one value)", name), 3)
+    end
+    sort(names)
+    for i = 1, #names do
+      values[2 * i - 1], values[2 * i] = names[i], spec[names[i]]
+    end
+  else
+    layered_option(name, "string or table", spec, 3)
+  end
+  return { name = name, values = values }
+end
+
+function layered(name, definition)
+  if type(name) ~= "string" then
+    bad_argument("layered", 1, "string", name)
+  end
+  if type(definition) ~= "table" then
+    bad_argument("layered", 2, "table", definition)
+  end
+  local order = definition.order
+  if type(order) ~= "table" or #order == 0 then
+    error("bad option 'order' to 'layered' (a list of group names expected)", 2)
+  end
+  local request, listed = { groups = {}, default = {}, crossfade = definition.crossfade }, {}
+  for i = 1, #order do
+    local group = order[i]
+    if type(group) ~= "string" or group == "" or listed[group] then
+      error(format("bad option 'order' to 'layered' (item #%d is not a new group name)", i), 2)
+    end
+    listed[group] = true
+    request.groups[i] = layered_group(group, definition[group])
+  end
+  for key in pairs(definition) do
+    if not listed[key] and key ~= "order" and key ~= "default" and key ~= "crossfade" then
+      error(format("bad option '%s' to 'layered' (not a group in 'order')", tostring(key)), 2)
+    end
+  end
+  if request.crossfade ~= nil and type(request.crossfade) ~= "number" then
+    layered_option("crossfade", "number", request.crossfade, 2)
+  end
+  local default = definition.default
+  if default ~= nil and type(default) ~= "table" then
+    layered_option("default", "table", default, 2)
+  end
+  for key in pairs(default or {}) do
+    if not listed[key] then
+      error(format("bad option 'default' to 'layered' ('%s' is not a group in 'order')",
+                   tostring(key)), 2)
+    end
+  end
+  for _, group in ipairs(order) do
+    local value = default and default[group]
+    if value ~= nil then
+      if type(value) ~= "string" then
+        layered_option("default", "table of strings", value, 2)
+      end
+      local n = #request.default
+      request.default[n + 1], request.default[n + 2] = group, value
+    end
+  end
+  local problem = engine.layered(name, request)
+  if problem then
+    error(problem, 2)
+  end
+  layered_defs[name] = { groups = listed, order = order }
+end
+
+-- Checks the group keys in the `show` options of a layered sprite and returns them as a flat
+-- list and as the text of the transcript. Other images ignore keys that are not options.
+layered_attributes = function(options, name)
+  local def = layered_defs[name]
+  if def == nil then
+    return nil, ""
+  end
+  for key in pairs(options) do
+    if not def.groups[key] and not show_options[key] then
+      error(format("unknown group '%s' for '%s' (the groups are %s)", tostring(key), name,
+                   concat(def.order, ", ")), 3)
+    end
+  end
+  local attributes, text = {}, ""
+  for _, group in ipairs(def.order) do
+    local value = options[group]
+    if value ~= nil then
+      if type(value) ~= "string" then
+        error(format("bad option '%s' to 'show' (string expected, got %s)", group, type(value)), 3)
+      end
+      attributes[#attributes + 1], attributes[#attributes + 2] = group, value
+      text = text .. " " .. group .. " " .. value
+    end
+  end
+  return attributes, text
+end
+)lua" R"lua(
 
 -- Saves. A call only queues a request; the host carries it out when the story waits.
 local function slot_name(slot)
@@ -763,6 +896,26 @@ end
 function quick_load()
   require_label("quick_load")
   engine.save_request(true, "quick")
+end
+-- skip("seen" | "all" | "off" | false) and auto(true | false): the host applies them.
+local skip_modes = { seen = true, all = true, off = true }
+function skip(mode)
+  if mode == false or mode == nil then
+    mode = "off"
+  elseif mode == true then
+    mode = "seen"
+  elseif not skip_modes[mode] then
+    bad_argument("skip", 1, "\"seen\", \"all\", \"off\" or false", mode)
+  end
+  require_label("skip")
+  engine.skip_request(mode)
+end
+function auto(on)
+  if type(on) ~= "boolean" then
+    bad_argument("auto", 1, "boolean", on)
+  end
+  require_label("auto")
+  engine.auto_request(on)
 end
 -- on_load(function(old_version, store) ... end): migrates the store of a save made by an older
 -- version of the game. Scripts register it while they load.
@@ -877,7 +1030,8 @@ loadfile = nil
 string.dump = nil
 
 -- Globals the engine owns: scripts read them but cannot replace them.
-local reserved = { store = store }
+local persistent = {}
+local reserved = { store = store, persistent = persistent }
 do
   local warned = {}
   setmetatable(_G, {
@@ -926,7 +1080,7 @@ function coroutine.wrap(fn)
   end
 end
 
-local limits = { store = store }
+local limits = { store = store, persistent = persistent }
 function limits.configure(period)
   hook_period = period
   watch(coroutine.running())
@@ -1204,6 +1358,39 @@ std::string read_tween(const sol::table& table, int depth, TweenRequest& request
   return {};
 }
 
+// A flat list { a1, b1, a2, b2, ... } that the prelude built, as pairs.
+std::vector<std::pair<std::string, std::string>> read_pairs(const sol::table& table) {
+  std::vector<std::pair<std::string, std::string>> pairs;
+  const std::size_t count = table.size();
+  pairs.reserve(count / 2);
+  for (std::size_t i = 1; i < count; i += 2) {
+    pairs.emplace_back(table.get_or<std::string>(i, ""), table.get_or<std::string>(i + 1, ""));
+  }
+  return pairs;
+}
+
+// Copies the definition table that the prelude's `layered` built into `request`.
+void read_layered(const sol::table& table, LayeredRequest& request) {
+  request.crossfade = table.get_or("crossfade", 0.0);
+  if (const auto groups = table.get<sol::optional<sol::table>>("groups")) {
+    const std::size_t count = groups->size();
+    request.groups.reserve(count);
+    for (std::size_t i = 1; i <= count; ++i) {
+      const auto group = groups->get<sol::optional<sol::table>>(i);
+      LayeredRequest::Group& added = request.groups.emplace_back();
+      if (group) {
+        added.name = group->get_or<std::string>("name", "");
+        if (const auto values = group->get<sol::optional<sol::table>>("values")) {
+          added.values = read_pairs(*values);
+        }
+      }
+    }
+  }
+  if (const auto defaults = table.get<sol::optional<sol::table>>("default")) {
+    request.defaults = read_pairs(*defaults);
+  }
+}
+
 // Continues `coroutine` with the answer of a blocking call as its result.
 sol::protected_function_result resume_with(sol::coroutine& coroutine, const ScreenValue& value) {
   return std::visit(
@@ -1243,6 +1430,13 @@ class ScriptRuntime::Impl {
   [[nodiscard]] std::vector<SaveRequest> take_save_requests() {
     return std::exchange(save_requests_, {});
   }
+  [[nodiscard]] std::vector<PlaybackRequest> take_playback_requests() {
+    return std::exchange(playback_requests_, {});
+  }
+  [[nodiscard]] StoreSnapshot capture_persistent() const {
+    return capture_table(persistent_, "persistent");
+  }
+  [[nodiscard]] std::string restore_persistent(const StoreSnapshot& snapshot);
 
   [[nodiscard]] bool replaying() const { return replaying_; }
   [[nodiscard]] const LabelSnapshot* label_snapshot() const {
@@ -1254,7 +1448,8 @@ class ScriptRuntime::Impl {
     }
     return frames_.back().inputs;
   }
-  [[nodiscard]] StoreSnapshot capture_store() const;
+  [[nodiscard]] StoreSnapshot capture_store() const { return capture_table(store_, "store"); }
+  [[nodiscard]] StoreSnapshot capture_table(const sol::table& root, std::string_view name) const;
   [[nodiscard]] std::optional<std::uint64_t> label_source_hash(std::string_view name) const {
     const auto found = labels_.find(name);
     return found == labels_.end() ? std::nullopt : std::optional{found->second.source_hash};
@@ -1338,7 +1533,8 @@ class ScriptRuntime::Impl {
   void run(std::optional<ScreenValue> resume_value = std::nullopt);
   [[nodiscard]] bool replay_answer(std::optional<ScreenValue>& resume_value);
   void record(const InputResult& input);
-  void restore_store(const StoreSnapshot& snapshot);
+  void restore_store(const StoreSnapshot& snapshot) { restore_table(store_, snapshot); }
+  void restore_table(const sol::table& root, const StoreSnapshot& snapshot);
   void fail(std::string message);
   void reset_instruction_budget();
   [[nodiscard]] std::uint64_t random_state(const sol::stack_object& state) const;
@@ -1360,6 +1556,7 @@ class ScriptRuntime::Impl {
   sol::state lua_;
   sol::table engine_;
   sol::table store_;
+  sol::table persistent_;
   sol::protected_function limits_configure_;
   sol::protected_function limits_watch_;
   sol::protected_function limits_reset_;
@@ -1371,6 +1568,7 @@ class ScriptRuntime::Impl {
   std::map<std::string, std::string, std::less<>> sources_;
   sol::main_function on_load_;
   std::vector<SaveRequest> save_requests_;
+  std::vector<PlaybackRequest> playback_requests_;
   std::vector<Frame> frames_;  // back() is the running label; the rest called it
   std::optional<std::variant<BlockingRequest, Transfer>> pending_;
   bool started_ = false;
@@ -1431,6 +1629,7 @@ ScriptRuntime::Impl::Impl(const Vfs& vfs, const ScriptRuntimeOptions& options)
   }
   const sol::table limits_table = limits;
   store_ = limits_table["store"];
+  persistent_ = limits_table["persistent"];
   limits_configure_ = limits_table["configure"];
   limits_watch_ = limits_table["watch"];
   limits_reset_ = limits_table["reset"];
@@ -1491,13 +1690,14 @@ void ScriptRuntime::Impl::bind_engine() {
   };
   engine_["say"] = sol::yielding([this](sol::this_state state, const std::string& speaker,
                                         const std::string& text, std::optional<std::int64_t> color,
-                                        const std::string& voice_tag) {
+                                        const std::string& voice_tag, double auto_multiplier) {
     std::optional<std::uint32_t> rgb;
     if (color) {
       rgb = static_cast<std::uint32_t>(*color);
     }
     yield_at(state,
-             SayRequest{.speaker = speaker, .text = text, .color = rgb, .voice_tag = voice_tag});
+             SayRequest{.speaker = speaker, .text = text, .color = rgb, .voice_tag = voice_tag,
+                         .auto_multiplier = auto_multiplier});
   });
   engine_["narrate"] = sol::yielding([this](sol::this_state state, const std::string& text) {
     yield_at(state, NarrateRequest{.text = text});
@@ -1557,11 +1757,16 @@ void ScriptRuntime::Impl::bind_engine() {
   engine_["show"] = [this, problem_or_nil](
                         sol::this_state state, const std::string& tag, const std::string& image,
                         const sol::optional<std::string>& at, sol::optional<double> x,
-                        sol::optional<double> y, const sol::optional<std::string>& layer) {
+                        sol::optional<double> y, const sol::optional<std::string>& layer,
+                        const sol::optional<sol::table>& attributes) {
     if (options_.scene == nullptr) {
       return problem_or_nil(state, {});
     }
-    ShowRequest request{.tag = tag, .image = image};
+    ShowRequest request{.tag = tag, .image = image, .replaying = replaying_};
+    if (attributes) {
+      const MemoryLimitScope unlimited{allocator_, false};
+      request.attributes = read_pairs(*attributes);
+    }
     if (at) {
       request.at = *at;
     }
@@ -1575,6 +1780,18 @@ void ScriptRuntime::Impl::bind_engine() {
       request.layer = *layer;
     }
     return problem_or_nil(state, options_.scene->show(request));
+  };
+  // Definitions are not story state: they are made when the scripts load, and again when a label
+  // that defines one replays.
+  engine_["layered"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
+                                              const sol::table& definition) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    LayeredRequest request{.name = name};
+    read_layered(definition, request);
+    return problem_or_nil(state, options_.scene->layered(request));
   };
   engine_["hide"] = [this](const std::string& tag) {
     if (options_.scene != nullptr) {
@@ -1704,6 +1921,19 @@ void ScriptRuntime::Impl::bind_engine() {
       save_requests_.push_back(SaveRequest{.load = load, .slot = slot});
     }
   };
+  engine_["skip_request"] = [this](const std::string& mode) {
+    if (!replaying_) {
+      const SkipMode skip = mode == "seen" ? SkipMode::kSeen
+                            : mode == "all" ? SkipMode::kAll
+                                            : SkipMode::kOff;
+      playback_requests_.push_back(PlaybackRequest{.skip = skip});
+    }
+  };
+  engine_["auto_request"] = [this](bool on) {
+    if (!replaying_) {
+      playback_requests_.push_back(PlaybackRequest{.automatic = on});
+    }
+  };
   engine_["set_on_load"] = [this, problem_or_nil](sol::this_state state,
                                                   const sol::stack_object& hook) {
     if (started_) {
@@ -1788,7 +2018,8 @@ std::uint64_t ScriptRuntime::Impl::random_state(const sol::stack_object& state) 
 // Copies the store breadth-first. Sorting each table's fields by key before
 // numbering the tables they hold makes the result independent of Lua's
 // iteration order.
-StoreSnapshot ScriptRuntime::Impl::capture_store() const {
+StoreSnapshot ScriptRuntime::Impl::capture_table(const sol::table& root,
+                                                 std::string_view name) const {
   struct Field {
     StoreValue key;
     StoreValue value;
@@ -1797,8 +2028,8 @@ StoreSnapshot ScriptRuntime::Impl::capture_store() const {
   lua_State* lua = lua_.lua_state();
   const int top = lua_gettop(lua);
   StoreSnapshot snapshot;
-  std::vector<sol::table> tables{store_};
-  std::map<const void*, std::uint32_t> indices{{store_.pointer(), 0}};
+  std::vector<sol::table> tables{root};
+  std::map<const void*, std::uint32_t> indices{{root.pointer(), 0}};
   for (std::size_t current = 0; current < tables.size(); ++current) {
     std::vector<Field> fields;
     tables[current].push(lua);
@@ -1810,11 +2041,12 @@ StoreSnapshot ScriptRuntime::Impl::capture_store() const {
       if (key_ok && value_type == LUA_TTABLE) {
         field.table = sol::table{lua, -1};
       } else if (!key_ok || !read_scalar(lua, -1, field.value)) {
-        std::string problem = "store holds a ";
+        std::string problem = std::string{name} + " holds a ";
         problem += lua_typename(lua, key_ok ? value_type : lua_type(lua, -2));
         problem += key_ok ? " value" : " key";
-        if (const auto* name = std::get_if<std::string>(&field.key); key_ok && name != nullptr) {
-          problem += " (field '" + *name + "')";
+        if (const auto* field_name = std::get_if<std::string>(&field.key);
+            key_ok && field_name != nullptr) {
+          problem += " (field '" + *field_name + "')";
         }
         lua_settop(lua, top);
         throw ScriptError(problem + "; it keeps only booleans, numbers, strings and tables");
@@ -1846,16 +2078,16 @@ StoreSnapshot ScriptRuntime::Impl::capture_store() const {
 // Makes the store equal to `snapshot` (which is_valid). The store table
 // itself is kept, because scripts hold references to it; the tables inside
 // it are new.
-void ScriptRuntime::Impl::restore_store(const StoreSnapshot& snapshot) {
+void ScriptRuntime::Impl::restore_table(const sol::table& root, const StoreSnapshot& snapshot) {
   lua_State* lua = lua_.lua_state();
   std::vector<sol::table> tables;
   tables.reserve(snapshot.tables.size());
-  tables.push_back(store_);
+  tables.push_back(root);
   for (std::size_t i = 1; i < snapshot.tables.size(); ++i) {
     tables.push_back(lua_.create_table());
   }
 
-  store_.push(lua);
+  root.push(lua);
   lua_pushnil(lua);
   while (lua_next(lua, -2) != 0) {
     // Setting a field to nil during a traversal is allowed.
@@ -1888,6 +2120,14 @@ void ScriptRuntime::Impl::restore_store(const StoreSnapshot& snapshot) {
     }
     lua_pop(lua, 1);
   }
+}
+
+std::string ScriptRuntime::Impl::restore_persistent(const StoreSnapshot& snapshot) {
+  if (!is_valid(snapshot)) {
+    return "persistent: the snapshot is malformed";
+  }
+  restore_table(persistent_, snapshot);
+  return {};
 }
 
 bool ScriptRuntime::Impl::in_label(sol::this_state state) const {
@@ -2355,6 +2595,13 @@ std::string ScriptRuntime::run_on_load(LabelSnapshot& snapshot, std::string_view
   return impl_->run_on_load(snapshot, old_version);
 }
 std::vector<SaveRequest> ScriptRuntime::take_save_requests() { return impl_->take_save_requests(); }
+std::vector<PlaybackRequest> ScriptRuntime::take_playback_requests() {
+  return impl_->take_playback_requests();
+}
+StoreSnapshot ScriptRuntime::persistent_snapshot() const { return impl_->capture_persistent(); }
+std::string ScriptRuntime::restore_persistent(const StoreSnapshot& snapshot) {
+  return impl_->restore_persistent(snapshot);
+}
 bool ScriptRuntime::replaying() const { return impl_->replaying(); }
 const LabelSnapshot* ScriptRuntime::label_snapshot() const { return impl_->label_snapshot(); }
 std::span<const InputResult> ScriptRuntime::input_log() const { return impl_->input_log(); }

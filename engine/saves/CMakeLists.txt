@@ -2,7 +2,9 @@
 # save and auto save (docs/SPEC.md section 8).
 target_sources(
   vnmaki_engine
-  PRIVATE save_file.cpp
+  PRIVATE persistent_store.cpp
+          persistent_store.hpp
+          save_file.cpp
           save_file.hpp
           saves.cpp
           saves.hpp

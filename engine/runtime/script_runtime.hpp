@@ -39,6 +39,8 @@ struct SayRequest {
   std::optional<std::uint32_t> color{};
   /// Only stored: audio will use it to pick the voice.
   std::string voice_tag{};
+  /// `character { auto_multiplier = }`: scales the per-character part of the auto-advance delay.
+  double auto_multiplier = 1;
 
   friend bool operator==(const SayRequest&, const SayRequest&) = default;
 };
@@ -201,6 +203,27 @@ struct ShowRequest {
   std::optional<double> x{};        ///< A fraction of the virtual width.
   std::optional<double> y{};        ///< A fraction of the virtual height.
   std::optional<std::string> layer{};
+  /// For a layered sprite: the groups the script named and the values it chose, in the order of
+  /// the definition's groups. Other groups keep their values.
+  std::vector<std::pair<std::string, std::string>> attributes{};
+  /// Set while the runtime replays: an attribute change does not crossfade.
+  bool replaying = false;
+};
+
+/// `layered(name, options)`: a character whose image is composed of layers. `show` of `name`
+/// shows it. Value names and images are in the order the script gave them (sorted by name).
+struct LayeredRequest {
+  /// The images of one group, in the order they draw.
+  struct Group {
+    std::string name{};
+    /// A group of one fixed image has one value with an empty name.
+    std::vector<std::pair<std::string, std::string>> values{};  ///< (value, image name)
+  };
+
+  std::string name{};
+  std::vector<Group> groups{};  ///< From the back to the front.
+  std::vector<std::pair<std::string, std::string>> defaults{};  ///< (group, value)
+  double crossfade = 0;  ///< Seconds an attribute change takes; 0 for a cut.
 };
 
 /// A uniform of a shader by name and its value.
@@ -267,6 +290,10 @@ class SceneCommands {
   [[nodiscard]] virtual std::string scene(std::string_view image) = 0;
   [[nodiscard]] virtual std::string show(const ShowRequest& request) = 0;
   virtual void hide(std::string_view tag) = 0;
+
+  /// Defines a layered sprite. Returns why it cannot (a missing image, an unknown default, ...),
+  /// as for `show`. The default does nothing, for implementations without layered sprites.
+  [[nodiscard]] virtual std::string layered(const LayeredRequest& /*request*/) { return {}; }
 
   /// Starts the tweens. Returns why it cannot (an unknown tag or easing, ...), as for `show`. The
   /// defaults do nothing, for implementations without an animation system.
@@ -359,6 +386,23 @@ struct SaveRequest {
   std::string slot{};
 
   friend bool operator==(const SaveRequest&, const SaveRequest&) = default;
+};
+
+/// What skip does at lines.
+enum class SkipMode : std::uint8_t {
+  kOff,
+  kSeen,  ///< Skip lines the player has read before; stop at the first unseen line.
+  kAll,   ///< Skip every line. Menus and screens always stop it.
+};
+
+/// A script's call of `skip(mode)` or `auto(on)`: the runtime only queues it
+/// (take_playback_requests()), and the host applies it. Calls made during a replay are dropped.
+struct PlaybackRequest {
+  /// Set by `skip`.
+  std::optional<SkipMode> skip{};
+  /// Set by `auto`.
+  std::optional<bool> automatic{};
+  friend bool operator==(const PlaybackRequest&, const PlaybackRequest&) = default;
 };
 
 /// Where a script is: the running label and how many yield points it has
@@ -472,8 +516,8 @@ struct ScriptRuntimeOptions {
 /// the `vfs` table (`vfs.read`, `vfs.exists`, `vfs.list`), which uses the
 /// engine Vfs. `print` goes to ScriptObserver::on_print.
 ///
-/// The engine API: `character { name =, color = "#rrggbb", voice_tag = }`, `label(name, fn)`,
-/// `jump(name)`, `call(name)`, `ret()`, `say(who, text)`, `narrate(text)`, `menu { "option", ... }`
+/// The engine API: `character { name =, color = "#rrggbb", voice_tag =, auto_multiplier = }`,
+/// `label(name, fn)`, `jump(name)`, `call(name)`, `ret()`, `say(who, text)`, `narrate(text)`, `menu { "option", ... }`
 /// (returns the number of the chosen option, from 1), `rand` (the same function as `math.random`)
 /// and the `store` table. Visuals: `scene(image)`, `show(tag, { image =, at =, x =, y =, layer =
 /// })` and `hide(tag)`; option keys they do not know are ignored (later tickets add `with`,
@@ -500,6 +544,15 @@ struct ScriptRuntimeOptions {
 /// slot, with a string or function it is Lua's `load`), `quick_save()` and `quick_load()`. They
 /// queue a SaveRequest. `on_load(function(old_version, store) ... end)` registers the migration
 /// hook that run_on_load() calls; scripts register it while they load.
+///
+/// Playback: `skip("seen")`, `skip("all")` and `skip(false)` (also `"off"`) set the skip mode;
+/// `auto(true)` and `auto(false)` turn auto-advance on and off. They queue a PlaybackRequest.
+/// `character { auto_multiplier = }` scales the auto-advance time of that character's lines.
+///
+/// `persistent` is a second table like `store`, but for data that outlives a playthrough (seen
+/// text, unlocks, preferences). Snapshots, saves, rollback and load never change it; the host
+/// keeps it in a file (persistent_snapshot(), restore_persistent()). A replay runs the label's
+/// code again, so code that writes to it should be idempotent (`persistent.won = true`).
 ///
 /// `store` is owned by the engine: scripts change its fields but cannot
 /// replace it. It keeps booleans, numbers, strings and tables with such keys
@@ -578,6 +631,14 @@ class ScriptRuntime {
   /// The save and load requests scripts made since the last call, in order.
   [[nodiscard]] std::vector<SaveRequest> take_save_requests();
 
+  /// The `skip` and `auto` requests scripts made since the last call, in order.
+  [[nodiscard]] std::vector<PlaybackRequest> take_playback_requests();
+  /// A copy of `persistent` as it is now. Throws ScriptError like store_snapshot().
+  [[nodiscard]] StoreSnapshot persistent_snapshot() const;
+  /// Makes `persistent` equal to `snapshot`. Call it before load_scripts() so that scripts that
+  /// set defaults at their top level see the saved values. Returns why the snapshot is
+  /// malformed, or an empty string.
+  [[nodiscard]] std::string restore_persistent(const StoreSnapshot& snapshot);
   /// The engine-wide replay flag: true while replay() runs script code.
   /// Subsystems check it to skip visible, audible and other outside effects.
   [[nodiscard]] bool replaying() const;

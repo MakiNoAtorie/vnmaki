@@ -1,12 +1,16 @@
 #include "engine/runtime/headless_runner.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 
 #include "engine/runtime/script_runtime.hpp"
+#include "engine/saves/persistent_store.hpp"
+#include "engine/saves/saves.hpp"
 
 namespace vnmaki {
 
@@ -51,25 +55,46 @@ class TranscriptRecorder final : public ScriptObserver {
   HeadlessResult* result_;
 };
 
-}  // namespace
-
-HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
-                            const HeadlessOptions& options) {
-  HeadlessResult result;
+// Runs the story and fills `result`. A separate function so that the persistent store, which
+// writes its file when it goes away, is gone before the caller sees the result.
+void run_into(HeadlessResult& result, const Vfs& vfs, std::span<const ScriptInput> inputs,
+              const HeadlessOptions& options) {
   TranscriptRecorder recorder{result};
   ScriptRuntimeOptions runtime_options = options.runtime;
   runtime_options.observer = &recorder;
   ScriptRuntime runtime{vfs, runtime_options};
+
+  // The persistent store and the saves answer the scripts' `save` and `load` calls.
+  std::optional<PersistentStore> persistent;
+  std::optional<Saves> saves;
+  if (options.saves) {
+    SavesOptions saves_options = *options.saves;
+    if (!saves_options.on_warning) {
+      saves_options.on_warning = [&result](std::string_view message) {
+        result.transcript.push_back("warning " + std::string{message});
+      };
+    }
+    persistent.emplace(runtime, saves_options.directory, saves_options.on_warning);
+    persistent->load();
+    saves.emplace(runtime, std::move(saves_options));
+  }
+  const auto poll = [&] {
+    if (saves) {
+      saves->poll();
+      persistent->flush();
+    }
+  };
 
   try {
     runtime.load_scripts();
   } catch (const ScriptError& error) {
     result.outcome = HeadlessOutcome::kFailed;
     result.error = error.what();
-    return result;
+    return;
   }
 
   runtime.start(options.start_label);
+  poll();
   auto next_input = inputs.begin();
   while (runtime.state() == RunState::kWaiting) {
     if (const auto* wait = std::get_if<WaitRequest>(runtime.request())) {
@@ -78,6 +103,7 @@ HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
         runtime_options.scene->finish_tweens(wait->tag);
       }
       runtime.advance();
+      poll();
       continue;
     }
     if (next_input == inputs.end()) {
@@ -106,9 +132,10 @@ HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
       } else {
         result.error = "the story waits at a menu, and the next input is not one of its options";
       }
-      return result;
+      return;
     }
     ++next_input;
+    poll();
   }
 
   switch (runtime.state()) {
@@ -124,6 +151,14 @@ HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
       result.error = runtime.error();
       break;
   }
+}
+
+}  // namespace
+
+HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
+                            const HeadlessOptions& options) {
+  HeadlessResult result;
+  run_into(result, vfs, inputs, options);
   return result;
 }
 
