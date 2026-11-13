@@ -14,6 +14,7 @@ PREFIX=${1:-/opt/vnmaki-deps}
 SDL_TAG=release-3.4.18
 SOL2_TAG=v3.5.0
 MINIAUDIO_TAG=0.11.25
+CGLTF_TAG=v1.15
 YOGA_TAG=v3.2.1
 SHEENBIDI_TAG=v3.0.0
 SPIRV_CROSS_TAG=vulkan-sdk-1.4.363.0
@@ -70,6 +71,11 @@ build spirv-cross KhronosGroup/SPIRV-Cross "$SPIRV_CROSS_TAG" \
 git clone --quiet --depth 1 --branch "$MINIAUDIO_TAG" https://github.com/mackron/miniaudio \
   "$WORK/miniaudio"
 install -D -m 644 "$WORK/miniaudio/miniaudio.h" "$PREFIX/include/miniaudio.h"
+
+# cgltf is one header too, and Ubuntu 24.04 has no package for it.
+git clone --quiet --depth 1 --branch "$CGLTF_TAG" https://github.com/jkuhlmann/cgltf \
+  "$WORK/cgltf"
+install -D -m 644 "$WORK/cgltf/cgltf.h" "$PREFIX/include/cgltf.h"
 
 # DXC is a prebuilt release: bin/dxc, lib/libdxcompiler.so, lib/libdxil.so, include/dxc/.
 curl -fsSL "$DXC_URL" | tar -xz -C "$PREFIX"
