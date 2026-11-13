@@ -5,7 +5,7 @@ add_executable(vnmaki_render_tests ../unit/main.cpp gpu_test_support.cpp gpu_tes
                                    camera_render_test.cpp frame_anim_render_test.cpp
                                    layered_render_test.cpp model3d_render_test.cpp
                                    presentation_render_test.cpp renderer_test.cpp
-                                   say_box_render_test.cpp
+                                   say_box_render_test.cpp template_vertical_render_test.cpp
                                    scene_render_test.cpp shader_render_test.cpp
                                    text_render_test.cpp
                                    transition_render_test.cpp window_renderer_test.cpp)

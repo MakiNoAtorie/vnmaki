@@ -184,6 +184,15 @@ vnmaki_add_fixture_generator(
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_render_tests)
 
+# The Phase 7 demo (ticket 53): the golden of the template say box in vertical Japanese, drawn by
+# tools/generators/template_vertical_fixtures.py.
+vnmaki_add_fixture_generator(
+  template_vertical SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/template_vertical_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
 # Persistent store, seen text, skip and auto-advance (ticket 14).
 target_sources(vnmaki_unit_tests PRIVATE unit/playback_test.cpp)
 
