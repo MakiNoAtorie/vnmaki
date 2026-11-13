@@ -1,8 +1,29 @@
-# Dev tools that need no ImGui (ticket 34): the Lua scan and the story graph. They build in every
-# preset, so `vnmaki graph` and the overlay panel can both use them.
+# Dev tools (docs/SPEC.md section 18). The Lua scan and the story graph need no ImGui and build in
+# every preset, so `vnmaki graph` works in a release build.
 target_sources(
   vnmaki_engine
   PRIVATE script_scan.cpp
           script_scan.hpp
           story_graph.cpp
           story_graph.hpp)
+
+# The overlay, log console and Lua REPL are added only when VNMAKI_DEV_TOOLS is ON, so a release
+# build has no overlay code and links no ImGui.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(
+    vnmaki_engine
+    PRIVATE imgui_backend.cpp
+            imgui_backend.hpp
+            log_buffer.cpp
+            log_buffer.hpp
+            overlay.cpp
+            overlay.hpp
+            repl.cpp
+            repl.hpp)
+
+  # The ImGui renderer backend draws through SDL GPU, so only imgui_backend.cpp includes SDL
+  # (lint.no_sdl_outside_platform). The ImGui input comes from InputEvents, not from SDL events.
+  find_package(imgui CONFIG REQUIRED)
+  find_package(SDL3 CONFIG REQUIRED COMPONENTS SDL3)
+  target_link_libraries(vnmaki_engine PRIVATE imgui::imgui SDL3::SDL3)
+endif()

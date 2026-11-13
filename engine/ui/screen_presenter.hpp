@@ -48,7 +48,7 @@ class ScreenPresenter {
 
  private:
   void answer(const ScreenValue& value);
-  [[nodiscard]] UiNode menu_tree(const std::vector<std::string>& options);
+  [[nodiscard]] UiNode menu_tree(const MenuRequest& menu);
 
   ScriptRuntime* runtime_;
   UiHost* host_;

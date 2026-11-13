@@ -29,7 +29,8 @@ inline constexpr std::string_view kGeneratedImagePrefix = "gen:";
 class UiRenderer {
  public:
   /// `renderer` and the fonts must outlive this object. `vfs` (may be null, then image nodes draw
-  /// nothing) reads `images/<name>.png`, `.jpg` or `.webp` for image nodes; it must outlive this too.
+  /// nothing) reads `images/<name>.png`, `.jpg` or `.webp` for image nodes; it must outlive this
+  /// too.
   UiRenderer(IRenderer& renderer, FontSet fonts, const Vfs* vfs = nullptr);
   /// One font, no fallbacks.
   UiRenderer(IRenderer& renderer, const Font& font, const Vfs* vfs = nullptr);
@@ -70,6 +71,8 @@ class UiRenderer {
   void draw_node(const UiNode& node, float scale, PointF origin);
   void draw_fill(RectF rect, Color color);
   void draw_text(const UiNode& node, float scale, PointF origin);
+  void draw_border(const UiNode& node, RectF rect, float width);
+  void draw_caret(const UiNode& node, float scale, PointF origin);
   void draw_toggle_mark(const UiNode& node, float scale, PointF origin);
 
   IRenderer* renderer_;
@@ -77,7 +80,7 @@ class UiRenderer {
   const Vfs* vfs_;
   std::function<std::optional<Image>(const std::string&)> generated_;
   TextureId white_;
-  std::map<std::tuple<std::string, bool, float, float>, TextLayout> layouts_;
+  std::map<std::tuple<std::string, bool, float, float, std::string>, TextLayout> layouts_;
   std::map<float, SizeAtlas> atlases_;
   std::map<std::string, std::optional<TextureId>> images_;
 };

@@ -154,7 +154,12 @@ function ret()
   transfer("ret", "")
 end
 
--- character { name =, color = "#rrggbb", voice_tag =, auto_multiplier = }: a table `say` reads.
+-- Defined with NVL mode below: the page that goes with a say, narrate or menu (nil: not NVL).
+-- Defined with the gallery below: notes that an image was shown, which can unlock it.
+local nvl_page, note_shown
+
+-- character { name =, color = "#rrggbb", voice_tag =, auto_multiplier =, kind = "adv" or "nvl" }:
+-- a table `say` reads.
 function character(definition)
   if type(definition) ~= "table" then
     bad_argument("character", 1, "table", definition)
@@ -175,8 +180,12 @@ function character(definition)
   if multiplier ~= nil and (type(multiplier) ~= "number" or multiplier < 0) then
     error("bad option 'auto_multiplier' to 'character' (number of 0 or more expected)", 2)
   end
+  local kind = definition.kind
+  if kind ~= nil and kind ~= "adv" and kind ~= "nvl" then
+    error("bad option 'kind' to 'character' (\"adv\" or \"nvl\" expected)", 2)
+  end
   return { name = definition.name, color = color, voice_tag = definition.voice_tag,
-           auto_multiplier = multiplier }
+           auto_multiplier = multiplier, kind = kind }
 end
 
 -- Raises a bad text tag at the caller of the API function that called this.
@@ -188,7 +197,7 @@ local function check_text(text)
 end
 
 function say(who, text)
-  local speaker, color, voice_tag, multiplier
+  local speaker, color, voice_tag, multiplier, kind
   if type(who) == "string" then
     speaker = who
   elseif type(who) == "table" and type(who.name) == "string" then
@@ -200,6 +209,7 @@ function say(who, text)
       voice_tag = who.voice_tag
     end
     multiplier = who.auto_multiplier
+    kind = who.kind
   elseif who ~= nil then
     bad_argument("say", 1, "string, character or nil", who)
   end
@@ -208,6 +218,7 @@ function say(who, text)
   end
   require_label("say")
   check_text(text)
+  engine.stage_nvl(nvl_page(kind, speaker, text, color))
   if speaker == nil then
     engine.narrate(text)
   else
@@ -221,6 +232,7 @@ function narrate(text)
   end
   require_label("narrate")
   check_text(text)
+  engine.stage_nvl(nvl_page(nil, nil, text))
   engine.narrate(text)
 end
 
@@ -272,6 +284,7 @@ function scene(image, options)
   if problem then
     error(problem, 2)
   end
+  note_shown(image)
   engine.scene_command("scene " .. image)
   end_with(with)
 end
@@ -295,6 +308,7 @@ function show(tag, options)
   if problem then
     error(problem, 2)
   end
+  note_shown(image or tag)
   local command = "show " .. tag
   if image then
     command = command .. " image " .. image
@@ -447,13 +461,137 @@ function menu(options)
     error(format("bad option 'fixed' to 'menu' (boolean expected, got %s)", type(fixed)), 2)
   end
   require_label("menu")
+  engine.stage_nvl(nvl_page())
   return engine.menu(texts, fixed == true)
+end
+)lua" R"lua(
+-- Styles and themes (docs/SPEC.md section 15). A style is a named table of node options: font,
+-- size, color, background, padding, gap, margin, width, height, grow, align, justify, fill,
+-- border = { width, color }, focus = { background, color, border } and hover = { ... }; `extends`
+-- names a style whose options come first. A node takes `style = "name"`; its own options win.
+-- The styles that the engine's default screens declare are the defaults of every theme.
+local styles, default_styles = {}, {}
+local plain_style_options = {
+  font = true, size = true, color = true, padding = true, gap = true, margin = true, width = true,
+  height = true, grow = true, align = true, justify = true, fill = true,
+}
+local border_style_options = { width = "border_width", color = "border_color" }
+local state_style_options = { background = "bg", color = "color", border = "border" }
+-- Only nodes that take the focus have focus options.
+local focus_node_options = { focus_bg = true, focus_color = true, focus_border = true }
+local focus_node_kinds = { button = true, toggle = true, slider = true, input = true }
+
+local function style_group(group, value, names, prefix)
+  if type(value) ~= "table" then
+    error(format("bad style option '%s' (table expected, got %s)", group, type(value)), 4)
+  end
+  local props = {}
+  for key, item in pairs(value) do
+    if names[key] == nil then
+      error(format("unknown option '%s' in style option '%s'", tostring(key), group), 4)
+    end
+    props[prefix .. names[key]] = item
+  end
+  return props
+end
+
+-- The node options that the style table `definition` stands for.
+local function flatten_style(definition)
+  local props = {}
+  local function add(group)
+    for key, value in pairs(group) do
+      props[key] = value
+    end
+  end
+  for key, value in pairs(definition) do
+    if plain_style_options[key] then
+      props[key] = value
+    elseif key == "background" then
+      props.bg = value
+    elseif key == "border" then
+      add(style_group(key, value, border_style_options, ""))
+    elseif key == "focus" or key == "hover" then
+      add(style_group(key, value, state_style_options, key .. "_"))
+    elseif key ~= "extends" then
+      error(format("unknown style option '%s'", tostring(key)), 3)
+    end
+  end
+  return props
+end
+
+function style(name, definition)
+  if type(name) ~= "string" or name == "" then
+    bad_argument("style", 1, "string", name)
+  end
+  if type(definition) ~= "table" then
+    bad_argument("style", 2, "table", definition)
+  end
+  local extends = definition.extends
+  if extends ~= nil and type(extends) ~= "string" then
+    error(format("bad style option 'extends' (string expected, got %s)", type(extends)), 2)
+  end
+  local entry = { props = flatten_style(definition), extends = extends }
+  styles[name] = entry
+  if debug_getinfo(2, "S").source == "=engine/screens.lua" then
+    default_styles[name] = entry
+  end
+end
+
+-- The options of style `name` for a node of `kind`: the styles it extends first, then its own.
+local function resolve_style(kind, name)
+  if type(name) ~= "string" then
+    error(format("bad option 'style' to '%s' (string expected, got %s)", kind, type(name)), 3)
+  end
+  local chain, current = {}, name
+  while current ~= nil do
+    local entry = styles[current]
+    if entry == nil then
+      error(format("unknown style '%s'", current), 3)
+    end
+    if #chain >= 16 then
+      error(format("style '%s' extends itself", name), 3)
+    end
+    chain[#chain + 1] = entry
+    current = entry.extends
+  end
+  local props = {}
+  for i = #chain, 1, -1 do
+    for key, value in pairs(chain[i].props) do
+      if focus_node_kinds[kind] or not focus_node_options[key] then
+        props[key] = value
+      end
+    end
+  end
+  return props
+end
+
+-- theme("name") makes the styles of the engine's screens, then runs styles/<name>.lua, which
+-- declares styles with style(). Screens built from now on look as it says. It is not in
+-- snapshots: call it before the story starts, or in the label that changes the look.
+function theme(name)
+  if type(name) ~= "string" or not name:find("^[%w_%-]+$") then
+    bad_argument("theme", 1, "name of letters, digits, _ and -", name)
+  end
+  local chunk = engine.load_theme(name)
+  if type(chunk) ~= "function" then
+    error(chunk, 2)
+  end
+  local before = styles
+  styles = {}
+  for key, entry in pairs(default_styles) do
+    styles[key] = entry
+  end
+  local ok, problem = pcall(chunk)
+  if not ok then
+    styles = before
+    error(problem, 0)
+  end
 end
 )lua" R"lua(
 -- Screens (docs/SPEC.md section 15). A node is a plain table the engine reads: kind, text (the
 -- caption or image name), props (booleans, numbers and strings) and children.
 local pairs, math_type = pairs, math.type
-local node_takes_text = { text = true, button = true, image = true, toggle = true }
+local node_takes_text = { text = true, button = true, image = true, toggle = true, input = true }
 local function is_node(value)
   return type(value) == "table" and type(value.kind) == "string" and type(value.props) == "table"
          and type(value.children) == "table"
@@ -467,6 +605,9 @@ local function node_constructor(kind)
       bad_argument(kind, 1, "table", spec)
     end
     local node = { kind = kind, text = "", props = {}, children = {} }
+    if spec.style ~= nil then
+      node.props = resolve_style(kind, spec.style)  -- the node's own options override these
+    end
     local has_text = false
     for i = 1, #spec do
       local item = spec[i]
@@ -482,6 +623,8 @@ local function node_constructor(kind)
     for key, value in pairs(spec) do
       if key == "bind" and type(value) == "table" and value.bind_table ~= nil then
         node.props.bind_table, node.props.bind_key = value.bind_table, value.bind_key
+      elseif key == "style" then
+        -- applied above
       elseif type(key) == "string" then
         local value_type = type(value)
         if value_type ~= "boolean" and value_type ~= "number" and value_type ~= "string" then
@@ -499,7 +642,7 @@ end
 box, hbox, vbox = node_constructor("box"), node_constructor("hbox"), node_constructor("vbox")
 text, image, button = node_constructor("text"), node_constructor("image"), node_constructor("button")
 toggle, slider, bar = node_constructor("toggle"), node_constructor("slider"), node_constructor("bar")
-grid = node_constructor("grid")
+grid, input = node_constructor("grid"), node_constructor("input")
 
 local screens = {}
 local function register_screen(name, definition)
@@ -953,6 +1096,38 @@ local function layered_group(name, spec)
   end
   return { name = name, values = values }
 end
+)lua" R"lua(
+-- lip_sync = { group =, frames = { value, ... }, thresholds = { level, ... }, voice_tag = }:
+-- the group shows the frame for the level of the voice. `listed` has the groups of `order`.
+local function lip_sync_request(spec, listed)
+  local bad = "bad option 'lip_sync' to 'layered' (%s)"
+  if type(spec) ~= "table" then
+    layered_option("lip_sync", "table", spec, 3)
+  end
+  for key in pairs(spec) do
+    if key ~= "group" and key ~= "frames" and key ~= "thresholds" and key ~= "voice_tag" then
+      error(format(bad, "unknown key '" .. tostring(key) .. "'"), 3)
+    end
+  end
+  if type(spec.group) ~= "string" or not listed[spec.group] then
+    error(format(bad, "'group' must be a group in 'order'"), 3)
+  end
+  if spec.voice_tag ~= nil and type(spec.voice_tag) ~= "string" then
+    error(format(bad, "'voice_tag' must be a string"), 3)
+  end
+  for list, kind in pairs { frames = "string", thresholds = "number" } do
+    local items = spec[list]
+    if type(items) ~= "table" then
+      error(format(bad, "'" .. list .. "' must be a list"), 3)
+    end
+    for i = 1, #items do
+      if type(items[i]) ~= kind then
+        error(format(bad, "'" .. list .. "' item #" .. i .. " is not a " .. kind), 3)
+      end
+    end
+  end
+  return spec
+end
 
 function layered(name, definition)
   if type(name) ~= "string" then
@@ -975,7 +1150,8 @@ function layered(name, definition)
     request.groups[i] = layered_group(group, definition[group])
   end
   for key in pairs(definition) do
-    if not listed[key] and key ~= "order" and key ~= "default" and key ~= "crossfade" then
+    if not listed[key] and key ~= "order" and key ~= "default" and key ~= "crossfade"
+       and key ~= "lip_sync" then
       error(format("bad option '%s' to 'layered' (not a group in 'order')", tostring(key)), 2)
     end
   end
@@ -1001,6 +1177,9 @@ function layered(name, definition)
       local n = #request.default
       request.default[n + 1], request.default[n + 2] = group, value
     end
+  end
+  if definition.lip_sync ~= nil then
+    request.lip_sync = lip_sync_request(definition.lip_sync, listed)
   end
   local problem = engine.layered(name, request)
   if problem then
@@ -1234,6 +1413,105 @@ string.dump = nil
 
 -- Globals the engine owns: scripts read them but cannot replace them.
 local persistent = {}
+)lua" R"lua(
+-- Pause, NVL mode and the gallery (docs/SPEC.md sections 7, 8 and 15).
+-- pause(seconds) blocks like `wait`: a step that a click or skip mode ends, and a replay does not
+-- wait for.
+function pause(seconds)
+  if type(seconds) ~= "number" then
+    bad_argument("pause", 1, "number", seconds)
+  end
+  if not (seconds >= 0 and seconds <= 86400) then
+    error("bad argument #1 to 'pause' (a number of seconds from 0 to 86400 expected)", 2)
+  end
+  require_label("pause")
+  engine.wait("@pause", seconds)
+end
+
+-- The NVL page is store.__nvl = { on = bool, { speaker =, text =, color = }, ... }. Being in
+-- `store`, it is in snapshots and saves, and a replay builds it again. A line is NVL in NVL mode
+-- and for a character of kind "nvl"; it joins the page, and the engine gets the page with the
+-- request. A menu (no text) gets the page in NVL mode. Everything else gets nil.
+nvl_page = function(kind, speaker, text, color)
+  local page = rawget(store, "__nvl")
+  local on = page ~= nil and page.on
+  if text == nil then
+    return on and page or nil
+  end
+  if kind ~= "nvl" and not on then
+    return nil
+  end
+  if page == nil then
+    page = { on = false }
+    rawset(store, "__nvl", page)
+  end
+  page[#page + 1] = { speaker = speaker or "", text = text, color = color }
+  return page
+end
+
+-- nvl(true) shows the lines that follow on the NVL screen; nvl(false) goes back to the say box
+-- and empties the page.
+function nvl(on)
+  if type(on) ~= "boolean" then
+    bad_argument("nvl", 1, "boolean", on)
+  end
+  require_label("nvl")
+  local page = rawget(store, "__nvl")
+  if not on then
+    rawset(store, "__nvl", nil)
+  elseif page == nil then
+    rawset(store, "__nvl", { on = true })
+  else
+    page.on = true
+  end
+end
+
+-- Empties the page: the next line starts a new screen.
+function nvl_clear()
+  require_label("nvl_clear")
+  local page = rawget(store, "__nvl")
+  if page ~= nil then
+    rawset(store, "__nvl", { on = page.on })
+  end
+end
+
+-- persistent.unlocks["kind/name"] = true. Showing a gallery image unlocks "cg/<image>". A replay
+-- writes it again, which is harmless.
+local function unlock_key(fname, kind, name)
+  if type(kind) ~= "string" then
+    bad_argument(fname, 1, "string", kind, 1)
+  end
+  if type(name) ~= "string" then
+    bad_argument(fname, 2, "string", name, 1)
+  end
+  return kind .. "/" .. name
+end
+function unlock(kind, name)
+  local key = unlock_key("unlock", kind, name)
+  local unlocks = rawget(persistent, "unlocks")
+  if type(unlocks) ~= "table" then
+    unlocks = {}
+    persistent.unlocks = unlocks
+  end
+  unlocks[key] = true
+end
+function unlocked(kind, name)
+  local key = unlock_key("unlocked", kind, name)
+  local unlocks = rawget(persistent, "unlocks")
+  return type(unlocks) == "table" and unlocks[key] == true
+end
+local gallery_set, gallery_unpack = {}, table.unpack
+for _, name in ipairs(engine.gallery) do
+  gallery_set[name] = true
+end
+note_shown = function(image)
+  if gallery_set[image] then
+    unlock("cg", image)
+  end
+end
+function gallery_images()
+  return { gallery_unpack(engine.gallery) }
+end
 )lua" R"lua(
 -- Preferences, bindings and the bridge the engine calls (docs/SPEC.md sections 15 and 17).
 -- `prefs` keeps what the player changed in persistent.prefs; a value never set reads as its
@@ -1694,6 +1972,21 @@ void read_layered(const sol::table& table, LayeredRequest& request) {
   if (const auto defaults = table.get<sol::optional<sol::table>>("default")) {
     request.defaults = read_pairs(*defaults);
   }
+  if (const auto sync = table.get<sol::optional<sol::table>>("lip_sync")) {
+    LayeredRequest::LipSync& lip = request.lip_sync.emplace();
+    lip.group = sync->get_or<std::string>("group", "");
+    lip.voice_tag = sync->get_or<std::string>("voice_tag", "");
+    if (const auto frames = sync->get<sol::optional<sol::table>>("frames")) {
+      for (std::size_t i = 1; i <= frames->size(); ++i) {
+        lip.frames.push_back(frames->get_or<std::string>(i, ""));
+      }
+    }
+    if (const auto thresholds = sync->get<sol::optional<sol::table>>("thresholds")) {
+      for (std::size_t i = 1; i <= thresholds->size(); ++i) {
+        lip.thresholds.push_back(thresholds->get<sol::optional<double>>(i).value_or(0.0));
+      }
+    }
+  }
 }
 
 // Copies the definition table that the prelude's `animation` built into `request`.
@@ -1769,6 +2062,10 @@ class ScriptRuntime::Impl {
   }
   [[nodiscard]] std::vector<PlaybackRequest> take_playback_requests() {
     return std::exchange(playback_requests_, {});
+  }
+  [[nodiscard]] EvalResult eval(std::string_view code);
+  void set_observer(ScriptObserver* observer) {
+    observer_ = observer != nullptr ? observer : &null_observer();
   }
   [[nodiscard]] ScreenValue binding(std::string_view table, std::string_view key);
   [[nodiscard]] std::string set_binding(std::string_view table, std::string_view key,
@@ -1929,6 +2226,7 @@ class ScriptRuntime::Impl {
   std::uint32_t hook_period_ = 0;
   BlockingRequest request_;
   ScreenNodeDef staged_screen_;  // the tree stage_screen read, for show_screen or call_screen
+  std::optional<NvlPage> staged_nvl_;  // the page stage_nvl read, for the next say, narrate or menu
   std::string error_;
   bool replaying_ = false;
   Replay replay_;
@@ -2004,8 +2302,29 @@ void ScriptRuntime::Impl::bind_engine() {
   engine_ = lua_.create_table();
   engine_["canvas_width"] = options_.canvas_width;
   engine_["canvas_height"] = options_.canvas_height;
+  sol::table gallery = lua_.create_table();
+  for (std::size_t i = 0; i < options_.gallery.size(); ++i) {
+    gallery[i + 1] = options_.gallery[i];
+  }
+  engine_["gallery"] = gallery;
   engine_["in_label"] = [this](sol::this_state state) { return in_label(state); };
   engine_["has_label"] = [this](const std::string& name) { return has_label(name); };
+  // Compiles styles/<name>.lua for theme(): returns the chunk as a function, or why it cannot.
+  engine_["load_theme"] = [this](sol::this_state state, const std::string& name) -> sol::object {
+    const MemoryLimitScope unlimited{allocator_, false};
+    const std::string path = "styles/" + name + ".lua";
+    const std::optional<std::vector<std::byte>> bytes = vfs_->read(path);
+    if (!bytes) {
+      return sol::make_object(state, "unknown theme '" + name + "' (no file " + path + ")");
+    }
+    sol::load_result chunk = lua_.load(to_string(*bytes), "@" + path, sol::load_mode::text);
+    if (!chunk.valid()) {
+      const sol::error error = chunk;
+      return sol::make_object(state, std::string{error.what()});
+    }
+    sol::protected_function function = chunk;
+    return sol::make_object(state, function);
+  };
   // Primitives that create Lua values do so inside an unlimited scope and
   // return them as references, so the push back to Lua cannot run out of
   // memory either.
@@ -2057,18 +2376,44 @@ void ScriptRuntime::Impl::bind_engine() {
     if (color) {
       rgb = static_cast<std::uint32_t>(*color);
     }
+    // The voice call before this line plays for this character: lip sync follows the tag.
+    if (options_.audio != nullptr && !replaying_ && !pending_voice_.empty() &&
+        !voice_tag.empty()) {
+      options_.audio->tag_voice(voice_tag);
+    }
     yield_at(state,
              SayRequest{.speaker = speaker, .text = text, .color = rgb, .voice_tag = voice_tag,
-                         .auto_multiplier = auto_multiplier});
+                         .auto_multiplier = auto_multiplier,
+                         .nvl = std::exchange(staged_nvl_, std::nullopt)});
   });
   engine_["narrate"] = sol::yielding([this](sol::this_state state, const std::string& text) {
-    yield_at(state, NarrateRequest{.text = text});
+    yield_at(state, NarrateRequest{.text = text, .nvl = std::exchange(staged_nvl_, std::nullopt)});
   });
+  // The prelude stages the NVL page (nil outside NVL) just before each say, narrate and menu.
+  engine_["stage_nvl"] = [this](const sol::object& page) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    staged_nvl_.reset();
+    if (page.get_type() != sol::type::table) {
+      return;
+    }
+    const sol::table lines = page.as<sol::table>();
+    NvlPage staged;
+    for (std::size_t i = 1; i <= lines.size(); ++i) {
+      const sol::table line = lines.raw_get<sol::table>(i);
+      NvlLine added{.speaker = line.raw_get<sol::optional<std::string>>("speaker").value_or(""),
+                    .text = line.raw_get<sol::optional<std::string>>("text").value_or("")};
+      if (const auto color = line.raw_get<sol::optional<std::int64_t>>("color")) {
+        added.color = static_cast<std::uint32_t>(*color);
+      }
+      staged.push_back(std::move(added));
+    }
+    staged_nvl_ = std::move(staged);
+  };
   // The prelude checked that `options` is a list of strings. A stack_table
   // makes no registry reference, so nothing here can raise a Lua error.
   engine_["menu"] = sol::yielding([this](sol::this_state state, const sol::stack_table& options,
                                          bool fixed) {
-    MenuRequest request{.fixed = fixed};
+    MenuRequest request{.fixed = fixed, .nvl = std::exchange(staged_nvl_, std::nullopt)};
     const std::size_t count = options.size();
     request.options.reserve(count);
     for (std::size_t i = 1; i <= count; ++i) {
@@ -2270,9 +2615,10 @@ void ScriptRuntime::Impl::bind_engine() {
                                             .duration = duration,
                                             .replaying = replaying_ || still}));
   };
-  engine_["wait"] = sol::yielding([this](sol::this_state state, const std::string& tag) {
-    yield_at(state, WaitRequest{.tag = tag});
-  });
+  engine_["wait"] = sol::yielding(
+      [this](sol::this_state state, const std::string& tag, std::optional<double> seconds) {
+        yield_at(state, WaitRequest{.tag = tag, .seconds = seconds.value_or(0)});
+      });
   // The check reads the file, so a replay (a load, a rollback) does not repeat it.
   engine_["movie_check"] = [this, problem_or_nil](sol::this_state state, const std::string& path) {
     const MemoryLimitScope unlimited{allocator_, false};
@@ -3171,6 +3517,73 @@ void CompositeSceneState::restore(std::span<const std::byte> state) {
   }
 }
 
+
+namespace {
+
+// Most entries of a table that the REPL prints.
+constexpr int kReplTableEntries = 16;
+
+// A value as the REPL prints it. A table is listed one level deep.
+std::string describe(const sol::state_view& lua, const sol::object& value, int depth) {
+  switch (value.get_type()) {
+    case sol::type::lua_nil:
+      return "nil";
+    case sol::type::string: {
+      const auto text = value.as<std::string>();
+      return depth == 0 ? text : '"' + text + '"';
+    }
+    case sol::type::table: {
+      if (depth > 0) {
+        return "{...}";
+      }
+      std::string text = "{";
+      int count = 0;
+      value.as<sol::table>().for_each([&](const sol::object& key, const sol::object& entry) {
+        if (++count > kReplTableEntries) {
+          return;
+        }
+        text += count == 1 ? "" : ", ";
+        text += key.get_type() == sol::type::string ? key.as<std::string>()
+                                                    : '[' + describe(lua, key, 1) + ']';
+        text += " = " + describe(lua, entry, depth + 1);
+      });
+      return text + (count > kReplTableEntries ? ", ...}" : "}");
+    }
+    default: {
+      const sol::protected_function to_string = lua["tostring"];
+      const sol::protected_function_result result = to_string(value);
+      return result.valid() && result.get_type() == sol::type::string ? result.get<std::string>()
+                                                                      : "(value)";
+    }
+  }
+}
+
+}  // namespace
+
+EvalResult ScriptRuntime::Impl::eval(std::string_view code) {
+  reset_instruction_budget();
+  const MemoryLimitScope limited{allocator_, true};
+  sol::load_result chunk = lua_.load("return " + std::string{code}, "=repl", sol::load_mode::text);
+  if (!chunk.valid()) {
+    chunk = lua_.load(code, "=repl", sol::load_mode::text);
+  }
+  if (!chunk.valid()) {
+    return {.ok = false, .text = chunk.get<sol::error>().what()};
+  }
+  const sol::protected_function function = chunk;
+  const sol::protected_function_result result = function();
+  if (!result.valid()) {
+    return {.ok = false, .text = error_text(result)};
+  }
+  const MemoryLimitScope unlimited{allocator_, false};
+  EvalResult evaluated{.ok = true};
+  for (const auto& value : result) {
+    evaluated.text += evaluated.text.empty() ? "" : "\t";
+    evaluated.text += describe(lua_, value.get<sol::object>(), 0);
+  }
+  return evaluated;
+}
+
 ScriptRuntime::ScriptRuntime(const Vfs& vfs, ScriptRuntimeOptions options)
     : impl_(std::make_unique<Impl>(vfs, options)) {}
 
@@ -3227,5 +3640,7 @@ RunState ScriptRuntime::state() const { return impl_->state(); }
 const BlockingRequest* ScriptRuntime::request() const { return impl_->request(); }
 ScriptPosition ScriptRuntime::position() const { return impl_->position(); }
 const std::string& ScriptRuntime::error() const { return impl_->error(); }
+EvalResult ScriptRuntime::eval(std::string_view code) { return impl_->eval(code); }
+void ScriptRuntime::set_observer(ScriptObserver* observer) { impl_->set_observer(observer); }
 
 }  // namespace vnmaki

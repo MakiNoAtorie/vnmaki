@@ -1,6 +1,7 @@
 # Audio module (ticket 16): decoders, the channel mixer and the output device (docs/SPEC.md
 # section 14).
-target_sources(vnmaki_engine PRIVATE audio.cpp audio.hpp audio_decoder.cpp audio_decoder.hpp)
+target_sources(vnmaki_engine PRIVATE audio.cpp audio.hpp audio_decoder.cpp audio_decoder.hpp
+                                  voice_level.hpp)
 
 # miniaudio is one header: the device, the FLAC and WAV decoders and the sample-rate converter.
 # vcpkg installs it at the top of its include directory, Debian under miniaudio/.

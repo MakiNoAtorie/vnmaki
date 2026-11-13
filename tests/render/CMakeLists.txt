@@ -30,3 +30,8 @@ endif()
 # driver set VNMAKI_REQUIRE_GPU=1 so a broken driver setup fails instead of skipping.
 doctest_discover_tests(vnmaki_render_tests TEST_PREFIX "unit." PROPERTIES ENVIRONMENT
                        "${vnmaki_render_test_env}" SKIP_REGULAR_EXPRESSION "VNMAKI_SKIP:")
+
+# The dev overlay draws one headless frame (ticket 30). Only in builds with the tools.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_render_tests PRIVATE overlay_render_test.cpp)
+endif()

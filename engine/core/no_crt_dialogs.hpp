@@ -11,7 +11,7 @@ namespace vnmaki {
 inline void disable_crt_dialogs() {
 #if defined(_MSC_VER)
   _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
-  for (const int type : {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT}) {
+  for ([[maybe_unused]] const int type : {_CRT_WARN, _CRT_ERROR, _CRT_ASSERT}) {
     _CrtSetReportMode(type, _CRTDBG_MODE_FILE);
     _CrtSetReportFile(type, _CRTDBG_FILE_STDERR);
   }

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "engine/audio/audio_decoder.hpp"
+#include "engine/audio/voice_level.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/video/movie_audio.hpp"
 
@@ -90,9 +91,16 @@ struct AudioChannelState {
 /// A movie's audio (MovieAudio) is an Ogg Opus file that plays on the `movie` channel in place of
 /// the movie there. It is not state: restore() stops it, like a sound.
 ///
+/// The runtime gives the voice that plays a tag (tag_voice, from the `voice_tag` of the character
+/// that says the line). voice_level(tag) is the loudness of the samples that the mixer consumed
+/// last, with any output including the null device. It is not state: restore() stops the voice.
+///
 /// Call the commands, update() and restore() from one thread. With a device, mixing runs on the
 /// device's thread; the state queries may be called from any thread.
-class Audio final : public SceneState, public AudioCommands, public MovieAudio {
+class Audio final : public SceneState,
+                    public AudioCommands,
+                    public MovieAudio,
+                    public VoiceLevel {
  public:
   /// `vfs` must outlive this. Throws AudioError when the output device cannot be opened, and
   /// for any output but kManual in a build without threads (see device_supported()).
@@ -110,6 +118,8 @@ class Audio final : public SceneState, public AudioCommands, public MovieAudio {
   [[nodiscard]] std::string sound(const SoundRequest& request) override;
   /// Also how a backlog entry plays its voice again: `name` is what the script passed.
   [[nodiscard]] std::string voice(std::string_view name) override;
+  void tag_voice(std::string_view tag) override;
+  [[nodiscard]] std::optional<double> voice_level(std::string_view tag) const override;
   [[nodiscard]] std::string stop(std::string_view channel_name, double fade) override;
   [[nodiscard]] std::string volume(std::string_view channel_name, double level) override;
 

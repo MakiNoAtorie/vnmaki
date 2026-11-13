@@ -25,11 +25,21 @@ enum class NodeKind : std::uint8_t {
   kButton,
   kToggle,
   kSlider,
-  kBar
+  kBar,
+  kInput
 };
 
 /// What a node is to assistive technology (docs/SPEC.md section 17).
-enum class NodeRole : std::uint8_t { kGroup, kText, kImage, kButton, kToggle, kSlider, kProgress };
+enum class NodeRole : std::uint8_t {
+  kGroup,
+  kText,
+  kImage,
+  kButton,
+  kToggle,
+  kSlider,
+  kProgress,
+  kTextInput
+};
 
 /// Where children sit across the main axis' perpendicular, and along it.
 enum class Align : std::uint8_t { kStretch, kStart, kCenter, kEnd };
@@ -51,6 +61,9 @@ inline constexpr float kToggleMarkEm = 1.5F;
 /// The text size of a node that has none, in virtual pixels.
 inline constexpr float kDefaultTextSize = 28;
 
+/// The most characters an input takes when the script gives no `max_length`.
+inline constexpr std::size_t kDefaultInputLength = 256;
+
 /// All lengths are virtual pixels.
 struct UiStyle {
   std::optional<float> width{};
@@ -69,8 +82,21 @@ struct UiStyle {
   std::optional<Color> background{};
   /// The fill of a focused or hovered button instead of `background`.
   std::optional<Color> focus_background{};
+  /// The fill of a hovered node instead of `background` (a focused node uses `focus_background`).
+  std::optional<Color> hover_background{};
   /// The colour of text and button captions.
   Color color = kWhite;
+  /// The colour of the caption of a focused or hovered node instead of `color`.
+  std::optional<Color> focus_color{};
+  std::optional<Color> hover_color{};
+  /// A frame of `border_width` inside the node's rectangle. `border_color` is the colour of it
+  /// (unset: `color`); a focused or hovered node can have another.
+  float border_width = 0;
+  std::optional<Color> border_color{};
+  std::optional<Color> focus_border_color{};
+  std::optional<Color> hover_border_color{};
+  /// A family of the renderer's FontSet; empty is the base family.
+  std::string font{};
   /// The filled part of a slider or bar, and the mark of a checked toggle.
   Color fill = kWhite;
   float text_size = kDefaultTextSize;
@@ -115,6 +141,10 @@ struct UiNode {
   std::optional<NodeBinding> bind{};
   /// A toggle is on.
   bool checked = false;
+  /// An input shows `text` (the string it edits), or `placeholder` in a dim colour while `text`
+  /// is empty. It takes at most `max_length` characters (Unicode code points).
+  std::string placeholder{};
+  std::size_t max_length = kDefaultInputLength;
   /// A slider's or bar's value, from `min` to `max`. A slider moves by `step` for a key press
   /// (0: a twentieth of the range).
   double value = 0;
@@ -129,7 +159,10 @@ struct UiNode {
 /// A node of `kind` with the role that fits it.
 [[nodiscard]] UiNode make_node(NodeKind kind);
 
-/// Whether a button, toggle or slider can take the focus.
+/// Whether a button, toggle, slider or input can take the focus.
 [[nodiscard]] bool is_focusable(const UiNode& node);
+
+/// What a node draws and measures as text: its `text`, or the placeholder of an empty input.
+[[nodiscard]] const std::string& display_text(const UiNode& node);
 
 }  // namespace vnmaki

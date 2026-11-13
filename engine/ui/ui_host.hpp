@@ -8,7 +8,8 @@
 // root has `modal = true`) takes the keyboard and gamepad and swallows pointer clicks; other
 // screens take the pointer only, so a quick menu cannot steal the keys that advance the dialogue.
 // The player can still reach a non-modal screen with the keyboard: Tab or the gamepad's west
-// button gives it the keys until Esc or the east button takes them back.
+// button gives it the keys until Esc or the east button takes them back. A click on an input gives
+// its screen the keys too.
 
 #include <cstddef>
 #include <optional>
@@ -19,6 +20,7 @@
 
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
+#include "engine/platform/platform.hpp"
 #include "engine/platform/viewport.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/ui/ui_layout.hpp"
@@ -51,12 +53,20 @@ class UiHost final : public ScreenCommands {
   /// the host; null unsets it.
   void set_bindings(ScriptRuntime* runtime) { bindings_ = runtime; }
   [[nodiscard]] Size canvas() const { return canvas_; }
+  /// The platform whose text input the host turns on while an input has the keys, and off
+  /// otherwise (docs/SPEC.md section 17). `platform` must outlive the host; null unsets it.
+  void set_platform(Platform* platform);
+  /// Whether an input has the keys now: the keyboard screen's focused node is an enabled input.
+  /// Then typed text, Backspace and every other key go to the input, and the story window must
+  /// not use them (the keys A, S and L).
+  [[nodiscard]] bool wants_text_input();
 
   /// ScreenCommands, for the scripts' `show_screen` and `hide_screen`: builds the tree with
   /// build_ui_tree() and shows it, not modal. Returns why it cannot, or an empty string.
   [[nodiscard]] std::string check_screen(std::string_view name,
                                          const ScreenNodeDef& screen) override;
-  [[nodiscard]] std::string show_screen(std::string_view name, const ScreenNodeDef& screen) override;
+  [[nodiscard]] std::string show_screen(std::string_view name,
+                                        const ScreenNodeDef& screen) override;
   void hide_screen(std::string_view name) override;
 
   /// Shows `root` as screen `name` on top. A modal screen focuses its first button.
@@ -78,6 +88,10 @@ class UiHost final : public ScreenCommands {
   /// arrow keys and the d-pad move the focus; Enter, Space and the south gamepad button activate
   /// the focused button or toggle; Left and Right move the focused slider. Esc and the east
   /// button give the root's `cancel` value, or take the keys back from a non-modal screen.
+  /// While an input has the keys, a TextInputEvent adds its text at the end (up to `max_length`
+  /// characters) and Backspace removes the last character; Enter gives the input's `returns`;
+  /// Tab, the arrow keys and Esc work as always; other keys are consumed and do nothing. Moving
+  /// the pointer does not take the focus from an input; a click does.
   [[nodiscard]] UiEventResult handle_event(const InputEvent& event, const Viewport& viewport);
 
  private:
@@ -89,6 +103,10 @@ class UiHost final : public ScreenCommands {
 
   void ensure_layout();
   void refresh_bindings();
+  [[nodiscard]] UiEventResult dispatch_event(const InputEvent& event, const Viewport& viewport);
+  [[nodiscard]] UiNode* focused_input();
+  [[nodiscard]] UiEventResult text_event(const TextInputEvent& typed);
+  void sync_text_input();
   void write_value(UiNode& node, ScreenValue value);
   void set_slider(UiNode& node, double value);
   void drag_slider(PointF point);
@@ -100,6 +118,8 @@ class UiHost final : public ScreenCommands {
 
   Size canvas_;
   ScriptRuntime* bindings_ = nullptr;
+  Platform* platform_ = nullptr;
+  bool text_input_on_ = false;
   // The non-modal screen the player gave the keyboard to (Tab); empty for none.
   std::string captured_;
   // A slider the pointer drags: its screen and its place among the screen's focusable nodes.

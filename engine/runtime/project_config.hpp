@@ -9,6 +9,8 @@
 //                                 # default ["en"]
 //   auto_save = ["label", "menu"] # when to auto save (engine/saves): at the first line of
 //                                 # each label, at each menu; default [] (never)
+//   gallery = ["cg/beach"]        # image names (as for `show`) of the gallery; showing one
+//                                 # unlocks it (`unlock("cg", name)`); default []
 //   rollback_depth = 100          # how many steps the player can roll back; 0 turns rollback
 //                                 # off; default 100 (kDefaultRollbackDepth)
 //   backlog_length = 100          # how many lines the backlog shows at most, 0 to 10000; it
@@ -57,6 +59,7 @@ struct ProjectConfig {
   /// `languages`. Load the fonts into FontSet::fallbacks (engine/text/text.hpp).
   std::map<std::string, std::vector<std::string>> font_fallbacks;
   std::vector<AutoSaveEvent> auto_save{};
+  std::vector<std::string> gallery{};
   std::size_t rollback_depth = kDefaultRollbackDepth;
   std::size_t backlog_length = kDefaultBacklogLength;
 };

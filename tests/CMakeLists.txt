@@ -112,6 +112,12 @@ vnmaki_add_fixture_generator(
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_render_tests)
 
+# Lip sync: the voice level of the audio and the mouth of a layered sprite (ticket 26).
+target_sources(vnmaki_unit_tests PRIVATE unit/lipsync_test.cpp)
+vnmaki_add_fixture_generator(
+  lipsync SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/lipsync_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
 # Audio: decoders, mixer state, script commands, snapshots (ticket 16).
 target_sources(vnmaki_unit_tests PRIVATE unit/audio_decoder_test.cpp unit/audio_test.cpp)
 vnmaki_add_fixture_generator(
@@ -124,6 +130,9 @@ target_sources(vnmaki_unit_tests PRIVATE unit/character_test.cpp
 
 # UI: nodes, Yoga layout, focus, the screen host, menus and call_screen (ticket 10).
 target_sources(vnmaki_unit_tests PRIVATE unit/ui_test.cpp)
+
+# UI styles, themes and the `input` node (ticket 30a).
+target_sources(vnmaki_unit_tests PRIVATE unit/styles_test.cpp)
 
 # Saves: file format, slots, quick save, auto save, on_load (ticket 12).
 target_sources(vnmaki_unit_tests PRIVATE unit/saves_test.cpp)
@@ -164,3 +173,11 @@ vnmaki_add_fixture_generator(
 target_sources(vnmaki_unit_tests PRIVATE unit/video_test.cpp)
 target_compile_definitions(
   vnmaki_unit_tests PRIVATE VNMAKI_VIDEO_FIXTURES_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/video")
+
+# pause, NVL mode and the gallery (ticket 29).
+target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)
+
+# Dev tools: the REPL and the log buffer (ticket 30). They exist only in builds with the tools.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp)
+endif()

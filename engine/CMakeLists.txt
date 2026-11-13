@@ -24,3 +24,12 @@ add_subdirectory(tools)
 add_subdirectory(ui)
 add_subdirectory(audio)
 add_subdirectory(video)
+
+# Dev tools: the overlay in engine/tools/ is compiled only for them (engine/tools/CMakeLists.txt).
+# `#if VNMAKI_DEV_TOOLS` guards the callers (cli/story_window.cpp). The scan and the graph there
+# build in every preset.
+if(VNMAKI_DEV_TOOLS)
+  target_compile_definitions(vnmaki_engine PUBLIC VNMAKI_DEV_TOOLS=1)
+else()
+  target_compile_definitions(vnmaki_engine PUBLIC VNMAKI_DEV_TOOLS=0)
+endif()

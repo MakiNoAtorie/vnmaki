@@ -10,9 +10,9 @@
 #include <optional>
 #include <string>
 
-namespace vnmaki {
+#include "engine/runtime/script_runtime.hpp"
 
-class ScriptRuntime;
+namespace vnmaki {
 
 /// The typewriter speed unless the caller sets one.
 inline constexpr double kDefaultCharactersPerSecond = 40;
@@ -25,6 +25,8 @@ struct DialogueLine {
   std::string text{};
   /// Scales the per-character part of the auto-advance delay (`character { auto_multiplier }`).
   double auto_multiplier = 1;
+  /// Set for a line on the NVL screen: the page, with this line last. The say box is not shown.
+  std::optional<NvlPage> nvl{};
 
   friend bool operator==(const DialogueLine&, const DialogueLine&) = default;
 };

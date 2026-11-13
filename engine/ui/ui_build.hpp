@@ -3,6 +3,7 @@
 // Builds UI trees: from the nodes a script wrote (ScreenNodeDef) and for the screens the engine
 // makes itself (the choice menu).
 
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -25,16 +26,24 @@ class UiBuildError : public std::runtime_error {
 ///               negative); align ("stretch", "start", "center", "end"); justify ("start",
 ///               "center", "end", "space_between"); x and y (numbers: the node leaves the flow
 ///               and sits at that offset in its parent); bg (colour); color (colour of text);
-///               size (text size); label (what a screen reader says, instead of the text)
+///               size (text size); label (what a screen reader says, instead of the text);
+///               font (a family of the FontSet); border_width (length) and border_color
+///               (colour; unset: `color`); hover_bg, hover_color, hover_border (colours)
 ///   text        markup (boolean: the text has text tags), reveal (boolean: the typewriter
 ///               shows this node's glyphs one by one; see SayBoxView)
 ///   button      returns (what the screen returns when the button is activated; unset, the button
-///               does nothing), focus_bg (colour), disabled (boolean)
+///               does nothing), focus_bg, focus_color, focus_border (colours), disabled (boolean)
 ///   toggle      a caption like a button, and bind_table and bind_key (what the script's
 ///               bind(table, key) gives), checked (boolean; the start state of an unbound
 ///               toggle), focus_bg, disabled
 ///   slider      bind_table and bind_key, min and max (numbers, min below max; default 0 and
-///               1), value (the start value of an unbound slider), step (number above 0), focus_bg, disabled
+///               1), value (the start value of an unbound slider), step (number above 0), focus_bg,
+///               disabled
+///   input       a string field that the player edits: the string is the start text of an unbound
+///               input; bind_table and bind_key (a string datum), placeholder (string shown while
+///               the text is empty), max_length (whole number from 1 to 4096; default 256, in
+///               characters), returns (what Enter hands to the screen), focus_bg, focus_color,
+///               focus_border, disabled
 ///   bar         bind_table, bind_key, min, max and value: a slider the player cannot change
 ///   grid        columns (a whole number from 1 to 64, required): the children go left to right,
 ///               top to bottom; the cells keep their own sizes
@@ -48,5 +57,12 @@ class UiBuildError : public std::runtime_error {
 /// The choice menu of a `menu { ... }`: the options as buttons in a column in the middle of the
 /// canvas. Button i returns the integer i + 1, the number `menu` gives back.
 [[nodiscard]] UiNode make_menu_screen(const std::vector<std::string>& options, Size canvas);
+
+/// The arguments of the Lua screen `nvl`: the props `lines` (how many page lines come first) and
+/// `typing` (the last line is the one on the typewriter: its text node has `reveal`), then one
+/// child for each page line (`speaker`, `text`, `color` as "#rrggbb" if it has one) and one for
+/// each menu option (`text`). The option at place i of `options` returns i + 1.
+[[nodiscard]] ScreenNodeDef make_nvl_args(const NvlPage& page, bool typing,
+                                          std::span<const std::string> options = {});
 
 }  // namespace vnmaki

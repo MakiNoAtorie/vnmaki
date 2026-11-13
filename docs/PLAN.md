@@ -109,31 +109,31 @@ This task is the Phase 2 acceptance demo.
 - [x] End-to-end headless test on the three CI platforms: new, both branches, save, load, rollback.
 - [x] "Getting started" document for `new` and `run`.
 
-### Order for 29–31
+### Order for 29a–29c
 
-Do 29, 30a and 31 in parallel after 19. They do not share files, except `script_runtime.cpp` prelude literals (add new code in a new literal).
+Do 29a, 29b and 29c in parallel after 19. They do not share files, except `script_runtime.cpp` prelude literals (add new code in a new literal).
 
-### 29: `pause`, NVL mode and gallery (SPEC §7, §8, §15)
+### 29a: `pause`, NVL mode and gallery (SPEC §7, §8, §15)
 
 Files: `engine/runtime/`, `engine/dialogue/`, `engine/runtime/default_screens.cpp`, `engine/saves/` (unlocks in `persistent`).
 
-- [ ] `pause(seconds)` is a step. A click or skip mode ends it. Replay does not wait. Rollback goes over it like over a `wait`.
-- [ ] `nvl(true|false)` and `character{ kind = "nvl" }` show lines in a full-screen NVL screen. `nvl_clear()` empties it. Menus in NVL mode show inside the NVL screen. The backlog is the same.
-- [ ] The NVL page is in the snapshot, so load and rollback show the same page.
-- [ ] `unlock(kind, name)` writes to `persistent.unlocks`. Images shown with `show`/`scene` unlock `cg/<name>` when `project.toml` lists `gallery = [...]`.
-- [ ] The gallery screen shows a grid of unlocked images and a locked placeholder for the others. Mouse, keyboard and gamepad work.
-- [ ] Headless tests: pause and skip, NVL page across rollback and load, unlock after `show`, gallery grid state.
+- [x] `pause(seconds)` is a step. A click or skip mode ends it. Replay does not wait. Rollback goes over it like over a `wait`.
+- [x] `nvl(true|false)` and `character{ kind = "nvl" }` show lines in a full-screen NVL screen. `nvl_clear()` empties it. Menus in NVL mode show inside the NVL screen. The backlog is the same.
+- [x] The NVL page is in the snapshot, so load and rollback show the same page.
+- [x] `unlock(kind, name)` writes to `persistent.unlocks`. Images shown with `show`/`scene` unlock `cg/<name>` when `project.toml` lists `gallery = [...]`.
+- [x] The gallery screen shows a grid of unlocked images and a locked placeholder for the others. Mouse, keyboard and gamepad work.
+- [x] Headless tests: pause and skip, NVL page across rollback and load, unlock after `show`, gallery grid state.
 
-### 30a: UI styles, themes and the `input` node (SPEC §15)
+### 29b: UI styles, themes and the `input` node (SPEC §15)
 
 Files: `engine/ui/`, `engine/runtime/` (prelude, screen nodes), `engine/runtime/default_screens.cpp`.
 
-- [ ] `style(name, { font, size, color, background, padding, gap, border, focus = {...}, hover = {...} })` declares a style. A node takes `style = "name"`. Node fields override style fields.
-- [ ] `theme("name")` loads `styles/<name>.lua` and replaces the style table. The default screens use only named styles.
-- [ ] The `input` node edits a string bound with `bind`. It turns on SDL text input only while it has the focus (see the Platform contract). It has a max length and a placeholder.
-- [ ] Headless tests: style merge order, theme switch changes node rectangles, input typing, backspace and focus loss.
+- [x] `style(name, { font, size, color, background, padding, gap, border, focus = {...}, hover = {...} })` declares a style. A node takes `style = "name"`. Node fields override style fields.
+- [x] `theme("name")` loads `styles/<name>.lua` and replaces the style table. The default screens use only named styles.
+- [x] The `input` node edits a string bound with `bind`. It turns on SDL text input only while it has the focus (see the Platform contract). It has a max length and a placeholder.
+- [x] Headless tests: style merge order, theme switch changes node rectangles, input typing, backspace and focus loss.
 
-### 31: WebP images and static analysis (SPEC §4, §5)
+### 29c: WebP images and static analysis (SPEC §4, §5)
 
 Files: `engine/render/image.cpp`, `vcpkg.json`, `fuzz/`, `.github/workflows/ci.yml`, `tools/generators/`.
 
@@ -236,11 +236,11 @@ Files: new `engine/video/`, `engine/audio/` (movie stream), `vcpkg.json`, `engin
 
 Files: `engine/audio/` (voice level), `engine/scene/layered_sprite.*`, runtime.
 
-- [ ] The audio module gives the RMS level of the voice that plays for each `voice_tag`. This also works with the null audio device.
-- [ ] `layered` accepts `lip_sync = { group = "mouth", frames = { "closed", "half", "open" }, thresholds = { 0.05, 0.2 } }`.
-- [ ] While the character's voice plays, the group shows the frame for the level. When the voice stops, the group shows the first frame.
-- [ ] Replay and skip mode play no voice, so the mouth stays closed. Lip sync state is not in the snapshot.
-- [ ] A generator writes a WAV of silence, then a tone, then silence (Python `wave`). Unit test with a fake clock: the mouth is closed, then open, then closed at the expected times.
+- [x] The audio module gives the RMS level of the voice that plays for each `voice_tag`. This also works with the null audio device.
+- [x] `layered` accepts `lip_sync = { group = "mouth", frames = { "closed", "half", "open" }, thresholds = { 0.05, 0.2 } }`.
+- [x] While the character's voice plays, the group shows the frame for the level. When the voice stops, the group shows the first frame.
+- [x] Replay and skip mode play no voice, so the mouth stays closed. Lip sync state is not in the snapshot.
+- [x] A generator writes a WAV of silence, then a tone, then silence (Python `wave`). Unit test with a fake clock: the mouth is closed, then open, then closed at the expected times.
 
 ### 27: Frame animation (SPEC §10)
 
@@ -294,12 +294,12 @@ Tasks 30, 32, 33 and 36 add one hook call each to `cli/story_window.cpp`. Tasks 
 
 Files: new `engine/tools/overlay.*`, `engine/tools/imgui_backend.cpp`, `vcpkg.json`, `CMakeLists.txt`, `cli/story_window.cpp`, `tests/platform/no_sdl_outside_platform.cmake`.
 
-- [ ] Dear ImGui (vcpkg, with the SDL3 and SDL GPU backend features). Only `imgui_backend.cpp` includes SDL. Add it to the SDL allow-list.
-- [ ] F12 shows and hides the overlay. The overlay draws in the screen-resolution pass, after the game. While it has the input focus, the game gets no input.
-- [ ] A log console shows the engine log and Lua `print`. It has filters for each level.
-- [ ] The REPL runs Lua in the script sandbox and prints the result or the error. A change to `store` stays until the next rollback or load. Document this.
-- [ ] The `release` preset builds without ImGui and without `engine/tools/`. A CLI test checks that a release `vnmaki --version` works.
-- [ ] Tests: unit tests for the REPL (result, error, sandbox), and a headless GPU smoke test that draws one overlay frame.
+- [x] Dear ImGui (vcpkg, with the SDL3 and SDL GPU backend features). Only `imgui_backend.cpp` includes SDL. Add it to the SDL allow-list.
+- [x] F12 shows and hides the overlay. The overlay draws in the screen-resolution pass, after the game. While it has the input focus, the game gets no input.
+- [x] A log console shows the engine log and Lua `print`. It has filters for each level.
+- [x] The REPL runs Lua in the script sandbox and prints the result or the error. A change to `store` stays until the next rollback or load. Document this.
+- [x] The `release` preset builds without ImGui and without `engine/tools/`. A CLI test checks that a release `vnmaki --version` works.
+- [x] Tests: unit tests for the REPL (result, error, sandbox), and a headless GPU smoke test that draws one overlay frame.
 
 ### 31: Inspectors (SPEC §18)
 

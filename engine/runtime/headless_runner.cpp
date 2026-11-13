@@ -1,6 +1,7 @@
 #include "engine/runtime/headless_runner.hpp"
 
 #include <cstddef>
+#include <format>
 #include <optional>
 #include <span>
 #include <string>
@@ -41,7 +42,11 @@ class TranscriptRecorder final : public ScriptObserver {
     } else if (const auto* screen = std::get_if<CallScreenRequest>(&request)) {
       add("screen ", screen->name);
     } else if (const auto* wait = std::get_if<WaitRequest>(&request)) {
-      result_->transcript.push_back(wait->tag.empty() ? "wait_all" : "wait " + wait->tag);
+      if (wait->tag == kPauseTag) {
+        result_->transcript.push_back(std::format("pause {}", wait->seconds));
+      } else {
+        result_->transcript.push_back(wait->tag.empty() ? "wait_all" : "wait " + wait->tag);
+      }
     } else if (const auto* movie = std::get_if<MovieRequest>(&request)) {
       add("movie ", movie->path);
     }

@@ -29,6 +29,20 @@ namespace vnmaki {
 
 class Vfs;
 
+/// One line of the NVL page (`nvl(true)`, `character { kind = "nvl" }`): who said it (empty for
+/// narration), the text with its tags, and the speaker's colour (0xRRGGBB).
+struct NvlLine {
+  std::string speaker{};
+  std::string text{};
+  std::optional<std::uint32_t> color{};
+
+  friend bool operator==(const NvlLine&, const NvlLine&) = default;
+};
+
+/// The lines on the NVL page, oldest first. The page lives in `store` (`store.__nvl`), so
+/// snapshots, saves and rollback cover it.
+using NvlPage = std::vector<NvlLine>;
+
 /// `say(who, text)`: a line spoken by a named character. `color` and `voice_tag` come from a
 /// `character { name =, color = "#rrggbb", voice_tag = }` table; a plain string speaker has
 /// neither.
@@ -41,6 +55,8 @@ struct SayRequest {
   std::string voice_tag{};
   /// `character { auto_multiplier = }`: scales the per-character part of the auto-advance delay.
   double auto_multiplier = 1;
+  /// Set for a line shown on the NVL screen: the page, with this line last.
+  std::optional<NvlPage> nvl{};
 
   friend bool operator==(const SayRequest&, const SayRequest&) = default;
 };
@@ -48,6 +64,8 @@ struct SayRequest {
 /// `narrate(text)` (or `say(nil, text)`): a line with no speaker.
 struct NarrateRequest {
   std::string text;
+  /// As SayRequest::nvl.
+  std::optional<NvlPage> nvl{};
 
   friend bool operator==(const NarrateRequest&, const NarrateRequest&) = default;
 };
@@ -58,6 +76,8 @@ struct MenuRequest {
   std::vector<std::string> options;
   /// `fixed = true`: once answered, rollback cannot go back to this menu or before it.
   bool fixed = false;
+  /// Set in NVL mode: the page so far (maybe empty). The options show inside the NVL screen.
+  std::optional<NvlPage> nvl{};
 
   friend bool operator==(const MenuRequest&, const MenuRequest&) = default;
 };
@@ -95,9 +115,15 @@ struct CallScreenRequest {
 /// is a wait too, for the tag kTransitionTag.
 struct WaitRequest {
   std::string tag{};
+  /// For kPauseTag: how long the pause takes.
+  double seconds = 0;
 
   friend bool operator==(const WaitRequest&, const WaitRequest&) = default;
 };
+
+/// The tag of the WaitRequest that `pause(seconds)` makes. Nothing tweens under it: the wait
+/// presenter ends it by time, a click or skip mode.
+inline constexpr std::string_view kPauseTag = "@pause";
 
 /// `movie(path, { skippable = true })`: the script plays the movie `path` over all layers
 /// and waits until it has played (engine/video/movie_presenter.hpp). Answered with
@@ -244,6 +270,16 @@ struct LayeredRequest {
   std::vector<Group> groups{};                                  ///< From the back to the front.
   std::vector<std::pair<std::string, std::string>> defaults{};  ///< (group, value)
   double crossfade = 0;  ///< Seconds an attribute change takes; 0 for a cut.
+
+  /// `lip_sync`: `group` shows the value in `frames` for the level of the voice with `voice_tag`
+  /// (the sprite's name if empty). A level below `thresholds[0]` is the first frame, and so on.
+  struct LipSync {
+    std::string group{};
+    std::vector<std::string> frames{};
+    std::vector<double> thresholds{};
+    std::string voice_tag{};
+  };
+  std::optional<LipSync> lip_sync{};
 };
 
 /// `animation(name, options)`: frames from `frames` (image names), or from the `columns` x `rows`
@@ -464,6 +500,9 @@ class AudioCommands {
   [[nodiscard]] virtual std::string music(const MusicRequest& request) = 0;
   [[nodiscard]] virtual std::string sound(const SoundRequest& request) = 0;
   [[nodiscard]] virtual std::string voice(std::string_view name) = 0;
+  /// Names the voice that plays now `tag`: the `voice_tag` of the character whose `say` follows a
+  /// `voice` call. Lip sync follows the level of that tag. The default does nothing.
+  virtual void tag_voice(std::string_view /*tag*/) {}
   [[nodiscard]] virtual std::string stop(std::string_view channel, double fade) = 0;
   [[nodiscard]] virtual std::string volume(std::string_view channel, double volume) = 0;
 };
@@ -621,6 +660,9 @@ struct ScriptRuntimeOptions {
   /// calls only reach the observer. Must outlive the runtime. An Audio goes here, and in
   /// `scene_state` (inside a CompositeSceneState when there is a Scene too).
   AudioCommands* audio = nullptr;
+  /// The images (names, as for `show`) of the gallery (project.toml `gallery`). Showing one with
+  /// `scene` or `show` unlocks `cg/<name>` in `persistent.unlocks`.
+  std::vector<std::string> gallery{};
   /// The virtual resolution, as the read-only global `canvas` (`canvas.width`, `canvas.height`)
   /// that screens size themselves by.
   int canvas_width = 1920;
@@ -628,6 +670,13 @@ struct ScriptRuntimeOptions {
   /// The first state of the script RNG (`rand`, `math.random`). The same seed,
   /// scripts and inputs always give the same story.
   std::uint64_t random_seed = kDefaultRandomSeed;
+};
+
+/// The outcome of ScriptRuntime::eval.
+struct EvalResult {
+  bool ok = false;
+  /// The returned values, tab-separated (empty for a statement), or the error message.
+  std::string text{};
 };
 
 /// One Lua VM running a game's scripts.
@@ -685,6 +734,13 @@ struct ScriptRuntimeOptions {
 /// volume_ambient and volume_ui (0 to 1, 1), fullscreen (false), skip_unseen (false: the skip
 /// key stops at unread text), window_opacity (0.3 to 1, 1) and reduce_motion (false). The engine
 /// applies them.
+///
+/// Pauses and NVL: `pause(seconds)` is a blocking step (a WaitRequest for kPauseTag). `nvl(true)`
+/// turns NVL mode on and `nvl(false)` off (and empties the page); `nvl_clear()` empties the page.
+/// In NVL mode, and for a `character { kind = "nvl" }`, `say` and `narrate` add their line to the
+/// page and the request carries it (SayRequest::nvl); a menu in NVL mode does too. The page is
+/// `store.__nvl`. Gallery: `unlock(kind, name)` sets `persistent.unlocks["kind/name"]`;
+/// `unlocked(kind, name)` reads it; `gallery_images()` lists ScriptRuntimeOptions::gallery.
 ///
 /// `load_scripts()` loads the engine's default screens first (engine/runtime/default_screens.cpp:
 /// title, say, choice, save, load, preferences, quick_menu, confirm, nvl, gallery), so a game
@@ -835,6 +891,14 @@ class ScriptRuntime {
   [[nodiscard]] ScriptPosition position() const;
   /// Why the runtime failed; empty unless kFailed.
   [[nodiscard]] const std::string& error() const;
+
+  /// Dev tools: runs `code` in the script sandbox, as a chunk of the REPL. Tries it as an
+  /// expression (`return <code>`) first, then as statements. A change to `store` stays until
+  /// the next rollback or load (neither is in the input log); a blocking call is an error.
+  /// Never throws; a script error is `ok == false`.
+  [[nodiscard]] EvalResult eval(std::string_view code);
+  /// Replaces the observer (null: none). Pass one that outlives the runtime or reset it first.
+  void set_observer(ScriptObserver* observer);
 
  private:
   class Impl;
