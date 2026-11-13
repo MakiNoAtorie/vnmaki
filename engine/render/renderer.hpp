@@ -208,6 +208,14 @@ class IRenderer {
     static_cast<void>(indices);
     throw RenderError{"this renderer cannot draw meshes"};
   }
+  /// Replaces the vertices of a mesh with `vertices`, which must be as many as it was made with
+  /// (the indices stay). The GPU has the new vertices at the next frame. Throws RenderError for an
+  /// unknown mesh or another count. The default throws.
+  virtual void update_mesh(MeshId mesh, std::span<const MeshVertex> vertices) {
+    static_cast<void>(mesh);
+    static_cast<void>(vertices);
+    throw RenderError{"this renderer cannot draw meshes"};
+  }
   /// Releases a mesh. Unknown ids are ignored.
   virtual void destroy_mesh(MeshId /*mesh*/) {}
 

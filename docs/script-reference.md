@@ -122,6 +122,25 @@ hide("stage")
 - Tweens and `wait` use the tag `@3d.<scene>.<name>`, where `<name>` is `camera`, a model or a light. A model has `x y z rx ry rz scale` and the uniforms of its shader, a light has `x y z r g b intensity`, and the camera has `x y z lx ly lz fov` (look-at point). They are options of `tween`, with `duration`, `delay`, `ease`, `loop` and `yoyo`, and `parallel` and `sequence` work with them. Other options (`alpha`, `crop`, ...) are an error.
 - 3D state is in saves and rollback. After a load or a rollback, loops start again, and tweens that end are at their end values.
 
+### Clips, morph targets and lip sync
+
+A model that has a skeleton, morph targets or animations plays the clips of its glTF file (a glTF animation is a clip, and its `name` is the clip's name). The engine only plays them.
+
+```lua
+model("hero", "models/hero.glb", { scene = "stage",
+                                   lip_sync = { morph = "mouth_open", voice_tag = "hero" } })
+play("@3d.stage.hero", "idle", { loop = true })
+play("@3d.stage.hero", "wave", { fade = 0.3 })
+wait("@3d.stage.hero")
+say("hero", "Hello!")
+```
+
+- `play("@3d.<scene>.<model>", clip, { loop = false, fade = 0, speed = 1, seek = 0 })` starts a clip. The tag is the one of the model's tweens. `fade` is the seconds that the new clip takes to fade in over the clip that plays (0 is a cut; the first clip fades in from the pose of the file). `speed` is a factor above 0 (up to 100), and `seek` is the seconds into the clip to start at. A clip that does not loop stops at its last frame.
+- `wait("@3d.<scene>.<model>")` waits until a clip that does not loop has ended (and finished fading in), together with the tweens of the model. A looping clip never blocks. A click or skip puts the clip at its end.
+- A mesh follows its skeleton (the first four joints of a vertex) and the weights of its morph targets, which the clips animate. Interpolation is linear, step or cubic spline, as the file says. A clip moves the joints; a mesh that is not skinned does not follow the animated transform of its node.
+- `lip_sync = { morph = "mouth_open", voice_tag = "hero" }` in `model` sets the weight of the morph target `morph` (named in the file's `targetNames`) to the loudness of the voice with `voice_tag` (0 to 1; the model's tag if you leave it out), and to 0 when that voice is silent. The weight replaces the one that a clip gives. `lip_sync = false` removes it. Give the character `voice_tag = "hero"` so that its lines play with the tag.
+- After a load or a rollback, a clip that does not loop is at its last frame, a loop starts at time 0, and the mouth is closed. A replay does the same.
+
 ## Camera, shake and parallax
 
 The camera moves the layers from `background` to `overlay`. `ui` and `transient` stay.

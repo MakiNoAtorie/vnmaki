@@ -3,6 +3,8 @@
 // The little 3D maths a scene needs (docs/SPEC.md section 12). Matrices are row-major and take
 // column vectors, as in engine/render/mesh.hpp.
 
+#include <array>
+
 #include "engine/render/mesh.hpp"
 
 namespace vnmaki {
@@ -13,12 +15,37 @@ struct Vec3 {
   float z = 0;
 };
 
+/// A rotation as a quaternion (x, y, z, w), as glTF has it. The identity is (0, 0, 0, 1).
+using Quat = std::array<float, 4>;
+inline constexpr Quat kIdentityQuat{0, 0, 0, 1};
+
 /// The distances of the camera's near and far planes.
 inline constexpr float kNearPlane = 0.1F;
 inline constexpr float kFarPlane = 1000.0F;
 /// The vertical field of view a script may give, in degrees.
 inline constexpr float kMinFov = 1.0F;
 inline constexpr float kMaxFov = 170.0F;
+
+/// The identity matrix.
+[[nodiscard]] Mat4 identity_matrix();
+
+/// Translation * rotation * scale for a node of a glTF file. `rotation` is normalized first (a
+/// zero quaternion is the identity).
+[[nodiscard]] Mat4 trs_matrix(Vec3 translation, Quat rotation, Vec3 scale);
+
+/// Splits an affine matrix into translation, rotation and scale (shear is lost). A scale of 0
+/// along an axis gives that axis a scale of 0 and no rotation of its own.
+void decompose(const Mat4& m, Vec3& translation, Quat& rotation, Vec3& scale);
+
+/// The rotation halfway `t` (0 to 1) from `a` to `b` by the short way, normalized.
+[[nodiscard]] Quat slerp(const Quat& a, const Quat& b, float t);
+
+/// `v` scaled to length 1, or the identity when its length is 0 or not finite.
+[[nodiscard]] Quat normalized(const Quat& v);
+
+/// A point (w = 1) or a direction (w = 0) times the matrix.
+[[nodiscard]] Vec3 transform_point(const Mat4& m, Vec3 v);
+[[nodiscard]] Vec3 transform_direction(const Mat4& m, Vec3 v);
 
 [[nodiscard]] Mat4 multiply(const Mat4& left, const Mat4& right);
 

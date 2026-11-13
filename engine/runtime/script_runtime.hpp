@@ -390,7 +390,8 @@ struct ShakeRequest {
 /// A point or a direction in a 3D scene (x, y, z).
 using Vec3Option = std::array<double, 3>;
 
-/// `scene3d`, `model`, `light`, `camera(scene, {...})` and `hide3d` (engine/model3d/scene3d.hpp).
+/// `scene3d`, `model`, `light`, `camera(scene, {...})`, `hide3d` and `play`
+/// (engine/model3d/scene3d.hpp).
 /// Fields the script left out are empty and keep their values; a new object starts with defaults.
 struct Scene3dRequest {
   enum class Kind : std::uint8_t {
@@ -399,6 +400,7 @@ struct Scene3dRequest {
     kLight,   ///< `light(scene, name, { kind, ... })`.
     kCamera,  ///< `camera(scene, { position, look_at, fov })`.
     kRemove,  ///< `hide3d(scene, name)`: removes a model or a light.
+    kPlay,    ///< `play("@3d.<scene>.<name>", clip, { loop, fade, speed, seek })`.
   };
 
   Kind kind = Kind::kScene;
@@ -418,6 +420,15 @@ struct Scene3dRequest {
   std::optional<double> fov{};            ///< Camera: vertical field of view in degrees.
   std::optional<std::uint32_t> color{};   ///< Light: 0xRRGGBB.
   std::optional<double> intensity{};      ///< Light.
+  std::string clip{};                     ///< Play: the clip's name.
+  bool loop = false;                      ///< Play.
+  double fade = 0;                        ///< Play: seconds of crossfade.
+  double speed = 1;                       ///< Play.
+  double seek = 0;                        ///< Play: seconds into the clip to start at.
+  /// Model: the morph target that follows the voice (`lip_sync = { morph =, voice_tag = }`), and
+  /// the tag of that voice (the model's tag if empty).
+  std::optional<std::string> lip_morph{};
+  std::string lip_voice_tag{};
   /// Set while the runtime replays: a model file is not parsed again, only checked for.
   bool replaying = false;
 };
