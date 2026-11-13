@@ -204,6 +204,7 @@ TEST_CASE("launcher: a folder with a non-ASCII name works as UTF-8 and is kept a
   REQUIRE(launcher.run(LauncherAction::kNew, folder) == 0);
   CHECK_MESSAGE(fs::is_regular_file(game / "project.toml"), launcher.log());
   CHECK(launcher.run(LauncherAction::kCheck, folder) == 0);
+  fs::remove_all(game / "shaders");  // a release build has no shader compiler to import them
   CHECK(launcher.run(LauncherAction::kBuildWindows, folder) == 0);
   CHECK(fs::is_regular_file(game / ".vnmaki" / "windows" / "game.vnpak"));
   CHECK(launcher.run(LauncherAction::kRun, folder) == 0);
