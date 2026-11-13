@@ -169,7 +169,8 @@ target_compile_definitions(
 # pause, NVL mode and the gallery (ticket 29).
 target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)
 
-# Dev tools: the REPL and the log buffer (ticket 30). They exist only in builds with the tools.
+# Dev tools: the REPL and the log buffer (ticket 30), hot reload (ticket 32). They exist only in
+# builds with the tools.
 if(VNMAKI_DEV_TOOLS)
-  target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp)
+  target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp unit/hot_reload_test.cpp)
 endif()
