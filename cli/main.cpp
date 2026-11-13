@@ -2,6 +2,7 @@
 #include <iostream>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -17,6 +18,7 @@
 #include "cli/window_command.hpp"
 #include "engine/core/no_crt_dialogs.hpp"
 #include "engine/core/version.hpp"
+#include "engine/platform/shell.hpp"
 
 namespace {
 
@@ -28,10 +30,17 @@ constexpr std::string_view usage = "usage: vnmaki --version\n";
 
 int main(int argc, char* argv[]) {
   vnmaki::disable_crt_dialogs();
-  const std::span<char*> raw_args{argv, static_cast<std::size_t>(argc)};
-  // argv[0] is the program name; argc can be 0 when exec'd with an empty argv.
-  const std::span<char*> user_args = raw_args.empty() ? raw_args : raw_args.subspan(1);
-  const std::vector<std::string_view> args(user_args.begin(), user_args.end());
+  // Arguments are UTF-8 everywhere in the engine; argv is in the ANSI code page on Windows.
+  const std::vector<std::string> utf8_line = vnmaki::command_line_utf8();
+  std::vector<std::string_view> args;
+  if (!utf8_line.empty()) {
+    args.assign(utf8_line.begin() + 1, utf8_line.end());  // [0] is the program name
+  } else {
+    // argv[0] is the program name; argc can be 0 when exec'd with an empty argv.
+    const std::span<char*> raw_args{argv, static_cast<std::size_t>(argc)};
+    const std::span<char*> user_args = raw_args.empty() ? raw_args : raw_args.subspan(1);
+    args.assign(user_args.begin(), user_args.end());
+  }
 
   if (args.size() == 1 && args.front() == "--version") {
     std::cout << "vnmaki " << vnmaki::engine_version_string() << '\n';

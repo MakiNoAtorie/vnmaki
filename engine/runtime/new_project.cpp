@@ -10,6 +10,7 @@
 #include <string_view>
 #include <system_error>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/runtime/project_config.hpp"
 
 namespace vnmaki {
@@ -43,7 +44,7 @@ std::string escaped(std::string_view text) {
 std::string read_file(const fs::path& path) {
   std::ifstream stream{path, std::ios::binary};
   if (!stream) {
-    throw NewProjectError{"cannot read " + path.string()};
+    throw NewProjectError{"cannot read " + to_utf8(path)};
   }
   return std::string{std::istreambuf_iterator<char>{stream}, std::istreambuf_iterator<char>{}};
 }
@@ -52,7 +53,7 @@ void write_file(const fs::path& path, std::string_view content) {
   std::ofstream stream{path, std::ios::binary | std::ios::trunc};
   stream.write(content.data(), static_cast<std::streamsize>(content.size()));
   if (!stream) {
-    throw NewProjectError{"cannot write " + path.string()};
+    throw NewProjectError{"cannot write " + to_utf8(path)};
   }
 }
 
@@ -76,7 +77,7 @@ void check_target(const fs::path& target_dir) {
     return;
   }
   if (!fs::is_directory(target_dir, error) || !fs::is_empty(target_dir, error)) {
-    throw NewProjectError{target_dir.string() + " is not an empty folder"};
+    throw NewProjectError{to_utf8(target_dir) + " is not an empty folder"};
   }
 }
 
@@ -87,9 +88,9 @@ std::string project_title(const fs::path& name) {
   if (!folder.has_filename()) {
     folder = folder.parent_path();
   }
-  const std::string title = folder.filename().string();
+  const std::string title = to_utf8(folder.filename());
   if (title.empty()) {
-    throw NewProjectError{"'" + name.string() + "' has no folder name to use as the title"};
+    throw NewProjectError{"'" + to_utf8(name) + "' has no folder name to use as the title"};
   }
   if (has_control_character(title)) {
     throw NewProjectError{"the name has a control character"};

@@ -1,12 +1,17 @@
 #include "engine/platform/shell.hpp"
 
+#include <exception>
+#include <string>
+#include <vector>
+
+#include "engine/core/utf8_path.hpp"
+
 #ifdef _WIN32
 #include <windows.h>
 
 #include <shellapi.h>
 
 #include <cstddef>
-#include <string>
 #endif
 
 namespace vnmaki {
@@ -50,6 +55,24 @@ std::filesystem::path executable_path() {
   }
 }
 
+std::vector<std::string> command_line_utf8() {
+  int count = 0;
+  wchar_t** const wide = CommandLineToArgvW(GetCommandLineW(), &count);
+  std::vector<std::string> args;
+  if (wide == nullptr) {
+    return args;
+  }
+  try {
+    for (int i = 0; i < count; ++i) {
+      args.push_back(to_utf8(std::filesystem::path{wide[i]}));
+    }
+  } catch (const std::exception&) {  // an unpaired surrogate has no UTF-8 form: use argv
+    args.clear();
+  }
+  LocalFree(wide);
+  return args;
+}
+
 bool spawn_process(const std::filesystem::path& exe, std::span<const std::filesystem::path> args) {
   std::wstring command = quote(exe.native());
   for (const std::filesystem::path& arg : args) {
@@ -77,6 +100,8 @@ bool open_folder(const std::filesystem::path& folder) {
 #else
 
 std::filesystem::path executable_path() { return {}; }
+
+std::vector<std::string> command_line_utf8() { return {}; }
 
 bool spawn_process(const std::filesystem::path& /*exe*/,
                    std::span<const std::filesystem::path> /*args*/) {

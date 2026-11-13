@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/runtime/project_config.hpp"
 #include "engine/vfs/vfs.hpp"
 
@@ -67,13 +68,13 @@ std::optional<DebugArguments> parse_arguments(std::span<const std::string_view> 
         err << "vnmaki debug: --data-dir needs a folder\n";
         return std::nullopt;
       }
-      parsed.data_dir = std::filesystem::path{args[i + 1]};
+      parsed.data_dir = utf8_path(args[i + 1]);
       ++i;
     } else if (arg.starts_with("-") || have_project_dir) {
       err << "vnmaki debug: unexpected argument '" << arg << "'\n";
       return std::nullopt;
     } else {
-      parsed.project_dir = std::filesystem::path{arg};
+      parsed.project_dir = utf8_path(arg);
       have_project_dir = true;
     }
   }
@@ -240,7 +241,7 @@ int debug_command(std::span<const std::string_view> args, std::ostream& out, std
 #if VNMAKI_DEV_TOOLS && defined(_WIN32)
   Vfs vfs;
   if (!vfs.mount(make_directory_mount(arguments->project_dir))) {
-    err << "vnmaki: " << arguments->project_dir << " is not a directory\n";
+    err << "vnmaki: " << to_utf8(arguments->project_dir) << " is not a directory\n";
     return kExitError;
   }
   ProjectConfig config;

@@ -15,6 +15,7 @@
 
 #include "cli/story_window.hpp"
 #include "engine/audio/audio.hpp"
+#include "engine/core/utf8_path.hpp"
 #include "engine/l10n/translator.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/sdl_platform.hpp"
@@ -75,7 +76,7 @@ std::optional<RunArguments> parse_arguments(std::span<const std::string_view> ar
         err << "vnmaki run: --data-dir needs a folder\n";
         return std::nullopt;
       }
-      parsed.data_dir = std::filesystem::path{args[i + 1]};
+      parsed.data_dir = utf8_path(args[i + 1]);
       ++i;
     } else if (arg == "--lang") {
       if (i + 1 >= args.size() || args[i + 1].empty() || args[i + 1].starts_with("-")) {
@@ -89,7 +90,7 @@ std::optional<RunArguments> parse_arguments(std::span<const std::string_view> ar
         err << "vnmaki run: --profile needs a file\n";
         return std::nullopt;
       }
-      parsed.profile_csv = std::filesystem::path{args[i + 1]};
+      parsed.profile_csv = utf8_path(args[i + 1]);
       ++i;
     } else if (arg == "--frames") {
       parsed.max_frames = i + 1 < args.size() ? parse_positive(args[i + 1]) : std::nullopt;
@@ -102,7 +103,7 @@ std::optional<RunArguments> parse_arguments(std::span<const std::string_view> ar
       err << "vnmaki run: unexpected argument '" << arg << "'\n";
       return std::nullopt;
     } else {
-      parsed.project_dir = std::filesystem::path{arg};
+      parsed.project_dir = utf8_path(arg);
       have_project_dir = true;
     }
   }
@@ -131,7 +132,7 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
     // A folder with a game.vnpak is a built game: the packs are the whole project.
     if (!mount_game_packs(vfs, arguments->project_dir) &&
         !vfs.mount(make_directory_mount(arguments->project_dir))) {
-      err << "vnmaki: " << arguments->project_dir << " is not a directory\n";
+      err << "vnmaki: " << to_utf8(arguments->project_dir) << " is not a directory\n";
       return kExitError;
     }
   } catch (const PakError& error) {

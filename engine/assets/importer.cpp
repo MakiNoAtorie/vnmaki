@@ -17,6 +17,7 @@
 #include "engine/assets/audio_import.hpp"
 #include "engine/assets/font_import.hpp"
 #include "engine/assets/gltf_import.hpp"
+#include "engine/core/utf8_path.hpp"
 #include "engine/render/precompiled_shader.hpp"
 #include "engine/render/shader_compiler.hpp"
 #include "engine/render/shader_headers.hpp"
@@ -254,14 +255,14 @@ void write_imported_files(const ImportReport& report, const std::filesystem::pat
     if (file.path.empty()) {
       continue;
     }
-    const std::filesystem::path target = directory / std::filesystem::path{file.path};
+    const std::filesystem::path target = directory / utf8_path(file.path);
     std::error_code ignored;
     std::filesystem::create_directories(target.parent_path(), ignored);
     std::ofstream out{target, std::ios::binary | std::ios::trunc};
     out.write(reinterpret_cast<const char*>(file.data.data()),
               static_cast<std::streamsize>(file.data.size()));
     if (!out.flush()) {
-      throw std::runtime_error{"cannot write " + target.string()};
+      throw std::runtime_error{"cannot write " + to_utf8(target)};
     }
   }
 }

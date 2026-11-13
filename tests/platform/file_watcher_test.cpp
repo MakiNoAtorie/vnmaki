@@ -15,6 +15,8 @@
 
 #include <doctest/doctest.h>
 
+#include "engine/core/utf8_path.hpp"
+
 namespace {
 
 using Clock = vnmaki::FileWatcher::Clock;
@@ -93,6 +95,22 @@ TEST_CASE("file watcher: writes close together are one batch, and a folder made 
   CHECK(contains(seen, "scripts/a.lua"));
   CHECK(contains(seen, "scripts/b.lua"));
   CHECK(contains(seen, "images/bg/x.png"));
+}
+
+TEST_CASE("file watcher: a folder and a file with non-ASCII names arrive as UTF-8") {
+  const std::string name = "\xE7\x94\xB0\xE4\xB8\xAD";
+  const std::filesystem::path root =
+      std::filesystem::temp_directory_path() / vnmaki::utf8_path("vnmaki_file_watcher_" + name);
+  std::filesystem::remove_all(root);
+  std::filesystem::create_directories(root / "scripts");
+  {  // the watcher ends before the folder goes, as with TempFolder
+    vnmaki::FileWatcher watcher{root};
+    write_file(root / "scripts" / vnmaki::utf8_path(name + ".lua"), "-- one\n");
+    const std::vector<std::string> batch = wait_for_batch(watcher);
+    CHECK(contains(batch, "scripts/" + name + ".lua"));
+  }
+  std::error_code ignored;
+  std::filesystem::remove_all(root, ignored);
 }
 
 TEST_CASE("file watcher: a folder that does not exist cannot be watched") {

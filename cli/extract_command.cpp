@@ -13,6 +13,7 @@
 #include <system_error>
 #include <vector>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/l10n/extract.hpp"
 #include "engine/l10n/po.hpp"
 #include "engine/runtime/project_config.hpp"
@@ -93,10 +94,10 @@ int extract_command(std::span<const std::string_view> args, std::ostream& out, s
     err << "usage:" << kExtractUsage.substr(std::string_view{"      "}.size());
     return kExitUsage;
   }
-  const fs::path directory{args.front()};
+  const fs::path directory = utf8_path(args.front());
   Vfs vfs;
   if (!vfs.mount(make_directory_mount(directory))) {
-    err << "vnmaki: " << directory << " is not a directory\n";
+    err << "vnmaki: " << to_utf8(directory) << " is not a directory\n";
     return kExitError;
   }
   ProjectConfig config;
@@ -119,7 +120,7 @@ int extract_command(std::span<const std::string_view> args, std::ostream& out, s
     }
     const std::string path = translation_path(language);
     PoFile old;
-    if (const std::optional<std::string> text = read_text(directory / path)) {
+    if (const std::optional<std::string> text = read_text(directory / utf8_path(path))) {
       try {
         old = parse_po(*text);
       } catch (const PoError& error) {
@@ -130,8 +131,8 @@ int extract_command(std::span<const std::string_view> args, std::ostream& out, s
     outputs.push_back({.path = path, .file = update_translation(tmpl, old, language)});
   }
   for (const Output& output : outputs) {
-    if (!write_text(directory / output.path, write_po(output.file))) {
-      err << "vnmaki: cannot write " << (directory / output.path) << "\n";
+    if (!write_text(directory / utf8_path(output.path), write_po(output.file))) {
+      err << "vnmaki: cannot write " << to_utf8(directory / utf8_path(output.path)) << "\n";
       return kExitError;
     }
     out << summary(output);

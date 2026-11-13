@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <span>
@@ -16,6 +17,7 @@
 
 #include <doctest/doctest.h>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/platform/shell.hpp"
 #include "engine/render/shader_compiler.hpp"
 #include "engine/vfs/pak_mount.hpp"
@@ -186,6 +188,37 @@ TEST_CASE("launcher: New, Check, Extract strings and Build windows on a temporar
     CHECK_FALSE(no_runner.log().empty());
     CHECK(no_runner.recent().list().empty());
   }
+}
+
+TEST_CASE("launcher: a folder with a non-ASCII name works as UTF-8 and is kept as UTF-8") {
+  const TempDir temp{"utf8"};
+  FakeHost fake;
+  const fs::path runner = temp.path() / "runner.exe";
+  write_file(runner, "not a program; the build only copies it");
+  const fs::path data = temp.path() / vnmaki::utf8_path("\xE3\x83\x87\xE3\x83\xBC\xE3\x82\xBF");
+  const std::string name = "\xE7\x94\xB0\xE4\xB8\xAD";  // a name outside the ANSI code page
+  const fs::path game = temp.path() / vnmaki::utf8_path(name);
+  Launcher launcher{RecentProjects{data / "recent.txt"}, fake.host(runner)};
+  const std::string folder = vnmaki::to_utf8(game);  // what the ImGui text field holds
+
+  REQUIRE(launcher.run(LauncherAction::kNew, folder) == 0);
+  CHECK_MESSAGE(fs::is_regular_file(game / "project.toml"), launcher.log());
+  CHECK(launcher.run(LauncherAction::kCheck, folder) == 0);
+  CHECK(launcher.run(LauncherAction::kBuildWindows, folder) == 0);
+  CHECK(fs::is_regular_file(game / ".vnmaki" / "windows" / "game.vnpak"));
+  CHECK(launcher.run(LauncherAction::kRun, folder) == 0);
+  REQUIRE(fake.spawned.size() == 1);
+  CHECK(fake.spawned.front().at(1) == game);
+  CHECK(launcher.run(LauncherAction::kOpenFolder, folder) == 0);
+  CHECK(fake.opened.back() == game);
+
+  // The recent list holds the folder, and recent.txt holds its UTF-8 bytes.
+  REQUIRE(launcher.recent().list().size() == 1);
+  CHECK(launcher.recent().list().front() == game);
+  CHECK(RecentProjects{data / "recent.txt"}.list() == launcher.recent().list());
+  std::ifstream file{data / "recent.txt", std::ios::binary};
+  const std::string text{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
+  CHECK(text.find(name) != std::string::npos);
 }
 
 TEST_CASE("launcher: New, Check and Build windows on one temporary folder") {

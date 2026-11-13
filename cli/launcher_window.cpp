@@ -12,6 +12,7 @@
 #include <imgui.h>
 
 #include "cli/launcher.hpp"
+#include "engine/core/utf8_path.hpp"
 #include "engine/platform/main_loop.hpp"
 #include "engine/platform/sdl_platform.hpp"
 #include "engine/render/renderer.hpp"
@@ -64,7 +65,7 @@ void draw_launcher(Launcher& launcher, std::array<char, kFolderBytes>& folder,
   ImGui::SeparatorText("Recent projects");
   ImGui::BeginChild("##recent", ImVec2{0, ImGui::GetTextLineHeightWithSpacing() * 5}, true);
   for (const auto& project : launcher.recent().list()) {
-    const std::string text = project.string();
+    const std::string text = to_utf8(project);
     if (ImGui::Selectable(text.c_str(), text == folder.data())) {
       folder.fill('\0');
       text.copy(folder.data(), folder.size() - 1);

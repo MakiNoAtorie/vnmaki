@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "engine/assets/importer.hpp"
+#include "engine/core/utf8_path.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki::cli {
@@ -39,10 +40,10 @@ int import_command(std::span<const std::string_view> args, std::ostream& out, st
     return kExitUsage;
   }
 
-  const std::filesystem::path project{directory};
+  const std::filesystem::path project = utf8_path(directory);
   Vfs vfs;
   if (!vfs.mount(make_directory_mount(project))) {
-    err << "vnmaki: " << project << " is not a directory\n";
+    err << "vnmaki: " << to_utf8(project) << " is not a directory\n";
     return kExitError;
   }
   try {
@@ -58,7 +59,7 @@ int import_command(std::span<const std::string_view> args, std::ostream& out, st
       out << "\n";
     }
     if (!output.empty()) {
-      write_imported_files(report, std::filesystem::path{output});
+      write_imported_files(report, utf8_path(output));
     }
     for (const std::string& problem : report.problems) {
       err << "vnmaki: " << problem << "\n";

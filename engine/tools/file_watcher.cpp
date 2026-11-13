@@ -11,15 +11,17 @@
 
 #include <efsw/efsw.hpp>
 
+#include "engine/core/utf8_path.hpp"
+
 namespace vnmaki {
 
 class FileWatcher::Os final : public efsw::FileWatchListener {
  public:
   Os(FileWatcher& owner, const std::filesystem::path& root)
       : owner_(&owner), root_(std::filesystem::absolute(root)) {
-    const efsw::WatchID id = watcher_.addWatch(root_.string(), this, true);
+    const efsw::WatchID id = watcher_.addWatch(to_utf8(root_), this, true);
     if (id < 0) {
-      throw std::runtime_error("cannot watch " + root_.string() + ": " +
+      throw std::runtime_error("cannot watch " + to_utf8(root_) + ": " +
                                efsw::Errors::Log::getLastErrorLog());
     }
     watcher_.watch();
@@ -38,11 +40,11 @@ class FileWatcher::Os final : public efsw::FileWatchListener {
  private:
   void report(const std::string& directory, const std::string& filename) {
     const std::filesystem::path relative =
-        (std::filesystem::path{directory} / filename).lexically_relative(root_);
+        (utf8_path(directory) / utf8_path(filename)).lexically_relative(root_);
     if (relative.empty() || *relative.begin() == "..") {
       return;
     }
-    owner_->notify(relative.generic_string());
+    owner_->notify(to_generic_utf8(relative));
   }
 
   FileWatcher* owner_;
