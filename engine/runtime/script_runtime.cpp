@@ -8,11 +8,13 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <iterator>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -29,6 +31,7 @@ namespace {
 // point at the caller's script and line (error level 2). It runs once per VM
 // with the engine primitives as arguments; they never become globals, so
 // scripts reach the engine only through the functions defined here.
+// Two adjacent raw literals: MSVC limits one literal to 16380 bytes.
 constexpr std::string_view kPrelude = R"lua(
 local engine, dev_mode, random_seed = ...
 
@@ -299,6 +302,130 @@ function menu(options)
   require_label("menu")
   return engine.menu(texts)
 end
+)lua" R"lua(
+-- Screens (docs/SPEC.md section 15). A node is a plain table the engine reads: kind, text (the
+-- caption or image name), props (booleans, numbers and strings) and children.
+local pairs, math_type = pairs, math.type
+local node_takes_text = { text = true, button = true, image = true }
+local function is_node(value)
+  return type(value) == "table" and type(value.kind) == "string" and type(value.props) == "table"
+         and type(value.children) == "table"
+end
+
+local function node_constructor(kind)
+  return function(spec)
+    if type(spec) == "string" and node_takes_text[kind] then
+      spec = { spec }
+    elseif type(spec) ~= "table" then
+      bad_argument(kind, 1, "table", spec)
+    end
+    local node = { kind = kind, text = "", props = {}, children = {} }
+    local has_text = false
+    for i = 1, #spec do
+      local item = spec[i]
+      if type(item) == "string" and node_takes_text[kind] and not has_text then
+        node.text, has_text = item, true
+      elseif is_node(item) then
+        node.children[#node.children + 1] = item
+      else
+        error(format("bad item #%d in '%s' (a node%s expected, got %s)", i, kind,
+                     node_takes_text[kind] and " or one string" or "", type(item)), 2)
+      end
+    end
+    for key, value in pairs(spec) do
+      if type(key) == "string" then
+        local value_type = type(value)
+        if value_type ~= "boolean" and value_type ~= "number" and value_type ~= "string" then
+          error(format("bad option '%s' to '%s' (boolean, number or string expected, got %s)", key,
+                       kind, value_type), 2)
+        end
+        node.props[key] = value
+      elseif math_type(key) ~= "integer" then
+        error(format("bad key to '%s' (names and list positions only)", kind), 2)
+      end
+    end
+    return node
+  end
+end
+box, hbox, vbox = node_constructor("box"), node_constructor("hbox"), node_constructor("vbox")
+text, image, button = node_constructor("text"), node_constructor("image"), node_constructor("button")
+
+local screens = {}
+local function register_screen(name, definition)
+  if type(definition) ~= "table" and type(definition) ~= "function" then
+    bad_argument("screen", 2, "table or function", definition, 1)
+  end
+  screens[name] = definition
+end
+
+-- screen "name" { nodes... }, or screen("name", fn) where fn(args) returns the nodes.
+function screen(name, definition)
+  if type(name) ~= "string" then
+    bad_argument("screen", 1, "string", name)
+  end
+  if definition ~= nil then
+    register_screen(name, definition)
+    return
+  end
+  return function(later)
+    register_screen(name, later)
+  end
+end
+
+-- The root node of screen `name` for `args`.
+local function screen_root(fname, name, args)
+  if type(name) ~= "string" then
+    bad_argument(fname, 1, "string", name, 1)
+  end
+  if args ~= nil and type(args) ~= "table" then
+    bad_argument(fname, 2, "table or nil", args, 1)
+  end
+  require_label(fname, 1)
+  local root = screens[name]
+  if root == nil then
+    error(format("unknown screen '%s'", name), 3)
+  end
+  if type(root) == "function" then
+    root = root(args or {})
+  end
+  if is_node(root) then
+    return root
+  end
+  if type(root) == "table" and #root > 0 then
+    return #root == 1 and is_node(root[1]) and root[1] or box(root)
+  end
+  error(format("screen '%s' gave no nodes", name), 3)
+end
+
+local function stage_screen(name, root)
+  local problem = engine.stage_screen(name, root)
+  if problem ~= nil then
+    error(problem, 3)
+  end
+end
+
+function show_screen(name, args)
+  stage_screen(name, screen_root("show_screen", name, args))
+  local problem = engine.show_screen(name)
+  if problem ~= nil then
+    error(problem, 2)
+  end
+end
+
+function hide_screen(name)
+  if type(name) ~= "string" then
+    bad_argument("hide_screen", 1, "string", name)
+  end
+  require_label("hide_screen")
+  engine.hide_screen(name)
+end
+
+-- Waits until the screen returns a value (a button's `returns` option) and returns it.
+function call_screen(name, args)
+  stage_screen(name, screen_root("call_screen", name, args))
+  return engine.call_screen(name)
+end
+)lua" R"lua(
 
 function print(...)
   local parts = {}
@@ -572,6 +699,84 @@ std::string to_string(const std::vector<std::byte>& bytes) {
   return text;
 }
 
+// How deep a screen tree may nest; a script could make a node its own child.
+constexpr int kMaxScreenDepth = 64;
+
+// Reads a boolean, number or string from the object into `value`.
+bool read_screen_value(const sol::object& object, ScreenValue& value) {
+  StoreValue scalar;
+  lua_State* lua = object.lua_state();
+  object.push();
+  const bool ok = read_scalar(lua, -1, scalar);
+  lua_pop(lua, 1);
+  if (!ok) {
+    return false;
+  }
+  if (const auto* boolean = std::get_if<bool>(&scalar)) {
+    value = *boolean;
+  } else if (const auto* integer = std::get_if<std::int64_t>(&scalar)) {
+    value = *integer;
+  } else if (const auto* number = std::get_if<double>(&scalar)) {
+    value = *number;
+  } else {
+    value = std::get<std::string>(std::move(scalar));
+  }
+  return true;
+}
+
+// Copies a node table built by the prelude (kind, text, props, children) into `node`. Returns why
+// it cannot, or an empty string.
+std::string read_screen_node(const sol::table& table, int depth, ScreenNodeDef& node) {
+  if (depth > kMaxScreenDepth) {
+    return "screen nodes nest more than " + std::to_string(kMaxScreenDepth) + " levels deep";
+  }
+  const auto kind = table.get<sol::optional<std::string>>("kind");
+  const auto text = table.get<sol::optional<std::string>>("text");
+  const auto props = table.get<sol::optional<sol::table>>("props");
+  const auto children = table.get<sol::optional<sol::table>>("children");
+  if (!kind || !text || !props || !children) {
+    return "a screen node is malformed (build nodes with box, hbox, vbox, text, image, button)";
+  }
+  node.kind = *kind;
+  node.text = *text;
+  std::map<std::string, ScreenValue> sorted;  // Lua's iteration order is not stable
+  for (const auto& [key, value] : *props) {
+    const auto name = key.as<sol::optional<std::string>>();
+    ScreenValue scalar;
+    if (!name || !read_screen_value(value, scalar)) {
+      return "a screen node has an option that is not a boolean, number or string";
+    }
+    sorted.emplace(*name, std::move(scalar));
+  }
+  node.props.assign(std::make_move_iterator(sorted.begin()), std::make_move_iterator(sorted.end()));
+  const std::size_t count = children->size();
+  node.children.reserve(count);
+  for (std::size_t i = 1; i <= count; ++i) {
+    const auto child = children->get<sol::optional<sol::table>>(i);
+    if (!child) {
+      return "a screen node has a child that is not a node";
+    }
+    ScreenNodeDef& added = node.children.emplace_back();
+    if (std::string problem = read_screen_node(*child, depth + 1, added); !problem.empty()) {
+      return problem;
+    }
+  }
+  return {};
+}
+
+// Continues `coroutine` with the answer of a blocking call as its result.
+sol::protected_function_result resume_with(sol::coroutine& coroutine, const ScreenValue& value) {
+  return std::visit(
+      [&coroutine](const auto& v) -> sol::protected_function_result {
+        if constexpr (std::is_same_v<std::decay_t<decltype(v)>, std::monostate>) {
+          return coroutine(sol::lua_nil);
+        } else {
+          return coroutine(v);
+        }
+      },
+      value);
+}
+
 }  // namespace
 
 class ScriptRuntime::Impl {
@@ -589,6 +794,7 @@ class ScriptRuntime::Impl {
   void start(std::string_view name);
   void advance();
   void choose(std::size_t index);
+  void return_screen(ScreenValue value);
   void replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
               std::uint32_t step);
 
@@ -681,8 +887,8 @@ class ScriptRuntime::Impl {
   void transfer(sol::this_state state, std::string_view kind, std::string label);
   [[nodiscard]] Frame make_frame(const std::string& name);
   [[nodiscard]] bool enter(const std::string& name);
-  void run(std::optional<std::int64_t> resume_value = std::nullopt);
-  [[nodiscard]] bool replay_answer(std::optional<std::int64_t>& resume_value);
+  void run(std::optional<ScreenValue> resume_value = std::nullopt);
+  [[nodiscard]] bool replay_answer(std::optional<ScreenValue>& resume_value);
   void record(const InputResult& input);
   void restore_store(const StoreSnapshot& snapshot);
   void fail(std::string message);
@@ -720,6 +926,7 @@ class ScriptRuntime::Impl {
   RunState state_ = RunState::kIdle;
   std::uint32_t hook_period_ = 0;
   BlockingRequest request_;
+  ScreenNodeDef staged_screen_;  // the tree stage_screen read, for show_screen or call_screen
   std::string error_;
   bool replaying_ = false;
   Replay replay_;
@@ -839,6 +1046,34 @@ void ScriptRuntime::Impl::bind_engine() {
       request.options.push_back(options.get<std::string>(i));
     }
     yield_at(state, std::move(request));
+  });
+  // Screens: the prelude stages a screen tree, then shows it or waits on it.
+  engine_["stage_screen"] = [this](sol::this_state state, const std::string& name,
+                                   const sol::table& root) -> sol::object {
+    const MemoryLimitScope unlimited{allocator_, false};
+    staged_screen_ = {};
+    std::string problem = read_screen_node(root, 0, staged_screen_);
+    if (problem.empty() && options_.screens != nullptr) {
+      problem = options_.screens->check_screen(name, staged_screen_);
+    }
+    return problem.empty() ? sol::object{sol::lua_nil} : sol::make_object(state, problem);
+  };
+  engine_["show_screen"] = [this](sol::this_state state, const std::string& name) -> sol::object {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.screens == nullptr) {
+      return sol::lua_nil;
+    }
+    const std::string problem = options_.screens->show_screen(name, staged_screen_);
+    return problem.empty() ? sol::object{sol::lua_nil} : sol::make_object(state, problem);
+  };
+  engine_["hide_screen"] = [this](const std::string& name) {
+    if (options_.screens != nullptr) {
+      options_.screens->hide_screen(name);
+    }
+  };
+  engine_["call_screen"] = sol::yielding([this](sol::this_state state, const std::string& name) {
+    yield_at(state, CallScreenRequest{.name = name, .screen = std::move(staged_screen_)});
+    staged_screen_ = {};
   });
   // The scene changes during a replay too; only the report is skipped.
   const auto problem_or_nil = [this](sol::this_state state,
@@ -1183,7 +1418,9 @@ bool ScriptRuntime::Impl::enter(const std::string& name) {
 }
 
 void ScriptRuntime::Impl::advance() {
-  if (state_ != RunState::kWaiting || std::holds_alternative<MenuRequest>(request_)) {
+  const bool at_line = std::holds_alternative<SayRequest>(request_) ||
+                       std::holds_alternative<NarrateRequest>(request_);
+  if (state_ != RunState::kWaiting || !at_line) {
     return;
   }
   run();
@@ -1199,7 +1436,15 @@ void ScriptRuntime::Impl::choose(std::size_t index) {
                             std::to_string(index));
   }
   record(MenuChoice{.index = index});
-  run(static_cast<std::int64_t>(index) + 1);
+  run(ScreenValue{static_cast<std::int64_t>(index) + 1});
+}
+
+void ScriptRuntime::Impl::return_screen(ScreenValue value) {
+  if (state_ != RunState::kWaiting || !std::holds_alternative<CallScreenRequest>(request_)) {
+    return;
+  }
+  record(ScreenResult{.value = value});
+  run(std::move(value));
 }
 
 // Every label on the stack logs the answer: a caller's log covers the labels
@@ -1253,25 +1498,36 @@ void ScriptRuntime::Impl::replay(const LabelSnapshot& snapshot, std::span<const 
 // Answers the request a replay just reached from the input log:
 // `resume_value` becomes what the blocking call returns. Returns false, with
 // the runtime failed, if the log has no answer for it.
-bool ScriptRuntime::Impl::replay_answer(std::optional<std::int64_t>& resume_value) {
+bool ScriptRuntime::Impl::replay_answer(std::optional<ScreenValue>& resume_value) {
   const auto* menu = std::get_if<MenuRequest>(&request_);
-  if (menu == nullptr) {
+  const bool call_screen = std::holds_alternative<CallScreenRequest>(request_);
+  if (menu == nullptr && !call_screen) {
     return true;  // say and narrate take no answer
   }
   const std::string where =
       "replay: label '" + frames_.back().label + "', step " + std::to_string(frames_.back().step);
   if (replay_.next_input >= replay_.inputs.size()) {
-    fail(where + ": the input log has no choice for this menu");
+    fail(where + ": the input log has no answer for this " + (call_screen ? "screen" : "menu"));
     return false;
   }
   const InputResult input = replay_.inputs[replay_.next_input++];
-  const std::size_t index = std::get<MenuChoice>(input).index;
-  if (index >= menu->options.size()) {
+  if (call_screen) {
+    const auto* result = std::get_if<ScreenResult>(&input);
+    if (result == nullptr) {
+      fail(where + ": the logged answer is not a screen result");
+      return false;
+    }
+    record(input);
+    resume_value = result->value;
+    return true;
+  }
+  const auto* choice = std::get_if<MenuChoice>(&input);
+  if (choice == nullptr || choice->index >= menu->options.size()) {
     fail(where + ": the logged choice is not an option of this menu");
     return false;
   }
   record(input);
-  resume_value = static_cast<std::int64_t>(index) + 1;
+  resume_value = ScreenValue{static_cast<std::int64_t>(choice->index) + 1};
   return true;
 }
 
@@ -1280,7 +1536,7 @@ bool ScriptRuntime::Impl::replay_answer(std::optional<std::int64_t>& resume_valu
 //
 // `resume_value` is what the blocking call the label waits in returns (the
 // chosen option of a menu).
-void ScriptRuntime::Impl::run(std::optional<std::int64_t> resume_value) {
+void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
   // One budget for the whole run, so labels that jump or call each other
   // forever without yielding hit the limit too.
   reset_instruction_budget();
@@ -1292,7 +1548,7 @@ void ScriptRuntime::Impl::run(std::optional<std::int64_t> resume_value) {
       const MemoryLimitScope limited{allocator_, true};
       sol::coroutine& coroutine = frames_.back().coroutine;
       const sol::protected_function_result result =
-          resume_value ? coroutine(*resume_value) : coroutine();
+          resume_value ? resume_with(coroutine, *resume_value) : coroutine();
       resume_value.reset();
       if (!result.valid()) {
         fail(error_text(result));
@@ -1385,6 +1641,7 @@ bool ScriptRuntime::has_label(std::string_view name) const { return impl_->has_l
 void ScriptRuntime::start(std::string_view name) { impl_->start(name); }
 void ScriptRuntime::advance() { impl_->advance(); }
 void ScriptRuntime::choose(std::size_t index) { impl_->choose(index); }
+void ScriptRuntime::return_screen(ScreenValue value) { impl_->return_screen(std::move(value)); }
 void ScriptRuntime::replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
                            std::uint32_t step) {
   impl_->replay(snapshot, inputs, step);
