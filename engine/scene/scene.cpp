@@ -23,6 +23,7 @@
 #include "engine/core/byte_stream.hpp"
 #include "engine/model3d/scene3d.hpp"
 #include "engine/render/image.hpp"
+#include "engine/render/precompiled_shader.hpp"
 #include "engine/render/shader_compiler.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "engine/video/movie.hpp"
@@ -201,6 +202,7 @@ constexpr std::string_view kShaderDirectory = "shaders/";
 // The uniform that a custom transition declares and the engine sets.
 constexpr std::string_view kProgressUniform = "progress";
 constexpr std::string_view kShaderExtension = ".frag.hlsl";
+constexpr std::string_view kHlslExtension = ".hlsl";
 // HLSL packs a constant buffer in rows of four floats.
 constexpr std::size_t kFloatsPerRow = 4;
 constexpr Color kTransparent{.r = 0, .g = 0, .b = 0, .a = 0};
@@ -964,18 +966,27 @@ std::string Scene::declare_shader_impl(std::string_view name, std::span<const st
   path += name;
   path += kShaderExtension;
   const std::optional<std::vector<std::byte>> bytes = vfs_->read(path);
-  if (!bytes.has_value()) {
+  // `vnmaki import` leaves the compiled form where a release build has no compiler (and no source).
+  const std::string compiled_path = path.substr(0, path.size() - kHlslExtension.size()) +
+                                    std::string{kPrecompiledShaderExtension};
+  const std::optional<std::vector<std::byte>> precompiled = vfs_->read(compiled_path);
+  const bool compile = bytes.has_value() && (shader_compiler_available() || !precompiled);
+  if (!compile && !precompiled) {
     return label + " not found (no " + path + ")";
   }
-  std::string source;
-  source.reserve(bytes->size());
-  for (const std::byte byte : *bytes) {
-    source.push_back(static_cast<char>(byte));
-  }
   try {
-    shader.compiled = compile_fragment_shader(path, source);
+    if (compile) {
+      std::string source;
+      source.reserve(bytes->size());
+      for (const std::byte byte : *bytes) {
+        source.push_back(static_cast<char>(byte));
+      }
+      shader.compiled = compile_fragment_shader(path, source);
+    } else {
+      shader.compiled = read_precompiled_shader(*precompiled);
+    }
   } catch (const ShaderCompileError& error) {
-    return error.what();
+    return compile ? std::string{error.what()} : compiled_path + " " + error.what();
   }
   if (shader.compiled.samplers > kMaxShaderTextures || shader.compiled.uniform_buffers > 1) {
     return path +

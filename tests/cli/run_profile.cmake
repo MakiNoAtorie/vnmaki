@@ -2,9 +2,19 @@
 # header and one row for each frame in OUT, and the header and the font load in the _loads file.
 #
 # Usage: cmake -DEXE=<path> -DPROJECT=<dir> -DFRAMES=<n> -DOUT=<file.csv> -DDATA_DIR=<path>
-#        -P run_profile.cmake
+#        [-DPRECOMPILED_DIR=<dir>] -P run_profile.cmake
+#
+# PRECOMPILED_DIR is given for a build without a shader compiler: the run then uses a copy of
+# PROJECT that has its shaders/sepia.frag.vnshader.
 
 file(REMOVE_RECURSE "${DATA_DIR}")
+if(DEFINED PRECOMPILED_DIR)
+  file(REMOVE_RECURSE "${DATA_DIR}_project")
+  file(COPY "${PROJECT}/" DESTINATION "${DATA_DIR}_project")
+  file(COPY "${PRECOMPILED_DIR}/shaders/sepia.frag.vnshader" DESTINATION
+       "${DATA_DIR}_project/shaders")
+  set(PROJECT "${DATA_DIR}_project")
+endif()
 get_filename_component(out_dir "${OUT}" DIRECTORY)
 get_filename_component(out_name "${OUT}" NAME_WE)
 set(loads "${out_dir}/${out_name}_loads.csv")

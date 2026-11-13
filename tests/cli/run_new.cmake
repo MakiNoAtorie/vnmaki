@@ -1,11 +1,13 @@
 # Makes a game with `vnmaki new`, checks that a second `new` stops, and optionally plays it.
 #
-# Usage: cmake -DEXE=<path> -DGAME=<folder> [-DFRAMES=<n> -DDATA_DIR=<path> [-DPRESENTATION=ON]]
-#        -P run_new.cmake
+# Usage: cmake -DEXE=<path> -DGAME=<folder> [-DFRAMES=<n> -DDATA_DIR=<path> [-DPRESENTATION=ON]
+#        [-DPRECOMPILED_DIR=<folder>]] -P run_new.cmake
 #
 # GAME and DATA_DIR are deleted first. With FRAMES the game runs in a window for that many frames,
 # with its saves in DATA_DIR (--data-dir). With PRESENTATION the story starts at the label
 # "presentation" in auto mode (the title screen and the menu need a click, and so does each line).
+# PRECOMPILED_DIR is given for a build that has no shader compiler: its shaders/sepia.frag.vnshader
+# is copied into the game, which then loads that file.
 
 file(REMOVE_RECURSE "${GAME}")
 execute_process(
@@ -40,6 +42,9 @@ endif()
 
 if(DEFINED FRAMES)
   file(REMOVE_RECURSE "${DATA_DIR}")
+  if(DEFINED PRECOMPILED_DIR)
+    file(COPY "${PRECOMPILED_DIR}/shaders/sepia.frag.vnshader" DESTINATION "${GAME}/shaders")
+  endif()
   if(PRESENTATION)
     file(READ "${GAME}/scripts/main.lua" main)
     string(REGEX REPLACE "call_screen\\(\"title\"[^\n]*" "auto(true) jump(\"presentation\")" patched

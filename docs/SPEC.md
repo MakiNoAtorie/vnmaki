@@ -274,6 +274,7 @@ screen "quick_menu" {
 - **CLI:**
   - `vnmaki new <name>` — create a project from the template
   - `vnmaki run` — run in dev mode
+  - `vnmaki import <dir>` — import the assets into the cache (`.vnmaki/cache/`)
   - `vnmaki build <platform>` — import and package
   - `vnmaki extract-strings` — localization export
   - `vnmaki check` — lint scripts, missing assets, unreachable labels

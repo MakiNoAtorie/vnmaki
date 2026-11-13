@@ -24,6 +24,21 @@ vnmaki_add_fixture_generator(
   vfs SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/vfs_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
 
+# A build without a run-time shader compiler (release) cannot compile the sepia shader of the
+# template when a test loads it. This builds its `.vnshader` file, which the tests mount over the
+# project (VNMAKI_PRECOMPILED_DIR), so release tests load a precompiled game shader.
+include(VnmakiShaders)
+set(VNMAKI_PRECOMPILED_DIR "${PROJECT_BINARY_DIR}/precompiled")
+if(NOT VNMAKI_SHADER_COMPILER)
+  vnmaki_add_precompiled_shader(
+    vnmaki_precompiled_sepia
+    OUTPUT "${VNMAKI_PRECOMPILED_DIR}/shaders/sepia.frag.vnshader"
+    SHADER "${PROJECT_SOURCE_DIR}/templates/default/shaders/sepia.frag.hlsl"
+    INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/shaders")
+  add_dependencies(vnmaki_unit_tests vnmaki_precompiled_sepia)
+endif()
+target_compile_definitions(vnmaki_unit_tests PRIVATE VNMAKI_PRECOMPILED_DIR="${VNMAKI_PRECOMPILED_DIR}")
+
 add_subdirectory(cli)
 
 # Platform: window, input, main loop, virtual resolution (ticket 04).
@@ -200,6 +215,16 @@ vnmaki_add_fixture_generator(
   l10n SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/l10n_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
 
+# Asset import (ticket 44): the cache, the audio gain, font subsets, glTF checks, the project
+# importer and the precompiled shader file. The generator writes the inputs and the projects of the
+# `vnmaki import` CLI tests.
+target_sources(vnmaki_unit_tests PRIVATE unit/import_test.cpp)
+vnmaki_add_fixture_generator(
+  import SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/import_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/templates/default/fonts/default.ttf"
+          "${PROJECT_SOURCE_DIR}/templates/default/shaders/sepia.frag.hlsl"
+  TEST_TARGETS vnmaki_unit_tests)
+
 # Video: WebM, AV1 and Opus, the player and its clocks, `movie` and the movie displayable (ticket
 # 25). clip.webm is the one committed binary fixture; its README has the ffmpeg command.
 target_sources(vnmaki_unit_tests PRIVATE unit/video_test.cpp)
@@ -212,7 +237,8 @@ target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)
 # Dev tools: the REPL and the log buffer (ticket 30), hot reload (ticket 32). They exist only in
 # builds with the tools.
 if(VNMAKI_DEV_TOOLS)
-  target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp unit/hot_reload_test.cpp)
+  target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp unit/hot_reload_test.cpp
+                                           unit/hot_import_test.cpp)
 endif()
 
 # Dev tools: the row functions of the inspectors, on the default template (ticket 31).

@@ -24,6 +24,8 @@ if(VNMAKI_DEV_TOOLS)
             debugger.hpp
             file_watcher.cpp
             file_watcher.hpp
+            hot_import.cpp
+            hot_import.hpp
             hot_reload.cpp
             hot_reload.hpp
             imgui_backend.cpp

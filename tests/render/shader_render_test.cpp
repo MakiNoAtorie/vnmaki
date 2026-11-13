@@ -27,10 +27,6 @@ constexpr double kHalfSecond = 0.5;  // Half way through the one second tween.
 // The scene of one label of shader/game, drawn at the start and half way through its tween.
 void check_label(const std::string& label, const std::string& golden_prefix,
                  std::uint32_t expected_quads) {
-  if (!vnmaki::shader_compiler_available()) {
-    MESSAGE("no run-time shader compiler in this build");
-    return;
-  }
   const auto renderer = vnmaki::test::make_headless_renderer();
   if (!renderer) {
     return;
@@ -38,6 +34,11 @@ void check_label(const std::string& label, const std::string& golden_prefix,
   vnmaki::Vfs vfs;
   REQUIRE(vfs.mount(vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_FIXTURES_DIR} /
                                                  "shader" / "game")));
+  if (!vnmaki::shader_compiler_available()) {
+    // A release build: the shader loads from the file that the build precompiled, so these goldens
+    // also check that a precompiled shader makes a pipeline and draws the same.
+    REQUIRE(vfs.mount(vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_PRECOMPILED_DIR})));
+  }
   vnmaki::JobSystem jobs;
   vnmaki::Scene scene{vfs, kVirtualSize};
   vnmaki::ScriptRuntimeOptions options;

@@ -444,12 +444,12 @@ Files: new `engine/platform/tts.hpp`, `engine/platform/win_tts.cpp`, `engine/dia
 
 Files: new `engine/assets/`, `vcpkg.json`, `cli/`.
 
-- [ ] The import cache is `.vnmaki/cache/`. The key is a hash of the source file, the importer name and its version. Dev mode imports changed files through the task 32 watcher.
-- [ ] Audio: WAV and FLAC to Opus (libopusenc, vcpkg), with a peak or RMS gain to the target in `project.toml`.
-- [ ] Fonts: a subset for each language with the characters of its strings plus ASCII (HarfBuzz subset).
-- [ ] glTF: validation with cgltf (vcpkg). Missing textures and buffers are errors.
-- [ ] Game shaders: precompile to SPIR-V and DXIL. Release builds load these and do not link SDL_shadercross.
-- [ ] Tests: cache hit and miss, the gain of a generated WAV, glyph count of a subset font, and a bad glTF error.
+- [x] The import cache is `.vnmaki/cache/`. The key is a hash of the source file, the importer name and its version. Dev mode imports changed files through the task 32 watcher.
+- [x] Audio: WAV and FLAC to Opus (libopusenc, vcpkg), with a peak or RMS gain to the target in `project.toml`.
+- [x] Fonts: a subset for each language with the characters of its strings plus ASCII (HarfBuzz subset).
+- [x] glTF: validation with cgltf (vcpkg). Missing textures and buffers are errors.
+- [x] Game shaders: precompile to SPIR-V and DXIL. Release builds load these and do not link SDL_shadercross.
+- [x] Tests: cache hit and miss, the gain of a generated WAV, glyph count of a subset font, and a bad glTF error.
 
 ### 45: `.vnpak` and `vnmaki build windows` (SPEC §19, §5)
 
