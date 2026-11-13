@@ -1,9 +1,11 @@
 #include <cstddef>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
 
+#include "cli/build_command.hpp"
 #include "cli/check_command.hpp"
 #include "cli/debug_command.hpp"
 #include "cli/extract_command.hpp"
@@ -63,6 +65,11 @@ int main(int argc, char* argv[]) {
     return vnmaki::cli::import_command(std::span{args}.subspan(1), std::cout, std::cerr);
   }
 
+  if (const std::optional<int> code =
+          vnmaki::cli::build_or_packed_command(args, std::cout, std::cerr)) {
+    return *code;
+  }
+
   if (!args.empty() && args.front() == "window") {
     return vnmaki::cli::window_command(std::span{args}.subspan(1), std::cerr);
   }
@@ -72,6 +79,7 @@ int main(int argc, char* argv[]) {
   }
   std::cerr << usage << vnmaki::cli::kNewUsage << vnmaki::cli::kRunUsage
             << vnmaki::cli::kWindowUsage << vnmaki::cli::kGraphUsage << vnmaki::cli::kCheckUsage
-            << vnmaki::cli::kDebugUsage << vnmaki::cli::kExtractUsage << vnmaki::cli::kImportUsage;
+            << vnmaki::cli::kDebugUsage << vnmaki::cli::kExtractUsage << vnmaki::cli::kImportUsage
+            << vnmaki::cli::kBuildUsage;
   return exit_usage_error;
 }

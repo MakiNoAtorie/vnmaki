@@ -139,7 +139,8 @@ TEST_CASE("pak: a pak on disk works through the Vfs, and patch paks override in 
   write_file(dir.path / "game.vnpak",
              pak_text({{"a.txt", "base a"}, {"b.txt", "base b"}, {"c/d.txt", "base d"}}));
   write_file(dir.path / "patch-2.vnpak", pak_text({{"b.txt", "patch 2 b"}}));
-  write_file(dir.path / "patch-1.vnpak", pak_text({{"b.txt", "patch 1 b"}, {"e.txt", "patch 1 e"}}));
+  write_file(dir.path / "patch-1.vnpak",
+             pak_text({{"b.txt", "patch 1 b"}, {"e.txt", "patch 1 e"}}));
   write_file(dir.path / "other.vnpak", pak_text({{"a.txt", "not mounted"}}));
 
   vnmaki::Vfs vfs;
