@@ -434,3 +434,61 @@ set_tests_properties(
   cli.graph_needs_a_folder
   cli.graph_rejects_an_unknown_format
   cli.graph_rejects_a_second_folder PROPERTIES TIMEOUT 60)
+
+# vnmaki check (ticket 35), on the projects tools/generators/check_fixtures.py writes: one project
+# for each finding code, with the CSV that the generator works out for itself. A project with an
+# error exits 1; one with only warnings exits 0.
+set(vnmaki_check_fixtures "${VNMAKI_FIXTURES_DIR}/check")
+set(vnmaki_check_error_cases lua_syntax unknown_label bad_text_tag missing_image missing_audio
+                             missing_movie mixed)
+set(vnmaki_check_warning_cases unreachable_label dead_end dynamic_edge project_config
+                               project_config_line)
+set(vnmaki_check_tests "")
+foreach(case IN LISTS vnmaki_check_error_cases vnmaki_check_warning_cases)
+  set(exit_code 0)
+  if(case IN_LIST vnmaki_check_error_cases)
+    set(exit_code 1)
+  endif()
+  vnmaki_add_cli_stdout_file_test(
+    check_${case}
+    ARGS check "${vnmaki_check_fixtures}/${case}"
+    EXIT ${exit_code}
+    STDOUT_FILE "${vnmaki_check_fixtures}/${case}.csv")
+  list(APPEND vnmaki_check_tests cli.check_${case})
+endforeach()
+
+# The template of `vnmaki new` has no finding: only the header.
+vnmaki_add_cli_test(
+  check_template_has_no_findings
+  ARGS check "${PROJECT_SOURCE_DIR}/templates/default"
+  EXIT 0
+  STDOUT_LINE "file,line,severity,code,message")
+
+vnmaki_add_cli_test(
+  check_reports_a_missing_folder
+  ARGS check "${vnmaki_check_fixtures}/does_not_exist"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: .*does_not_exist.* is not a directory")
+
+vnmaki_add_cli_test(
+  check_needs_a_folder
+  ARGS check
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki check <dir>")
+
+vnmaki_add_cli_test(
+  check_rejects_a_second_folder
+  ARGS check "${vnmaki_check_fixtures}/mixed" "${vnmaki_check_fixtures}/lua_syntax"
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki check")
+
+# vnmaki check never opens a window or waits for input, so a hang is a bug.
+set_tests_properties(
+  ${vnmaki_check_tests}
+  cli.check_template_has_no_findings
+  cli.check_reports_a_missing_folder
+  cli.check_needs_a_folder
+  cli.check_rejects_a_second_folder PROPERTIES TIMEOUT 60)
