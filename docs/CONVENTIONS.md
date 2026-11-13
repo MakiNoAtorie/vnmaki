@@ -466,7 +466,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - A step (`RollbackStep`) is a position where the story waited at a say, narrate, menu or `call_screen`. A `wait` is not a step. It holds the label-entry snapshot and input log of the outermost running label, the number (`ordinal`) of the yield point, and `voice`, the last `voice(name)` before it (see Backlog in Dialogue). So each step stands alone, and the history works across `jump`, `call` and `ret`.
   - `roll_back()` replays the outermost label from its snapshot, with the labels it called, to that yield point (`begin_replay` with an ordinal). Replay does not report the label entries, and it does not add a step. The observer then hears the request, as for a load.
   - From a say or menu it goes to the step before. From a wait it goes to the last step. It returns false when there is nothing to go back to, and then it changes nothing.
-  - The history keeps `ScriptRuntimeOptions::rollback_depth` steps back (default 100, `project.toml` key `rollback_depth`, 0 is off). The oldest steps go first.
+  - The history keeps `ScriptRuntimeOptions::rollback_depth` steps back (default 100, `project.toml` key `rollback_depth`, 0 is off: `can_roll_back()` is false everywhere, also at a wait). The oldest steps go first.
   - A rollback drops the later steps at once. There is no roll forward. The player who goes back to a menu and chooses again gets a new branch with no trace of the old one.
   - `menu { "a", "b", fixed = true }`: after the player answers it, the history is empty. Rollback cannot go back to the menu or before it. `fixed` must be a boolean.
   - `replay()` (a load) empties the history. The story then starts a new one.

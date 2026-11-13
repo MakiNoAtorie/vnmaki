@@ -375,6 +375,22 @@ TEST_CASE("rollback: depth 0 turns it off") {
   CHECK(story.at() == "line 2");
 }
 
+TEST_CASE("rollback: depth 0 gives no rollback at a wait either") {
+  Story story{R"(
+label("start", function()
+  narrate("before")
+  wait_all()
+  narrate("after")
+end)
+)",
+              0};
+  story.runtime.advance();
+  REQUIRE(story.at() == "wait");
+  CHECK_FALSE(story.runtime.can_roll_back());
+  CHECK_FALSE(story.runtime.roll_back());
+  CHECK(story.at() == "wait");
+}
+
 TEST_CASE("rollback: it goes back over a wait to the previous line") {
   Story story{R"(
 label("start", function()

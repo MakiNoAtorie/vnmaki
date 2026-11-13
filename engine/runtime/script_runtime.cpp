@@ -3179,7 +3179,7 @@ void ScriptRuntime::Impl::replay(const LabelSnapshot& snapshot, std::span<const 
 }
 
 bool ScriptRuntime::Impl::can_roll_back() const {
-  if (state_ != RunState::kWaiting) {
+  if (state_ != RunState::kWaiting || options_.rollback_depth == 0) {
     return false;
   }
   // At a wait the last step is the line before it; elsewhere the last step is this request.
