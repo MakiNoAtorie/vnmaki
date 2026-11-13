@@ -506,7 +506,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Without a thumbnail function, saves get `stub_thumbnail()`. Headless runs and tests use it.
 - This module has no UI. The `save` and `load` screens show the slot list (`Saves::list()`); see Default screens and preferences.
 - `PersistentStore` (`persistent_store.hpp`) keeps `persistent` and the seen steps in `<directory>/persistent.vnpersist`, in the same directory as the saves.
-  - The file is plain MessagePack (`encode_persistent`, `decode_persistent` in `save_file.hpp`). A bad file is reported through `on_warning`, and the game starts with no data.
+  - The file is plain MessagePack (`encode_persistent`, `decode_persistent` in `save_file.hpp`). A bad file (damaged, or of another `format`) is reported through `on_warning`, renamed to `persistent.vnpersist.bad`, and the game starts with no data. The first `flush()` does not write the defaults; only a later change writes a new file.
   - `load()` runs before `load_scripts()`. `flush()` writes the file only if `persistent` or the seen set changed. Call it whenever the story waits. The destructor calls it too.
   - A seen step is `{label, step, source hash of the label}` (`SeenStep`). An edited label has a new hash, so all its steps are unseen.
 - Hosts call `Saves::poll()` and `PersistentStore::flush()` once for each frame (`vnmaki run`) or after each input (`run_headless` with `HeadlessOptions::saves`).
