@@ -835,7 +835,10 @@ struct EvalResult {
 ///
 /// `load_scripts()` loads the engine's default screens first (engine/runtime/default_screens.cpp:
 /// title, say, choice, save, load, preferences, quick_menu, confirm, nvl, gallery), so a game
-/// replaces one by defining a screen of that name.
+/// replaces one by defining a screen of that name. Then it sets the functions of the C++ plugins
+/// as globals (ScriptRuntimeOptions::plugins) and loads the Lua plugins that project.toml lists
+/// (`plugins/<name>/`, engine/plugin/lua_plugin.hpp), and last the scripts of the game. A plugin
+/// whose engine version range does not hold, or whose files are missing, is a ScriptError.
 ///
 /// `persistent` is a second table like `store`, but for data that outlives a playthrough (seen
 /// text, unlocks, preferences). Snapshots, saves, rollback and load never change it; the host

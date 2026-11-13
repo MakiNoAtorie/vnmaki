@@ -62,6 +62,7 @@ wait("eileen")
 - Names: `dissolve`, `fade`, `slide_left`, `slide_right`, `slide_up`, `slide_down`, `wipe_left`, `wipe_right`, `wipe_up`, `wipe_down`, `mask`. For slides, the direction is the way the content moves. For wipes, it is the way the edge moves.
 - Options: `duration` (0.5 if you leave it out; 0 makes no transition), `color` (`fade`: `"#rrggbb"`, black by default), `softness` (`wipe_*` and `mask`: 0 to 1), `mask` (`mask`: an image name; the new picture shows first where the mask is dark), `uniforms` (a custom transition). An option that the transition does not use is an error.
 - Any other name is a game shader (see Shaders) that includes `transition.hlsli` and declares the uniform `progress`. The engine sets `progress` (0 to 1). The other uniforms come from `uniforms`.
+- `define_transition(name, base, options)` makes `name` a transition that runs `base` with these options as its defaults (see `docs/plugins.md`). A call can give other options. `base` is a built-in name or a game shader, not another `define_transition` name.
 - The layers from `background` to `overlay` are mixed. `ui` and `transient` draw over the result.
 
 ## Layered sprites
