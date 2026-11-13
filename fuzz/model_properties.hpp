@@ -33,7 +33,8 @@ constexpr float kUnitLengthTolerance = 1e-3F;
   }
   for (const ModelSkin& skin : model.skins) {
     if (skin.inverse_bind.size() != skin.joints.size() || skin.joints.size() > kMaxJoints ||
-        std::ranges::any_of(skin.joints, [node_count](std::size_t joint) { return joint >= node_count; })) {
+        std::ranges::any_of(skin.joints,
+                            [node_count](std::size_t joint) { return joint >= node_count; })) {
       return false;
     }
   }

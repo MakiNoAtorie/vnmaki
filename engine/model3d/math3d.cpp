@@ -151,8 +151,8 @@ void decompose(const Mat4& m, Vec3& translation, Quat& rotation, Vec3& scale) {
 }
 
 Quat normalized(const Quat& v) {
-  const float squared = (v.at(0) * v.at(0)) + (v.at(1) * v.at(1)) + (v.at(2) * v.at(2)) +
-                        (v.at(3) * v.at(3));
+  const float squared =
+      (v.at(0) * v.at(0)) + (v.at(1) * v.at(1)) + (v.at(2) * v.at(2)) + (v.at(3) * v.at(3));
   if (!(squared > kTiny) || !std::isfinite(squared)) {
     return kIdentityQuat;
   }
@@ -161,8 +161,8 @@ Quat normalized(const Quat& v) {
 }
 
 Quat slerp(const Quat& a, const Quat& b, float t) {
-  float cosine = (a.at(0) * b.at(0)) + (a.at(1) * b.at(1)) + (a.at(2) * b.at(2)) +
-                 (a.at(3) * b.at(3));
+  float cosine =
+      (a.at(0) * b.at(0)) + (a.at(1) * b.at(1)) + (a.at(2) * b.at(2)) + (a.at(3) * b.at(3));
   const float sign = cosine < 0 ? -1.0F : 1.0F;
   cosine *= sign;
   float from = 1 - t;
@@ -173,15 +173,16 @@ Quat slerp(const Quat& a, const Quat& b, float t) {
     from = std::sin((1 - t) * angle) / sine;
     to = std::sin(t * angle) / sine;
   }
-  return normalized({(from * a.at(0)) + (to * sign * b.at(0)), (from * a.at(1)) + (to * sign * b.at(1)),
-                     (from * a.at(2)) + (to * sign * b.at(2)),
-                     (from * a.at(3)) + (to * sign * b.at(3))});
+  return normalized(
+      {(from * a.at(0)) + (to * sign * b.at(0)), (from * a.at(1)) + (to * sign * b.at(1)),
+       (from * a.at(2)) + (to * sign * b.at(2)), (from * a.at(3)) + (to * sign * b.at(3))});
 }
 
 Vec3 transform_point(const Mat4& m, Vec3 v) {
-  return {.x = (cell(m, 0, 0) * v.x) + (cell(m, 0, 1) * v.y) + (cell(m, 0, 2) * v.z) + cell(m, 0, 3),
-          .y = (cell(m, 1, 0) * v.x) + (cell(m, 1, 1) * v.y) + (cell(m, 1, 2) * v.z) + cell(m, 1, 3),
-          .z = (cell(m, 2, 0) * v.x) + (cell(m, 2, 1) * v.y) + (cell(m, 2, 2) * v.z) + cell(m, 2, 3)};
+  return {
+      .x = (cell(m, 0, 0) * v.x) + (cell(m, 0, 1) * v.y) + (cell(m, 0, 2) * v.z) + cell(m, 0, 3),
+      .y = (cell(m, 1, 0) * v.x) + (cell(m, 1, 1) * v.y) + (cell(m, 1, 2) * v.z) + cell(m, 1, 3),
+      .z = (cell(m, 2, 0) * v.x) + (cell(m, 2, 1) * v.y) + (cell(m, 2, 2) * v.z) + cell(m, 2, 3)};
 }
 
 Vec3 transform_direction(const Mat4& m, Vec3 v) {

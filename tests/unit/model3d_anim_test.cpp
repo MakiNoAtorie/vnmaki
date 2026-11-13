@@ -7,9 +7,9 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <iterator>
-#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -139,8 +139,10 @@ TEST_CASE("anim: the morph quad loads with named targets and default weights") {
 
 TEST_CASE("anim: a bad joint index and times that go back are refused") {
   const vnmaki::Vfs vfs = fixture_vfs();
-  CHECK_THROWS_AS(static_cast<void>(vnmaki::load_model(vfs, "models/bad/joint_range.gltf")), vnmaki::ModelError);
-  CHECK_THROWS_AS(static_cast<void>(vnmaki::load_model(vfs, "models/bad/time_back.gltf")), vnmaki::ModelError);
+  CHECK_THROWS_AS(static_cast<void>(vnmaki::load_model(vfs, "models/bad/joint_range.gltf")),
+                  vnmaki::ModelError);
+  CHECK_THROWS_AS(static_cast<void>(vnmaki::load_model(vfs, "models/bad/time_back.gltf")),
+                  vnmaki::ModelError);
 }
 
 TEST_CASE("anim: a damaged skinned model loads or fails, and its rig never points out of range") {
@@ -238,7 +240,8 @@ TEST_CASE("anim: posed vertices are skinned by weight, and the normals stay unit
   }
   // The bent normal of the top ring turned with the tip: (-k, 0, -k) becomes (0, -k, -k).
   CHECK(vertices.at(kTopRingVertex).normal.at(0) == doctest::Approx(0.0F).epsilon(kTolerance));
-  CHECK(vertices.at(kTopRingVertex).normal.at(1) == doctest::Approx(-kRoot2Half).epsilon(kTolerance));
+  CHECK(vertices.at(kTopRingVertex).normal.at(1) ==
+        doctest::Approx(-kRoot2Half).epsilon(kTolerance));
 }
 
 // --- Morph targets ---------------------------------------------------------------------------
@@ -250,7 +253,7 @@ TEST_CASE("anim: morph weights follow the clip and move the vertices") {
   CHECK(half.weights.at(0) == std::vector<float>{0.5F, 0.25F});
   std::vector<vnmaki::MeshVertex> vertices;
   vnmaki::pose_vertices(quad, half, {}, vertices);
-  CHECK(vertices.at(2).position == std::array<float, 3>{1, 1.5F, 0});      // half of mouth_open
+  CHECK(vertices.at(2).position == std::array<float, 3>{1, 1.5F, 0});     // half of mouth_open
   CHECK(vertices.at(0).position == std::array<float, 3>{-1.125F, 0, 0});  // quarter of smile
   // Without a clip the weights of the file (0) leave the quad alone.
   vnmaki::pose_vertices(quad, vnmaki::rest_pose(data), {}, vertices);
@@ -352,7 +355,8 @@ TEST_CASE("anim: a replay or a snapshot puts a clip at its end, and a loop at ti
   CHECK(replayed.layers.front().time == vnmaki::kEndOfClip);
   check_point(tip_point(data, vnmaki::evaluate_pose(data, replayed), 2), {.x = -1, .y = 1, .z = 0});
   ClipPlayer looped;
-  vnmaki::start_clip(looped, "bend", PlayOptions{.loop = true, .seek = kHalfSecond, .replaying = true});
+  vnmaki::start_clip(looped, "bend",
+                     PlayOptions{.loop = true, .seek = kHalfSecond, .replaying = true});
   CHECK(looped.layers.front().time == 0);
 
   ClipPlayer live;
@@ -462,9 +466,10 @@ end)
 
 // The error of the story whose `start` label has a model "arm" (skinned bar) and runs `lines`.
 std::string line_error(const std::string& lines) {
-  Stage stage{"label(\"start\", function()\n  scene3d(\"stage\")\n"
-              "  model(\"arm\", \"models/skinned.gltf\", { scene = \"stage\" })\n" +
-              lines + "\nend)\n"};
+  Stage stage{
+      "label(\"start\", function()\n  scene3d(\"stage\")\n"
+      "  model(\"arm\", \"models/skinned.gltf\", { scene = \"stage\" })\n" +
+      lines + "\nend)\n"};
   REQUIRE(stage.runtime.state() == vnmaki::RunState::kFailed);
   return stage.runtime.error();
 }

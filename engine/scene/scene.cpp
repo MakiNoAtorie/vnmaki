@@ -396,7 +396,8 @@ template <typename Layers>
 bool clips_playing_3d(const Layers& layers, std::string_view tag) {
   std::string_view scene_tag;
   std::string_view object;
-  if (!tag.empty() && !(tag.starts_with(kScene3dTagPrefix) && split_3d_tag(tag, scene_tag, object))) {
+  if (!tag.empty() &&
+      !(tag.starts_with(kScene3dTagPrefix) && split_3d_tag(tag, scene_tag, object))) {
     return false;
   }
   for (const auto& shown : layers) {
@@ -415,7 +416,8 @@ template <typename Layers>
 void finish_clips_3d(Layers& layers, std::string_view tag) {
   std::string_view scene_tag;
   std::string_view object;
-  if (!tag.empty() && !(tag.starts_with(kScene3dTagPrefix) && split_3d_tag(tag, scene_tag, object))) {
+  if (!tag.empty() &&
+      !(tag.starts_with(kScene3dTagPrefix) && split_3d_tag(tag, scene_tag, object))) {
     return;
   }
   for (auto& shown : layers) {

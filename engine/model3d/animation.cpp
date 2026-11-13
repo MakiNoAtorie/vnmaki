@@ -61,7 +61,8 @@ KeySpan locate_key(const std::vector<float>& times, double time) {
 std::span<const float> key_part(const AnimationChannel& channel, std::size_t key,
                                 std::size_t part) {
   const bool cubic = channel.interpolation == Interpolation::kCubicSpline;
-  const std::size_t first = cubic ? ((key * kCubicParts) + part) * channel.width : key * channel.width;
+  const std::size_t first =
+      cubic ? ((key * kCubicParts) + part) * channel.width : key * channel.width;
   return std::span{channel.values}.subspan(first, channel.width);
 }
 
@@ -161,8 +162,8 @@ void advance_clips(ClipPlayer& player, const ModelData& data, double seconds) {
       layer.time = 0;
       continue;
     }
-    layer.time = clip_time({.loop = layer.loop, .time = layer.time + (seconds * layer.speed)},
-                           *clip);
+    layer.time =
+        clip_time({.loop = layer.loop, .time = layer.time + (seconds * layer.speed)}, *clip);
   }
   // A layer that has faded in fully covers the older ones.
   for (std::size_t newest = player.layers.size(); newest-- > 1;) {
@@ -219,8 +220,8 @@ ModelPose rest_pose(const ModelData& data) {
   pose.nodes.reserve(data.nodes.size());
   pose.weights.reserve(data.nodes.size());
   for (const ModelNode& node : data.nodes) {
-    pose.nodes.push_back(NodePose{
-        .translation = node.translation, .rotation = node.rotation, .scale = node.scale});
+    pose.nodes.push_back(
+        NodePose{.translation = node.translation, .rotation = node.rotation, .scale = node.scale});
     pose.weights.push_back(node.weights);
   }
   return pose;
@@ -293,9 +294,8 @@ bool has_morph(const ModelData& data, std::string_view morph) {
 }
 
 bool is_dynamic(const ModelData& data) {
-  return std::ranges::any_of(data.meshes, [](const ModelMesh& mesh) {
-    return mesh.skin >= 0 || !mesh.morphs.empty();
-  });
+  return std::ranges::any_of(
+      data.meshes, [](const ModelMesh& mesh) { return mesh.skin >= 0 || !mesh.morphs.empty(); });
 }
 
 std::vector<std::vector<Mat4>> skin_matrices(const ModelData& data, const ModelPose& pose) {
@@ -341,8 +341,8 @@ void pose_vertices(const ModelMesh& mesh, const ModelPose& pose,
   for (std::size_t i = 0; i < out.size(); ++i) {
     MeshVertex& vertex = out.at(i);
     const SkinInfluence& influence = mesh.influences.at(i);
-    const Vec3 position{.x = vertex.position.at(0), .y = vertex.position.at(1),
-                        .z = vertex.position.at(2)};
+    const Vec3 position{
+        .x = vertex.position.at(0), .y = vertex.position.at(1), .z = vertex.position.at(2)};
     const Vec3 normal{.x = vertex.normal.at(0), .y = vertex.normal.at(1), .z = vertex.normal.at(2)};
     Vec3 moved{};
     Vec3 turned{};
@@ -354,13 +354,15 @@ void pose_vertices(const ModelMesh& mesh, const ModelPose& pose,
       const Mat4& joint = joints.at(influence.joints.at(k));
       const Vec3 p = transform_point(joint, position);
       const Vec3 n = transform_direction(joint, normal);
-      moved = {.x = moved.x + (weight * p.x), .y = moved.y + (weight * p.y),
+      moved = {.x = moved.x + (weight * p.x),
+               .y = moved.y + (weight * p.y),
                .z = moved.z + (weight * p.z)};
-      turned = {.x = turned.x + (weight * n.x), .y = turned.y + (weight * n.y),
+      turned = {.x = turned.x + (weight * n.x),
+                .y = turned.y + (weight * n.y),
                 .z = turned.z + (weight * n.z)};
     }
-    const float length = std::sqrt((turned.x * turned.x) + (turned.y * turned.y) +
-                                   (turned.z * turned.z));
+    const float length =
+        std::sqrt((turned.x * turned.x) + (turned.y * turned.y) + (turned.z * turned.z));
     vertex.position = {moved.x, moved.y, moved.z};
     if (length > 0 && std::isfinite(length)) {
       vertex.normal = {turned.x / length, turned.y / length, turned.z / length};

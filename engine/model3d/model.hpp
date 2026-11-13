@@ -143,8 +143,8 @@ struct ModelData {
 /// are relative to its folder), all through `vfs`. Meshes of nodes are placed by their node
 /// transforms. Skins (the first four joints of a vertex), morph targets (positions) and clips
 /// are read (engine/model3d/animation.hpp plays them); cameras and lights are ignored. Only
-/// triangle lists are drawn. A missing or malformed file, buffer or image, and a primitive that is not a triangle
-/// list, throw ModelError.
+/// triangle lists are drawn. A missing or malformed file, buffer or image, and a primitive that is
+/// not a triangle list, throw ModelError.
 [[nodiscard]] ModelData load_model(const Vfs& vfs, std::string_view path);
 
 /// As load_model, from the bytes of the file at `path` (which finds the files it names).

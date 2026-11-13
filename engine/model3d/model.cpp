@@ -337,10 +337,10 @@ class Loader {
         break;
       case cgltf_animation_path_type_weights:
         made.path = AnimationPath::kWeights;
-        made.width = channel.target_node->mesh != nullptr &&
-                             channel.target_node->mesh->primitives_count != 0
-                         ? channel.target_node->mesh->primitives[0].targets_count
-                         : 0;
+        made.width =
+            channel.target_node->mesh != nullptr && channel.target_node->mesh->primitives_count != 0
+                ? channel.target_node->mesh->primitives[0].targets_count
+                : 0;
         break;
       default:
         return std::nullopt;
@@ -373,9 +373,9 @@ class Loader {
       fail(path_, "the values of an animation do not match its times");
     }
     made.times = read_floats(*sampler.input, keys, 1, path_, "animation times");
-    made.values = read_floats(*sampler.output, sampler.output->count,
-                              cgltf_num_components(sampler.output->type), path_,
-                              "animation values");
+    made.values =
+        read_floats(*sampler.output, sampler.output->count,
+                    cgltf_num_components(sampler.output->type), path_, "animation values");
     float last = 0;
     for (const float time : made.times) {
       if (!std::isfinite(time) || time < last) {
