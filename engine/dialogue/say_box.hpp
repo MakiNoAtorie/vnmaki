@@ -5,6 +5,7 @@
 // look until a Lua screen replaces it.
 
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -55,6 +56,13 @@ class SayBoxView {
   SayBoxView& operator=(SayBoxView&&) = delete;
   ~SayBoxView() = default;
 
+  /// Builds the screen of a line from a script (the Lua screen `say`) in place of `style`'s box.
+  /// `source` returns the screen tree, or nothing when the script cannot build it (the view then
+  /// uses `style`). The tree has a text node with `reveal` (UiNode::reveal): the line. `canvas`
+  /// is the virtual resolution the tree lays out in. The tree is built once for each line.
+  using ScreenSource = std::function<std::optional<UiNode>(const DialogueLine&)>;
+  void set_screen_source(ScreenSource source, Size canvas);
+
   /// Lays `line` out and returns its glyph count (what DialoguePresenter needs).
   [[nodiscard]] std::size_t glyph_count(const DialogueLine& line);
 
@@ -79,9 +87,15 @@ class SayBoxView {
 
  private:
   void layout(const DialogueLine& line);
+  [[nodiscard]] UiNode* scripted_screen(const DialogueLine& line);
   [[nodiscard]] UiNode laid_out_screen(const DialogueLine& line,
                                        std::optional<std::size_t> visible_glyphs);
 
+  ScreenSource source_;
+  Size canvas_{};
+  // The laid-out tree of `built_for_` (empty if the source gave none) and where its line starts.
+  std::optional<DialogueLine> built_for_;
+  std::optional<UiNode> built_;
   FontSet fonts_;
   SayBoxStyle style_;
   UiRenderer ui_;

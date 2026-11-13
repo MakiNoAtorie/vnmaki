@@ -102,9 +102,61 @@ UiNode make_say_screen(const SayBoxStyle& style, const DialogueLine& line,
 SayBoxView::SayBoxView(IRenderer& renderer, FontSet fonts, SayBoxStyle style)
     : fonts_(fonts), style_(style), ui_(renderer, std::move(fonts)) {}
 
+namespace {
+
+UiNode* find_reveal(UiNode& node) {
+  if (node.reveal) {
+    return &node;
+  }
+  for (UiNode& child : node.children) {
+    if (UiNode* found = find_reveal(child)) {
+      return found;
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+void SayBoxView::set_screen_source(ScreenSource source, Size canvas) {
+  source_ = std::move(source);
+  canvas_ = canvas;
+  built_for_.reset();
+  built_.reset();
+  has_layout_ = false;
+}
+
+// The script's tree for `line`, laid out; null when there is no source, it gave none, or the tree
+// has no node to reveal.
+UiNode* SayBoxView::scripted_screen(const DialogueLine& line) {
+  if (!source_) {
+    return nullptr;
+  }
+  if (!built_for_ || *built_for_ != line) {
+    built_for_ = line;
+    built_ = source_(line);
+    if (built_ && find_reveal(*built_) == nullptr) {
+      built_.reset();
+    }
+    if (built_) {
+      layout_tree(*built_, canvas_, ui_.text_measure());
+    }
+    has_layout_ = false;
+  }
+  return built_ ? &*built_ : nullptr;
+}
+
 void SayBoxView::layout(const DialogueLine& line) {
+  UiNode* scripted = scripted_screen(line);
   if (has_layout_ && line.text == laid_out_text_) {
     return;
+  }
+  float text_size = style_.text_size;
+  float wrap_width = style_.wrap_width;
+  if (scripted != nullptr) {
+    const UiNode& reveal = *find_reveal(*scripted);
+    text_size = reveal.style.text_size;
+    wrap_width = reveal.style.width.value_or(reveal.rect.width);
   }
   StyledText styled;
   try {
@@ -112,7 +164,7 @@ void SayBoxView::layout(const DialogueLine& line) {
   } catch (const MarkupError&) {
     styled = plain_text(line.text);  // The runtime rejects bad tags; this is for other callers.
   }
-  text_layout_ = layout_text(fonts_, styled, style_.text_size, style_.wrap_width);
+  text_layout_ = layout_text(fonts_, styled, text_size, wrap_width);
   laid_out_text_ = line.text;
   has_layout_ = true;
 }
@@ -139,18 +191,30 @@ std::size_t SayBoxView::revealed(const DialogueLine& line, double characters_per
 
 std::string SayBoxView::link_at(const DialogueLine& line, PointF point) {
   layout(line);
-  const PointF origin{.x = style_.box.x + style_.text_offset.x,
-                      .y = style_.box.y + style_.text_offset.y};
+  PointF origin{.x = style_.box.x + style_.text_offset.x, .y = style_.box.y + style_.text_offset.y};
+  if (UiNode* scripted = scripted_screen(line)) {
+    const UiNode& reveal = *find_reveal(*scripted);
+    origin = {.x = reveal.rect.x + reveal.style.padding, .y = reveal.rect.y + reveal.style.padding};
+  }
   return std::string{
       vnmaki::link_at(text_layout_, {.x = point.x - origin.x, .y = point.y - origin.y})};
 }
 
 void SayBoxView::prepare(const DialogueLine& line, float scale) {
+  if (const UiNode* scripted = scripted_screen(line)) {
+    ui_.prepare(*scripted, scale);
+    return;
+  }
   ui_.prepare(laid_out_screen(line, std::nullopt), scale);
 }
 
 void SayBoxView::draw(const DialogueLine& line, std::size_t visible_glyphs, float scale,
                       PointF origin) {
+  if (UiNode* scripted = scripted_screen(line)) {
+    find_reveal(*scripted)->visible_glyphs = visible_glyphs;
+    ui_.draw(*scripted, scale, origin);
+    return;
+  }
   ui_.draw(laid_out_screen(line, visible_glyphs), scale, origin);
 }
 
