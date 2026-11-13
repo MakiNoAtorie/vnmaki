@@ -27,10 +27,13 @@
 #include <variant>
 #include <vector>
 
+#include "engine/plugin/plugin_value.hpp"
+
 struct lua_State;  // Lua's own type (global scope); only the debugger uses it
 
 namespace vnmaki {
 
+class PluginContext;
 class Vfs;
 
 /// One line of the NVL page (`nvl(true)`, `character { kind = "nvl" }`): who said it (empty for
@@ -263,6 +266,10 @@ struct ShowRequest {
   /// extension) instead of an image; `image` is then the tag. `loop` is the option of that name.
   std::optional<std::string> movie{};
   bool loop = false;
+  /// The `displayable` option: shows a displayable of this plugin type (engine/plugin/plugin.hpp)
+  /// instead of an image; `image` is then the tag. `plugin_params` is the `params` option.
+  std::optional<std::string> displayable{};
+  PluginParams plugin_params{};
   /// For a layered sprite: the groups the script named and the values it chose, in the order of
   /// the definition's groups. Other groups keep their values.
   std::vector<std::pair<std::string, std::string>> attributes{};
@@ -734,6 +741,10 @@ struct ScriptRuntimeOptions {
   /// calls only reach the observer. Must outlive the runtime. An Audio goes here, and in
   /// `scene_state` (inside a CompositeSceneState when there is a Scene too).
   AudioCommands* audio = nullptr;
+  /// The C++ plugins' functions: installed as globals when the scripts load. Null means the
+  /// context that the plugins linked into the executable registered in
+  /// (`PluginContext::linked()`). It must outlive the runtime.
+  const PluginContext* plugins = nullptr;
   /// The images (names, as for `show`) of the gallery (project.toml `gallery`). Showing one with
   /// `scene` or `show` unlocks `cg/<name>` in `persistent.unlocks`.
   std::vector<std::string> gallery{};

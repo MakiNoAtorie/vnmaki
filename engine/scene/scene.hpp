@@ -35,6 +35,7 @@
 namespace vnmaki {
 
 class ModelLibrary;
+class PluginContext;
 class Scene3dDisplayable;
 class Vfs;
 
@@ -156,8 +157,10 @@ inline constexpr std::string_view kLayerTagPrefix = "@layer.";
 /// changing the others: "displayables" (the images), "layered" (the layered sprites),
 /// "animations" (the frame animations), "movies" (the movies), "tweens" (the loops), "shaders"
 /// (the shader and uniform values of displayables and layers; left out when no shader is set) and
-/// "camera" (the camera and the parallax of the layers; left out when they are the default) and
-/// "scene3d" (the 3D scenes, put back last of the displayables; left out when there are none). It
+/// "camera" (the camera and the parallax of the layers; left out when they are the default),
+/// "scene3d" (the 3D scenes, put back after the other displayables; left out when there are none)
+/// and "plugins" (the displayables of C++ plugins: their type and params; put back last, left out
+/// when there are none). It
 /// keeps the properties as a replay would leave them: tweens that end are at their end values,
 /// loops at the value they started from, and restore() starts each loop again at time 0.
 class Scene final : public SceneState, public SceneCommands {
@@ -197,6 +200,9 @@ class Scene final : public SceneState, public SceneCommands {
   /// The audio that movies play on. May be null (movies are then silent). It must outlive the
   /// scene, whose movies stop their audio when they go away.
   void set_movie_audio(MovieAudio* audio) { movie_audio_ = audio; }
+  /// The plugins whose displayable types `show(tag, { displayable = type })` makes. Null (the
+  /// default) means `PluginContext::linked()`. It must outlive the scene.
+  void set_plugins(const PluginContext* plugins) { plugins_ = plugins; }
   /// The voice level that lip-synced layered sprites follow on update(). May be null: the mouths
   /// then stay closed. It must outlive the scene.
   void set_voice_level(const VoiceLevel* levels) { voice_level_ = levels; }
@@ -317,6 +323,10 @@ class Scene final : public SceneState, public SceneCommands {
   void read_scene3d(std::span<const std::byte> bytes, Layers& layers) const;
   // Sets the model `request.name` of a 3D scene. Returns why it cannot.
   [[nodiscard]] std::string set_model_3d(Scene3dDisplayable& scene, const Scene3dRequest& request);
+  // Reads the "plugins" part into `layers`. Throws std::invalid_argument.
+  void read_plugin_displayables(std::span<const std::byte> bytes, Layers& layers) const;
+  // The context of set_plugins().
+  [[nodiscard]] const PluginContext& plugin_context() const;
   // Reads the "movies" part into `layers`. Throws std::invalid_argument.
   static void read_movies(std::span<const std::byte> bytes, Layers& layers,
                           const std::shared_ptr<std::vector<TextureId>>& retired);
@@ -336,6 +346,8 @@ class Scene final : public SceneState, public SceneCommands {
   std::map<std::string, Texture, std::less<>> textures_;
   std::shared_ptr<ModelLibrary> models_;  // the models of the 3D scenes
   MovieAudio* movie_audio_ = nullptr;
+  const PluginContext* plugins_ = nullptr;
+  TextureId plugin_white_{};  // 1 by 1 white, made by prepare() when a plugin displayable is shown
   std::function<void(std::string_view)> warn_;
   std::set<std::string, std::less<>> failed_paths_;  // images that did not load: not tried again
   const VoiceLevel* voice_level_ = nullptr;

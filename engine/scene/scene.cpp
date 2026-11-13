@@ -22,6 +22,7 @@
 #include "engine/anim/timeline.hpp"
 #include "engine/core/byte_stream.hpp"
 #include "engine/model3d/scene3d.hpp"
+#include "engine/plugin/plugin.hpp"
 #include "engine/render/image.hpp"
 #include "engine/render/precompiled_shader.hpp"
 #include "engine/render/shader_compiler.hpp"
@@ -52,6 +53,13 @@ std::string image_path(std::string_view name, std::string_view extension) {
 
 std::optional<std::string> resolve_image(const Vfs& vfs, std::string_view name) {
   for (const std::string_view extension : kImageExtensions) {
+    std::string path = image_path(name, extension);
+    if (vfs.exists(path)) {
+      return path;
+    }
+  }
+  // The formats of plugins come after the built-in ones.
+  for (const std::string& extension : image_format_extensions()) {
     std::string path = image_path(name, extension);
     if (vfs.exists(path)) {
       return path;
@@ -189,6 +197,11 @@ std::string make_lip_sync(const LayeredRequest::LipSync& sync, LayeredDefinition
 // clip's name, u8 loop and f32 speed; or u8 0 for none: a clip that does not loop is at its end, a
 // loop starts at time 0) and its lip sync (the morph target name, the voice tag; "" for none); then
 // a u32 count of lights and for each its name, u8 kind and 16 f32.
+// "plugins", only when a displayable of a C++ plugin is shown: a u32 count, then for each (layer by
+// layer): u8 layer, u32 index in the layer (counting every displayable: they are put back after the
+// 3D scenes), tag, the type name, a u32 count of params and for each its name, u8 kind (0 nil, 1
+// boolean, 2 integer, 3 float, 4 string) and its value (u8, u64, f64, string), then the properties
+// as for "displayables". The object is made again by the factory of its type.
 
 constexpr std::uint32_t kFormatVersion = 2;
 constexpr std::string_view kDisplayablesPart = "displayables";
@@ -199,6 +212,8 @@ constexpr std::string_view kTweensPart = "tweens";
 constexpr std::string_view kShadersPart = "shaders";
 constexpr std::string_view kCameraPart = "camera";
 constexpr std::string_view kScene3dPart = "scene3d";
+constexpr std::string_view kPluginsPart = "plugins";
+constexpr std::uint8_t kOpaque = 255;
 
 constexpr std::string_view kShaderDirectory = "shaders/";
 // The uniform that a custom transition declares and the engine sets.
@@ -790,7 +805,10 @@ std::string Scene::show(const ShowRequest& request) {
   const auto definition = definitions_.find(request.image);
   const auto animation = animations_.find(request.image);
   std::optional<std::string> path;
-  if (request.movie.has_value()) {
+  const bool is_plugin = request.displayable.has_value();
+  if (is_plugin) {
+    // Made below, with the position and the properties settled.
+  } else if (request.movie.has_value()) {
     // A replay shows what the script showed before, so it checks only that the file is there.
     std::string problem = request.replaying && vfs_->exists(*request.movie)
                               ? std::string{}
@@ -858,7 +876,35 @@ std::string Scene::show(const ShowRequest& request) {
   }
 
   std::unique_ptr<Displayable> displayable;
-  if (request.movie.has_value()) {
+  if (is_plugin) {
+    const PluginDisplayableFactory* factory =
+        plugin_context().find_displayable(*request.displayable);
+    if (factory == nullptr) {
+      const std::vector<std::string> types = plugin_context().displayable_types();
+      std::string message = quoted("unknown displayable type '", *request.displayable, "' (");
+      if (types.empty()) {
+        message += "no plugin adds one)";
+      } else {
+        message += "the types are ";
+        for (std::size_t i = 0; i < types.size(); ++i) {
+          message += (i == 0 ? "" : ", ") + types[i];
+        }
+        message += ")";
+      }
+      return message;
+    }
+    try {
+      std::unique_ptr<PluginDisplayable> made = (*factory)(request.plugin_params);
+      if (!made) {
+        return quoted("displayable type '", *request.displayable, "' made nothing");
+      }
+      made->set_origin(*request.displayable, request.plugin_params);
+      made->set_white_texture(plugin_white_);
+      displayable = std::move(made);
+    } catch (const PluginError& error) {
+      return quoted("displayable type '", *request.displayable, "': ") + error.what();
+    }
+  } else if (request.movie.has_value()) {
     displayable =
         std::make_unique<MovieDisplayable>(*request.movie, request.loop, retired_textures_);
   } else if (definition != definitions_.end()) {
@@ -1565,12 +1611,12 @@ std::vector<std::byte> Scene::capture() const {
     for (std::size_t index = 0; index < shown.size(); ++index) {
       const auto* sprite = dynamic_cast<const LayeredSprite*>(shown[index].displayable.get());
       if (sprite == nullptr) {
-        movies_before +=
-            dynamic_cast<const MovieDisplayable*>(shown[index].displayable.get()) != nullptr ||
-                    dynamic_cast<const Scene3dDisplayable*>(shown[index].displayable.get()) !=
-                        nullptr
-                ? 1
-                : 0;
+        const Displayable* other = shown[index].displayable.get();
+        movies_before += dynamic_cast<const MovieDisplayable*>(other) != nullptr ||
+                                 dynamic_cast<const Scene3dDisplayable*>(other) != nullptr ||
+                                 dynamic_cast<const PluginDisplayable*>(other) != nullptr
+                             ? 1
+                             : 0;
         continue;
       }
       layered.u8(static_cast<std::uint8_t>(layer));
@@ -1639,8 +1685,11 @@ std::vector<std::byte> Scene::capture() const {
       const Entry& entry = shown.at(index);
       const auto* movie = dynamic_cast<const MovieDisplayable*>(entry.displayable.get());
       if (movie == nullptr) {
-        scenes_before +=
-            dynamic_cast<const Scene3dDisplayable*>(entry.displayable.get()) != nullptr ? 1 : 0;
+        scenes_before += dynamic_cast<const Scene3dDisplayable*>(entry.displayable.get()) != nullptr ||
+                                 dynamic_cast<const PluginDisplayable*>(entry.displayable.get()) !=
+                                     nullptr
+                             ? 1
+                             : 0;
         continue;
       }
       movies.u8(static_cast<std::uint8_t>(layer));
@@ -1670,14 +1719,17 @@ std::vector<std::byte> Scene::capture() const {
   scene3ds.u32(scene3d_count);
   for (const Layer layer : kLayerOrder) {
     const std::vector<Entry>& shown = entries(layer);
+    std::size_t plugins_before = 0;  // Plugin displayables are put back after the scenes.
     for (std::size_t index = 0; index < shown.size(); ++index) {
       const Entry& entry = shown.at(index);
       const auto* scene = dynamic_cast<const Scene3dDisplayable*>(entry.displayable.get());
       if (scene == nullptr) {
+        plugins_before +=
+            dynamic_cast<const PluginDisplayable*>(entry.displayable.get()) != nullptr ? 1 : 0;
         continue;
       }
       scene3ds.u8(static_cast<std::uint8_t>(layer));
-      scene3ds.u32(static_cast<std::uint32_t>(index));
+      scene3ds.u32(static_cast<std::uint32_t>(index - plugins_before));
       scene3ds.string(entry.tag);
       const auto adjusted = resting.find(entry.tag);
       const DisplayProperties& properties =
@@ -1722,6 +1774,52 @@ std::vector<std::byte> Scene::capture() const {
     }
   }
 
+  // The displayables of plugins, last: their type and params (the object is made again).
+  Writer plugin_writer;
+  std::uint32_t plugin_count = 0;
+  for (const Layer layer : kLayerOrder) {
+    plugin_count +=
+        static_cast<std::uint32_t>(std::ranges::count_if(entries(layer), [](const Entry& entry) {
+          return dynamic_cast<const PluginDisplayable*>(entry.displayable.get()) != nullptr;
+        }));
+  }
+  plugin_writer.u32(plugin_count);
+  for (const Layer layer : kLayerOrder) {
+    const std::vector<Entry>& shown = entries(layer);
+    for (std::size_t index = 0; index < shown.size(); ++index) {
+      const Entry& entry = shown.at(index);
+      const auto* plugin = dynamic_cast<const PluginDisplayable*>(entry.displayable.get());
+      if (plugin == nullptr) {
+        continue;
+      }
+      plugin_writer.u8(static_cast<std::uint8_t>(layer));
+      plugin_writer.u32(static_cast<std::uint32_t>(index));
+      plugin_writer.string(entry.tag);
+      plugin_writer.string(plugin->type());
+      plugin_writer.u32(static_cast<std::uint32_t>(plugin->params().size()));
+      for (const auto& [name, value] : plugin->params()) {
+        plugin_writer.string(name);
+        plugin_writer.u8(static_cast<std::uint8_t>(value.index()));
+        if (const auto* flag = std::get_if<bool>(&value)) {
+          plugin_writer.u8(*flag ? 1 : 0);
+        } else if (const auto* integer = std::get_if<std::int64_t>(&value)) {
+          plugin_writer.u64(static_cast<std::uint64_t>(*integer));
+        } else if (const auto* real = std::get_if<double>(&value)) {
+          plugin_writer.f64(*real);
+        } else if (const auto* text = std::get_if<std::string>(&value)) {
+          plugin_writer.string(*text);
+        }
+      }
+      const auto adjusted = resting.find(entry.tag);
+      const DisplayProperties& properties =
+          adjusted != resting.end() ? adjusted->second : plugin->properties();
+      plugin_writer.properties(properties);
+      if (properties.shader != 0) {
+        shaded.emplace_back(entry.tag, &properties);
+      }
+    }
+  }
+
   std::map<std::string, std::vector<std::byte>> parts{
       {std::string{kDisplayablesPart}, displayables.take()},
       {std::string{kLayeredPart}, layered.take()},
@@ -1731,6 +1829,9 @@ std::vector<std::byte> Scene::capture() const {
   };
   if (scene3d_count != 0) {
     parts.emplace(std::string{kScene3dPart}, scene3ds.take());
+  }
+  if (plugin_count != 0) {
+    parts.emplace(std::string{kPluginsPart}, plugin_writer.take());
   }
   if (!shaded.empty() || !shaded_layers.empty()) {
     Writer shaders;
@@ -1973,6 +2074,72 @@ void Scene::read_movies(std::span<const std::byte> bytes, Layers& layers,
   }
 }
 
+const PluginContext& Scene::plugin_context() const {
+  return plugins_ != nullptr ? *plugins_ : PluginContext::linked();
+}
+
+void Scene::read_plugin_displayables(std::span<const std::byte> bytes, Layers& layers) const {
+  Reader reader{bytes};
+  const std::uint32_t count = reader.u32();
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const std::size_t layer = reader.u8();
+    if (layer >= layers.size()) {
+      throw std::invalid_argument{"scene state: unknown layer"};
+    }
+    const std::uint32_t index = reader.u32();
+    std::string tag = reader.string();
+    std::string type = reader.string();
+    const std::uint32_t param_count = reader.u32();
+    PluginParams params;
+    for (std::uint32_t p = 0; p < param_count; ++p) {
+      std::string name = reader.string();
+      switch (reader.u8()) {
+        case 0:
+          params.emplace_back(std::move(name), std::monostate{});
+          break;
+        case 1:
+          params.emplace_back(std::move(name), reader.u8() != 0);
+          break;
+        case 2:
+          params.emplace_back(std::move(name), static_cast<std::int64_t>(reader.u64()));
+          break;
+        case 3:
+          params.emplace_back(std::move(name), reader.f64());
+          break;
+        case 4:
+          params.emplace_back(std::move(name), reader.string());
+          break;
+        default:
+          throw std::invalid_argument{"scene state: unknown plugin param kind"};
+      }
+    }
+    const PluginDisplayableFactory* factory = plugin_context().find_displayable(type);
+    if (factory == nullptr) {
+      throw std::invalid_argument{"scene state: the displayable type '" + type +
+                                  "' is not in any plugin"};
+    }
+    std::unique_ptr<PluginDisplayable> made;
+    try {
+      made = (*factory)(params);
+    } catch (const PluginError& error) {
+      throw std::invalid_argument{"scene state: displayable type '" + type + "': " + error.what()};
+    }
+    if (!made) {
+      throw std::invalid_argument{"scene state: displayable type '" + type + "' made nothing"};
+    }
+    made->set_origin(std::move(type), std::move(params));
+    made->set_white_texture(plugin_white_);
+    made->properties() = reader.properties();
+    std::vector<Entry>& shown = layers.at(layer);
+    const auto position = static_cast<std::ptrdiff_t>(std::min<std::size_t>(index, shown.size()));
+    shown.insert(shown.begin() + position,
+                 Entry{.tag = std::move(tag), .displayable = std::move(made)});
+  }
+  if (!reader.at_end()) {
+    throw std::invalid_argument{"scene state: unexpected data after the last plugin displayable"};
+  }
+}
+
 void Scene::read_scene3d(std::span<const std::byte> bytes, Layers& layers) const {
   const auto checked_name = [](std::string name) {
     if (!valid_3d_name(name)) {
@@ -2088,6 +2255,9 @@ void Scene::restore(std::span<const std::byte> state) {
     // The 3D scenes go back after the other displayables, so they keep their positions.
     if (const auto found = parts.find(kScene3dPart); found != parts.end()) {
       read_scene3d(found->second, layers);
+    }
+    if (const auto found = parts.find(kPluginsPart); found != parts.end()) {
+      read_plugin_displayables(found->second, layers);
     }
     // After every displayable is back: it finds them by tag.
     if (const auto found = parts.find(kShadersPart); found != parts.end()) {
@@ -2225,6 +2395,16 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
             sprite->set_texture(path, texture->id, texture->size);
           }
         }
+        continue;
+      }
+      if (auto* plugin = dynamic_cast<PluginDisplayable*>(entry.displayable.get())) {
+        if (plugin_white_ == TextureId{}) {
+          plugin_white_ = renderer.create_texture(
+              Image{.size = {.width = 1, .height = 1},
+                    .pixels = {kOpaque, kOpaque, kOpaque, kOpaque}},
+              TextureFilter::kNearest);
+        }
+        plugin->set_white_texture(plugin_white_);
         continue;
       }
       if (auto* movie = dynamic_cast<MovieDisplayable*>(entry.displayable.get())) {

@@ -167,6 +167,33 @@ std::vector<std::string> read_gallery(const toml::node& node) {
   return images;
 }
 
+std::vector<std::string> read_plugins(const toml::node& node) {
+  constexpr std::string_view kReason = "'plugins' must be a list of plugin names";
+  const toml::array* array = node.as_array();
+  if (array == nullptr) {
+    fail_at(node, kReason);
+  }
+  std::vector<std::string> plugins;
+  plugins.reserve(array->size());
+  for (const toml::node& element : *array) {
+    const std::optional<std::string> name = element.value_exact<std::string>();
+    // A plugin is the folder plugins/<name>, so the name is one path part.
+    const bool plain = name && !name->empty() &&
+                       std::ranges::all_of(*name, [](char c) {
+                         return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' ||
+                                c == '-';
+                       });
+    if (!plain) {
+      fail_at(element, "a plugin name has only the characters a-z, 0-9, '_' and '-'");
+    }
+    if (std::ranges::find(plugins, *name) != plugins.end()) {
+      fail_at(node, "'plugins' lists '" + *name + "' twice");
+    }
+    plugins.push_back(*name);
+  }
+  return plugins;
+}
+
 std::size_t read_count(const toml::node& node, std::string_view key) {
   const std::optional<std::int64_t> depth = node.value_exact<std::int64_t>();
   if (!depth || *depth < 0 || *depth > kMaxRollbackDepth) {
@@ -223,6 +250,9 @@ ProjectConfig parse_project_config(std::string_view toml_text) {
   }
   if (const toml::node* length = table.get("backlog_length")) {
     config.backlog_length = read_count(*length, "backlog_length");
+  }
+  if (const toml::node* plugins = table.get("plugins")) {
+    config.plugins = read_plugins(*plugins);
   }
   return config;
 }
