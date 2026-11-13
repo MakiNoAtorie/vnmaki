@@ -17,6 +17,7 @@
 #include "engine/audio/audio.hpp"
 #include "engine/dialogue/dialogue_presenter.hpp"
 #include "engine/dialogue/playback.hpp"
+#include "engine/dialogue/rollback_input.hpp"
 #include "engine/dialogue/say_box.hpp"
 #include "engine/jobs/job_system.hpp"
 #include "engine/platform/geometry.hpp"
@@ -85,7 +86,9 @@ SkipMode next_skip_mode(SkipMode mode) {
 }  // namespace
 
 int run_story_window(const Vfs& vfs, const ProjectConfig& config,
-                     std::optional<std::uint64_t> max_frames, std::ostream& err) {
+                     std::optional<std::uint64_t> max_frames,
+                     const std::optional<std::filesystem::path>& data_directory_override,
+                     std::ostream& err) {
   const Size virtual_size{.width = config.resolution.width, .height = config.resolution.height};
   try {
     // Everything that needs no window comes first, so a broken project fails before one opens.
@@ -110,13 +113,15 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     CompositeSceneState scene_state{{&scene, audio.get()}};
     UiHost ui{virtual_size};
     ScriptRuntime runtime{vfs,
-                          {.scene_state = &scene_state,
+                          {.rollback_depth = config.rollback_depth,
+                           .scene_state = &scene_state,
                            .scene = &scene,
                            .screens = &ui,
                            .audio = audio.get()}};
     const auto warn = [&err](std::string_view message) { err << "vnmaki: " << message << '\n'; };
     const std::filesystem::path data_directory =
-        user_data_directory(kUserDataOrganization, config.title);
+        data_directory_override ? *data_directory_override
+                                : user_data_directory(kUserDataOrganization, config.title);
     PersistentStore persistent{runtime, data_directory, warn};
     persistent.load();  // before the scripts, so that their defaults see the saved values
     runtime.load_scripts();
@@ -139,13 +144,12 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     saves.poll();
     ScreenPresenter screens{runtime, ui};
     WaitPresenter waits{runtime, scene};
-    DialoguePresenter presenter{
-        runtime,
-        [&](const DialogueLine& line) { return say_box.glyph_count(line); },
-        kDefaultCharactersPerSecond,
-        [&](const DialogueLine& line, double speed, double elapsed) {
-          return say_box.revealed(line, speed, elapsed);
-        }};
+    DialoguePresenter presenter{runtime,
+                                [&](const DialogueLine& line) { return say_box.glyph_count(line); },
+                                kDefaultCharactersPerSecond,
+                                [&](const DialogueLine& line, double speed, double elapsed) {
+                                  return say_box.revealed(line, speed, elapsed);
+                                }};
     Playback playback{runtime,
                       presenter,
                       persistent,
@@ -173,6 +177,11 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     MainLoopHooks hooks;
     hooks.on_event = [&](const InputEvent& event) {
       if (screens.handle_event(event, viewport())) {
+        return;
+      }
+      if (is_rollback_event(event)) {
+        playback.set_skip(SkipMode::kOff);
+        static_cast<void>(runtime.roll_back());
         return;
       }
       if (const auto* key = std::get_if<KeyEvent>(&event)) {

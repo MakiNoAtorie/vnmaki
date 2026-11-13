@@ -109,6 +109,16 @@ void run_into(HeadlessResult& result, const Vfs& vfs, std::span<const ScriptInpu
     if (next_input == inputs.end()) {
       break;
     }
+    if (std::holds_alternative<RollbackInput>(*next_input)) {
+      if (!runtime.roll_back()) {
+        result.outcome = HeadlessOutcome::kFailed;
+        result.error = "the next input is a rollback, but there is nothing to go back to";
+        return;
+      }
+      ++next_input;
+      poll();
+      continue;
+    }
     const auto* menu = std::get_if<MenuRequest>(runtime.request());
     const bool at_screen = std::holds_alternative<CallScreenRequest>(*runtime.request());
     const auto* choice = std::get_if<ChooseInput>(&*next_input);
