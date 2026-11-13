@@ -35,9 +35,24 @@ struct LuaToken {
 /// escapes decoded, except `\u{...}`, which stays as written.
 [[nodiscard]] std::vector<LuaToken> tokenize_lua(std::string_view source);
 
-enum class ScanCallKind : std::uint8_t { kLabel, kJump, kCall, kRet, kMenu, kSay, kShow };
+enum class ScanCallKind : std::uint8_t {
+  kLabel,
+  kJump,
+  kCall,
+  kRet,
+  kMenu,
+  kSay,
+  kShow,
+  kNarrate,
+  kScene,
+  kMusic,
+  kSound,
+  kVoice,
+  kMovie,
+};
 
-/// A call of `label`, `jump`, `call`, `ret`, `menu`, `say` or `show` in the body of a label,
+/// A call of `label`, `jump`, `call`, `ret`, `menu`, `say`, `show`, `narrate`, `scene`, `music`,
+/// `sound`, `voice` or `movie` in the body of a label,
 /// written as `name(...)`, `name "text"` or `name { ... }`. A call after `.` or `:` (a method) is
 /// not one.
 struct ScanCall {
@@ -50,6 +65,8 @@ struct ScanCall {
   /// else nothing (a computed value, a table). `name "text"` has one literal; `name { }` has one
   /// entry without text.
   std::vector<std::optional<std::string>> arguments{};
+  /// The keys written as `name =` at the top level of a table argument, in source order.
+  std::vector<std::string> option_keys{};
 
   friend bool operator==(const ScanCall&, const ScanCall&) = default;
 };

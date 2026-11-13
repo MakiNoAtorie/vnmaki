@@ -77,6 +77,10 @@ std::string dot_quote(std::string_view text) {
   return quoted;
 }
 
+std::string line_text(std::uint32_t line) { return line == 0 ? "" : std::to_string(line); }
+
+}  // namespace
+
 std::string csv_field(std::string_view text) {
   if (text.find_first_of(",\"\r\n") == std::string_view::npos) {
     return std::string{text};
@@ -91,10 +95,6 @@ std::string csv_field(std::string_view text) {
   quoted.push_back('"');
   return quoted;
 }
-
-std::string line_text(std::uint32_t line) { return line == 0 ? "" : std::to_string(line); }
-
-}  // namespace
 
 std::vector<ScriptSource> read_scripts(const Vfs& vfs) {
   std::vector<ScriptSource> scripts;

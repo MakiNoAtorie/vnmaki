@@ -31,7 +31,6 @@ namespace {
 // hold "/": "bgm/theme" is "audio/bgm/theme.opus".
 constexpr std::string_view kAudioDirectory = "audio/";
 constexpr std::array<std::string_view, 4> kAudioExtensions{".opus", ".ogg", ".flac", ".wav"};
-constexpr std::string_view kVoicePrefix = "voice/";
 
 constexpr std::array kDefaultChannels{
     kMusicChannel, kSoundChannel, kVoiceChannel, kAmbientChannel, kUiChannel,
@@ -54,6 +53,20 @@ std::string audio_path(std::string_view name, std::string_view extension) {
   path += extension;
   return path;
 }
+
+}  // namespace
+
+std::optional<std::string> resolve_audio(const Vfs& vfs, std::string_view name) {
+  for (const std::string_view extension : kAudioExtensions) {
+    std::string path = audio_path(name, extension);
+    if (vfs.exists(path)) {
+      return path;
+    }
+  }
+  return std::nullopt;
+}
+
+namespace {
 
 std::string quoted_audio(std::string_view name) {
   std::string message = "audio '";
@@ -247,7 +260,6 @@ struct Audio::Impl {
                                                 std::string& problem) const;
   std::string set_music(std::string_view channel_name, MusicSpec music, double fade);
   void reconcile();
-  [[nodiscard]] bool has_file(std::string_view name) const;
   std::function<void(std::string_view)> warn;
 
   /// Adds the next out.size() / kAudioChannels frames of every channel to `out`. Call with
@@ -394,7 +406,7 @@ std::string Audio::Impl::set_music(std::string_view channel_name, MusicSpec musi
   }
   if (pending) {
     // A replay is running: only the state changes. reconcile() starts the track.
-    if (!has_file(music.name)) {
+    if (!resolve_audio(*vfs, music.name)) {
       return missing_audio(music.name);
     }
     const std::scoped_lock lock{mutex};
@@ -420,13 +432,6 @@ std::string Audio::Impl::set_music(std::string_view channel_name, MusicSpec musi
 
 // Makes the music tracks match each channel's music, with no fade: the state was restored, and
 // the player should hear the step as it was.
-bool Audio::Impl::has_file(std::string_view name) const {
-  return std::any_of(kAudioExtensions.begin(), kAudioExtensions.end(),
-                     [this, name](std::string_view extension) {
-                       return vfs->exists(audio_path(name, extension));
-                     });
-}
-
 void Audio::update_music() {
   try {
     impl_->reconcile();
@@ -760,7 +765,7 @@ void Audio::restore(std::span<const std::byte> state) {
   std::map<std::string, ChannelSettings, std::less<>> settings = read_state(state);
   // A music file that is gone is a failed load (std::invalid_argument), before anything changes.
   for (const auto& [name, restored] : settings) {
-    if (restored.music && !impl_->has_file(restored.music->name)) {
+    if (restored.music && !resolve_audio(*impl_->vfs, restored.music->name)) {
       throw std::invalid_argument{"audio state: " + missing_audio(restored.music->name)};
     }
   }
