@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <deque>
 #include <limits>
 #include <memory>
 #include <string>
@@ -19,6 +20,7 @@
 #include "engine/scene/scene.hpp"
 #include "engine/tools/imgui_backend.hpp"
 #include "engine/tools/inspect.hpp"
+#include "engine/tools/profiler.hpp"
 #include "engine/tools/repl.hpp"
 
 namespace vnmaki {
@@ -44,6 +46,18 @@ constexpr float kGraphY = 16;
 constexpr float kGraphWidth = 560;
 constexpr float kGraphHeight = 420;
 constexpr float kLabelsTableHeight = 150;
+constexpr float kProfilerX = 680;
+constexpr float kProfilerY = 452;  // under the story graph
+constexpr float kProfilerWidth = 560;
+constexpr float kProfilerHeight = 270;
+constexpr float kPlotHeight = 70;
+constexpr std::size_t kSlowestLoads = 8;
+constexpr double kMillisecondsPerSecond = 1000.0;
+constexpr double kBytesPerMebibyte = 1024.0 * 1024.0;
+
+double to_ms(Duration time) {
+  return std::chrono::duration<double>(time).count() * kMillisecondsPerSecond;
+}
 
 // The ImGui key of an engine key, or ImGuiKey_None for one it has no use for.
 ImGuiKey to_imgui_key(Key key) {
@@ -247,6 +261,9 @@ void DevOverlay::draw(Size window_pixels) {
   if (vfs_ != nullptr) {
     draw_story_graph();
   }
+  if (profiler_ != nullptr) {
+    draw_profiler();
+  }
   const bool wants_text = ImGui::GetIO().WantTextInput;
   if (wants_text != text_input_) {
     platform_->set_text_input(wants_text);
@@ -425,6 +442,51 @@ void DevOverlay::draw_story_graph() {
 
 // The rows come depth first, so one TreeNode is open for each level above the row. `open` is how
 // many are; a closed table hides the rows below it.
+void DevOverlay::draw_profiler() {
+  ImGui::SetNextWindowPos(ImVec2{kProfilerX, kProfilerY}, ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2{kProfilerWidth, kProfilerHeight}, ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("Profiler")) {
+    const std::deque<FrameSample>& frames = profiler_->frames();
+    std::vector<float> totals;
+    totals.reserve(frames.size());
+    for (const FrameSample& frame : frames) {
+      totals.push_back(static_cast<float>(to_ms(frame.total())));
+    }
+    ImGui::PlotLines("##frame_ms", totals.data(), static_cast<int>(totals.size()), 0,
+                     "frame ms (CPU, last 300)", 0, std::numeric_limits<float>::max(),
+                     ImVec2{0, kPlotHeight});
+    if (!frames.empty()) {
+      const FrameSample& last = frames.back();
+      ImGui::Text("events %.2f  update %.2f (x%d)  prepare %.2f  draw %.2f  total %.2f ms",
+                  to_ms(last.events), to_ms(last.update), last.updates, to_ms(last.prepare),
+                  to_ms(last.draw), to_ms(last.total()));
+      ImGui::Text("passes %u  quads %u  draw calls %u", last.gpu.passes, last.gpu.quads,
+                  last.gpu.draw_calls);
+      ImGui::Text("textures %u: %.2f MiB   render targets %u: %.2f MiB", last.memory.textures,
+                  static_cast<double>(last.memory.texture_bytes) / kBytesPerMebibyte,
+                  last.memory.targets,
+                  static_cast<double>(last.memory.target_bytes) / kBytesPerMebibyte);
+    }
+    ImGui::Separator();
+    ImGui::TextUnformatted("Slowest loads");
+    constexpr ImGuiTableFlags kTableFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders;
+    if (ImGui::BeginTable("loads", 2, kTableFlags)) {
+      ImGui::TableSetupColumn("ms", ImGuiTableColumnFlags_WidthFixed);
+      ImGui::TableSetupColumn("path");
+      ImGui::TableHeadersRow();
+      for (const LoadSample& load : profiler_->slowest_loads(kSlowestLoads)) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::Text("%.2f", to_ms(load.time));
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(load.path.c_str());
+      }
+      ImGui::EndTable();
+    }
+  }
+  ImGui::End();
+}
+
 void DevOverlay::draw_store_tree(const std::vector<StoreRow>& rows) {
   int open = 0;
   int hidden_below = -1;  // the depth of a closed table: deeper rows are skipped
