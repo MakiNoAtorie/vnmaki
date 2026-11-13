@@ -13,7 +13,8 @@
 //   store       array    the store of the label-entry snapshot: one array per table, each
 //                        [key, value, key, value, ...]; a value that is a table is [index]
 //   scene       bin      the scene snapshot of the label-entry snapshot
-//   inputs      array    the input log: [0, choice] for each menu choice
+//   inputs      array    the input log: [0, choice] for a menu choice, [1, value] for the result
+//                        of a call_screen (value: nil, bool, int, float or str)
 //   persistent  str      where the persistent store lives (it is not copied into the save)
 //   thumbnail   array    [width, height, rgba bytes]
 //   time        int      Unix time of the save, in seconds

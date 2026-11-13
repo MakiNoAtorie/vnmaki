@@ -37,6 +37,8 @@ using vnmaki::RunState;
 using vnmaki::SaveData;
 using vnmaki::SaveError;
 using vnmaki::SavesOptions;
+using vnmaki::ScreenResult;
+using vnmaki::ScreenValue;
 using vnmaki::ScriptPosition;
 using vnmaki::StoreSnapshot;
 using vnmaki::StoreTable;
@@ -196,6 +198,21 @@ TEST_CASE("save file: a save reads back equal, and the same data gives the same 
   CHECK(vnmaki::decode_save_payload(vnmaki::encode_save_payload(data)) == data);
   CHECK(vnmaki::decode_save(vnmaki::encode_save(data)) == data);
   CHECK(vnmaki::encode_save(data) == vnmaki::encode_save(sample_save()));
+}
+
+TEST_CASE("save file: the answers of call_screen read back with their types") {
+  SaveData data = sample_save();
+  data.inputs = {ScreenResult{.value = ScreenValue{}},
+                 ScreenResult{.value = ScreenValue{true}},
+                 ScreenResult{.value = ScreenValue{kSomeInteger}},
+                 ScreenResult{.value = ScreenValue{kSomeNumber}},
+                 ScreenResult{.value = ScreenValue{std::string{"start"}}},
+                 MenuChoice{.index = 2}};
+  CHECK(vnmaki::decode_save_payload(vnmaki::encode_save_payload(data)) == data);
+  data.inputs = {ScreenResult{.value = ScreenValue{std::int64_t{1}}}};
+  CHECK(vnmaki::decode_save_payload(vnmaki::encode_save_payload(data)) == data);
+  data.inputs = {ScreenResult{.value = ScreenValue{1.0}}};
+  CHECK(vnmaki::decode_save_payload(vnmaki::encode_save_payload(data)) == data);
 }
 
 TEST_CASE("save file: integers of every size and a negative time survive") {
@@ -662,6 +679,28 @@ end)
   CHECK(new_game.narrated() == "s2");  // the caller is still there
   CHECK(new_game.runtime.roll_back());
   CHECK(new_game.narrated() == "after");
+}
+
+TEST_CASE("saves: a label that used call_screen saves and loads with the screen's answer") {
+  constexpr std::string_view kScreenStory = R"(
+screen "pick" { button { "A", returns = "a" } }
+label("start", function()
+  local r = call_screen("pick")
+  narrate("got " .. r)
+  narrate("end")
+end)
+)";
+  const TempDir dir{"call_screen"};
+  Game game{std::string{kScreenStory}, dir.path()};
+  game.runtime.start("start");
+  game.runtime.return_screen(ScreenValue{std::string{"a"}});
+  REQUIRE(game.narrated() == "got a");
+  CHECK(game.saves.save("1").empty());
+  game.runtime.advance();
+
+  CHECK(game.saves.load("1").empty());
+  CHECK(game.narrated() == "got a");
+  CHECK(game.warnings.empty());
 }
 
 TEST_CASE("saves: a load drops the labels that called the running label") {

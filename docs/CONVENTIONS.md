@@ -435,7 +435,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - They check the flag only for effects that the player can see or hear.
 - `replay(LabelSnapshot, inputs, step)` restores the label-entry snapshot and replays the top label only.
   - It does not make the callers again.
-  - Only menu choices and `call_screen` results go into the input log.
+  - Only menu choices and `call_screen` results go into the input log. A save writes both: `[0, index]` and `[1, value]` (nil, boolean, integer, float or string, as MessagePack types). A reader rejects any other tag.
 - Scene state goes into snapshots through `SceneState` (`capture()` and `restore(bytes)`) in `ScriptRuntimeOptions::scene_state`.
 - `menu { "a", "b" }` returns a 1-based number. C++ gives the answer with `choose(index)`, which is 0-based. `ScreenPresenter` (`engine/ui/`) shows the menu and calls `choose`.
 - `call_screen(name, args)` is a blocking call (`CallScreenRequest`). C++ gives the value with `return_screen(value)`. The value is nil, a boolean, a number or a string.

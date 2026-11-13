@@ -53,7 +53,9 @@ vnmaki::SaveData sample() {
       vnmaki::StoreTable{.entries = {{std::int64_t{1}, std::string{"key"}},
                                      {std::string{"self"}, vnmaki::StoreTableRef{.index = 1}}}}};
   data.snapshot.scene = {std::byte{1}, std::byte{2}, std::byte{3}};
-  data.inputs = {vnmaki::MenuChoice{.index = 1}, vnmaki::MenuChoice{.index = 0}};
+  data.inputs = {vnmaki::MenuChoice{.index = 1}, vnmaki::MenuChoice{.index = 0},
+                 vnmaki::ScreenResult{.value = vnmaki::ScreenValue{std::string{"start"}}},
+                 vnmaki::ScreenResult{.value = vnmaki::ScreenValue{}}};
   data.persistent = "persistent";
   data.thumbnail = {.width = static_cast<int>(kSampleThumbnailSide),
                     .height = static_cast<int>(kSampleThumbnailSide),

@@ -38,6 +38,7 @@ constexpr std::uint8_t kFixStrCountMask = 0x1F;
 constexpr std::size_t kFixArrayMax = 15;
 constexpr std::size_t kFixStrMax = 31;
 
+constexpr std::uint8_t kNil = 0xC0;
 constexpr std::uint8_t kFalse = 0xC2;
 constexpr std::uint8_t kTrue = 0xC3;
 constexpr std::uint8_t kBin8 = 0xC4;
@@ -109,6 +110,7 @@ class Writer {
     }
   }
 
+  void nil() { byte(kNil); }
   void boolean(bool value) { byte(value ? kTrue : kFalse); }
 
   void number(double value) {
@@ -235,6 +237,12 @@ class Reader {
   [[nodiscard]] bool at_end() const { return position_ == data_.size(); }
   [[nodiscard]] std::size_t remaining() const { return data_.size() - position_; }
   [[nodiscard]] Kind peek_kind() const { return kind_of(peek_byte()); }
+  [[nodiscard]] bool peek_nil() const { return peek_byte() == kNil; }
+  void nil() {
+    if (next() != kNil) {
+      fail("expected nil");
+    }
+  }
 
   bool boolean() {
     const std::uint8_t marker = next();
@@ -475,6 +483,7 @@ constexpr std::size_t kThumbnailChannels = 4;
 constexpr std::size_t kThumbnailFields = 3;
 constexpr std::size_t kInputFields = 2;
 constexpr std::uint64_t kMenuChoiceTag = 0;
+constexpr std::uint64_t kScreenResultTag = 1;
 
 std::string_view key_name(Key key) { return kKeyNames.at(static_cast<std::size_t>(key)); }
 
@@ -511,6 +520,39 @@ StoreValue read_value(Reader& in, bool allow_table) {
       fail("a store key or value is not a boolean, number, string or table");
     default:
       fail("a store key or value is not a boolean, number, string or table");
+  }
+}
+
+void write_screen_value(Writer& out, const ScreenValue& value) {
+  if (const auto* boolean = std::get_if<bool>(&value)) {
+    out.boolean(*boolean);
+  } else if (const auto* integer = std::get_if<std::int64_t>(&value)) {
+    out.integer(*integer);
+  } else if (const auto* number = std::get_if<double>(&value)) {
+    out.number(*number);
+  } else if (const auto* text = std::get_if<std::string>(&value)) {
+    out.str(*text);
+  } else {
+    out.nil();
+  }
+}
+
+ScreenValue read_screen_value(Reader& in) {
+  if (in.peek_nil()) {
+    in.nil();
+    return {};
+  }
+  switch (in.peek_kind()) {
+    case Kind::kBool:
+      return in.boolean();
+    case Kind::kInteger:
+      return in.integer();
+    case Kind::kFloat:
+      return in.number();
+    case Kind::kString:
+      return in.str();
+    default:
+      fail("a screen result is not nil, a boolean, a number or a string");
   }
 }
 
@@ -569,12 +611,16 @@ std::vector<InputResult> read_inputs(Reader& in) {
     if (in.array() != kInputFields) {
       fail("an input log entry has the wrong size");
     }
-    if (in.unsigned_integer() != kMenuChoiceTag) {
+    const std::uint64_t tag = in.unsigned_integer();
+    if (tag == kMenuChoiceTag) {
+      inputs.emplace_back(
+          MenuChoice{.index = static_cast<std::size_t>(in.bounded(
+                         std::numeric_limits<std::uint32_t>::max(), "a menu choice"))});
+    } else if (tag == kScreenResultTag) {
+      inputs.emplace_back(ScreenResult{.value = read_screen_value(in)});
+    } else {
       fail("an input log entry has an unknown kind");
     }
-    inputs.emplace_back(
-        MenuChoice{.index = static_cast<std::size_t>(
-                       in.bounded(std::numeric_limits<std::uint32_t>::max(), "a menu choice"))});
   }
   return inputs;
 }
@@ -634,8 +680,13 @@ std::vector<std::byte> encode_save_payload(const SaveData& data) {
   out.array(data.inputs.size());
   for (const InputResult& input : data.inputs) {
     out.array(kInputFields);
-    out.unsigned_integer(kMenuChoiceTag);
-    out.unsigned_integer(std::get<MenuChoice>(input).index);
+    if (const auto* choice = std::get_if<MenuChoice>(&input)) {
+      out.unsigned_integer(kMenuChoiceTag);
+      out.unsigned_integer(choice->index);
+    } else {
+      out.unsigned_integer(kScreenResultTag);
+      write_screen_value(out, std::get<ScreenResult>(input).value);
+    }
   }
   out.str(key_name(Key::kPersistent));
   out.str(data.persistent);
