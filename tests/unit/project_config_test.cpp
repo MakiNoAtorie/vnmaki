@@ -2,6 +2,7 @@
 
 #include "engine/runtime/project_config.hpp"
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -131,6 +132,18 @@ TEST_CASE("project.toml: is loaded from the root of the vfs") {
   const vnmaki::Vfs vfs = vnmaki::test::memory_vfs({{"project.toml", "title = \"From VFS\"\n"}});
 
   CHECK(vnmaki::load_project_config(vfs).title == "From VFS");
+}
+
+TEST_CASE("project.toml: rollback_depth defaults to 100 and takes a whole number from 0") {
+  constexpr std::size_t kDepth = 25;
+  CHECK(vnmaki::parse_project_config("title = \"A\"\n").rollback_depth == 100);
+  CHECK(vnmaki::parse_project_config("title = \"A\"\nrollback_depth = 25\n").rollback_depth ==
+        kDepth);
+  CHECK(vnmaki::parse_project_config("title = \"A\"\nrollback_depth = 0\n").rollback_depth == 0);
+  CHECK(error_for("title = \"A\"\nrollback_depth = -1\n") ==
+        "project.toml:2:18: 'rollback_depth' must be a whole number from 0 to 10000");
+  CHECK(error_for("title = \"A\"\nrollback_depth = \"many\"\n") ==
+        "project.toml:2:18: 'rollback_depth' must be a whole number from 0 to 10000");
 }
 
 TEST_CASE("project.toml: a missing file is an error") {

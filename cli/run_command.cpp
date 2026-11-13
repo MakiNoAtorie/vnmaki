@@ -35,6 +35,7 @@ struct RunArguments {
   bool headless = false;
   std::size_t max_steps = kDefaultMaxSteps;
   std::optional<std::size_t> max_frames;
+  std::optional<std::filesystem::path> data_dir;
 };
 
 std::optional<std::size_t> parse_positive(std::string_view text) {
@@ -63,6 +64,13 @@ std::optional<RunArguments> parse_arguments(std::span<const std::string_view> ar
         return std::nullopt;
       }
       parsed.max_steps = *steps;
+      ++i;
+    } else if (arg == "--data-dir") {
+      if (i + 1 >= args.size() || args[i + 1].empty()) {
+        err << "vnmaki run: --data-dir needs a folder\n";
+        return std::nullopt;
+      }
+      parsed.data_dir = std::filesystem::path{args[i + 1]};
       ++i;
     } else if (arg == "--frames") {
       parsed.max_frames = i + 1 < args.size() ? parse_positive(args[i + 1]) : std::nullopt;
@@ -109,7 +117,7 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
   }
 
   if (!arguments->headless) {
-    return run_story_window(vfs, config, arguments->max_frames, err);
+    return run_story_window(vfs, config, arguments->max_frames, arguments->data_dir, err);
   }
 
   // Nothing is drawn or heard, but the scene and the audio still check every file a script
@@ -119,15 +127,18 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
   Audio audio{vfs};
   CompositeSceneState state{{&scene, &audio}};
   HeadlessOptions options;
+  options.runtime.rollback_depth = config.rollback_depth;
   options.runtime.scene = &scene;
   options.runtime.audio = &audio;
   options.runtime.scene_state = &state;
   // The scripts' `save` and `load` work, and `persistent` is kept, in the same directory as in
-  // a window. Without a user-data directory the run goes on without them.
+  // a window (or in --data-dir). Without a user-data directory the run goes on without them.
   try {
-    options.saves = SavesOptions{.directory = user_data_directory("VNMaki", config.title),
-                                 .game_version = config.version,
-                                 .auto_save = config.auto_save};
+    options.saves =
+        SavesOptions{.directory = arguments->data_dir ? *arguments->data_dir
+                                                      : user_data_directory("VNMaki", config.title),
+                     .game_version = config.version,
+                     .auto_save = config.auto_save};
   } catch (const PlatformError& error) {
     err << "vnmaki: " << error.what() << "; saves and persistent data are off\n";
   }

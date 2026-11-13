@@ -1,11 +1,29 @@
 # Black-box tests of the vnmaki executable: each runs it as a process.
+
+# `vnmaki run` writes saves and `persistent.vnpersist`. Give each such test a folder of its own in
+# the build tree (--data-dir), so that no test touches the user's data or shares state with
+# another. The runner scripts empty it first (-DDATA_DIR). Sets <define_var> to that option.
+function(vnmaki_isolate_run_data name args_var define_var)
+  set(args ${${args_var}})
+  set(define "")
+  if(args MATCHES "^run(;|$)")
+    set(directory "${CMAKE_CURRENT_BINARY_DIR}/data/${name}")
+    list(APPEND args --data-dir "${directory}")
+    set(define "-DDATA_DIR=${directory}")
+  endif()
+  set(${args_var} "${args}" PARENT_SCOPE)
+  set(${define_var} "${define}" PARENT_SCOPE)
+endfunction()
+
 function(vnmaki_add_cli_test name)
   cmake_parse_arguments(PARSE_ARGV 1 arg "NO_STDOUT" "EXIT;STDOUT_LINE;STDERR_REGEX"
-                        "ARGS")
+                        "ARGS;EXPECTED_FILES")
+  vnmaki_isolate_run_data(${name} arg_ARGS data_define)
   # Keep a multi-argument ARGS list in the one -DARGS=... argument.
   string(REPLACE ";" "\\;" arg_ARGS "${arg_ARGS}")
+  string(REPLACE ";" "\\;" expected_files "${arg_EXPECTED_FILES}")
   set(script_args -DEXE=$<TARGET_FILE:vnmaki> "-DARGS=${arg_ARGS}"
-                  -DEXPECTED_EXIT=${arg_EXIT})
+                  -DEXPECTED_EXIT=${arg_EXIT} ${data_define} "-DEXPECTED_FILES=${expected_files}")
   if(arg_NO_STDOUT)
     list(APPEND script_args -DEXPECTED_NO_STDOUT=ON)
   elseif(DEFINED arg_STDOUT_LINE)
@@ -127,10 +145,14 @@ set(vnmaki_run_fixtures "${VNMAKI_FIXTURES_DIR}/runtime")
 
 # Like vnmaki_add_cli_test, but stdout must equal the file STDOUT_FILE.
 function(vnmaki_add_cli_stdout_file_test name)
-  cmake_parse_arguments(PARSE_ARGV 1 arg "" "EXIT;STDOUT_FILE;STDERR_REGEX" "ARGS")
+  cmake_parse_arguments(PARSE_ARGV 1 arg "" "EXIT;STDOUT_FILE;STDERR_REGEX"
+                        "ARGS;EXPECTED_FILES")
+  vnmaki_isolate_run_data(${name} arg_ARGS data_define)
   string(REPLACE ";" "\\;" arg_ARGS "${arg_ARGS}")
+  string(REPLACE ";" "\\;" expected_files "${arg_EXPECTED_FILES}")
   set(script_args -DEXE=$<TARGET_FILE:vnmaki> "-DARGS=${arg_ARGS}"
-                  -DEXPECTED_EXIT=${arg_EXIT} "-DEXPECTED_STDOUT_FILE=${arg_STDOUT_FILE}")
+                  -DEXPECTED_EXIT=${arg_EXIT} "-DEXPECTED_STDOUT_FILE=${arg_STDOUT_FILE}"
+                  ${data_define} "-DEXPECTED_FILES=${expected_files}")
   if(DEFINED arg_STDERR_REGEX)
     list(APPEND script_args "-DEXPECTED_STDERR_REGEX=${arg_STDERR_REGEX}")
   endif()
@@ -145,12 +167,26 @@ vnmaki_add_cli_stdout_file_test(
   STDOUT_FILE "${vnmaki_run_fixtures}/demo.transcript")
 
 # With no project argument, vnmaki run uses the current directory.
+set(vnmaki_default_dir_args run --headless)
+vnmaki_isolate_run_data(run_headless_defaults_to_the_current_directory vnmaki_default_dir_args
+                        vnmaki_default_dir_data)
 add_test(NAME cli.run_headless_defaults_to_the_current_directory
-         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> "-DARGS=run;--headless"
-                 -DEXPECTED_EXIT=0
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> "-DARGS=${vnmaki_default_dir_args}"
+                 ${vnmaki_default_dir_data} -DEXPECTED_EXIT=0
                  "-DEXPECTED_STDOUT_FILE=${vnmaki_run_fixtures}/demo.transcript" -P
                  "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_stdout_file.cmake"
          WORKING_DIRECTORY "${vnmaki_run_fixtures}/demo")
+
+# --data-dir (headless and in a window) is where saves and the persistent file go. The helper
+# above also gives every other run test such a folder; this one checks that the files appear there.
+set(vnmaki_saves_data "${CMAKE_CURRENT_BINARY_DIR}/data/run_headless_writes_saves_to_the_data_dir")
+vnmaki_add_cli_stdout_file_test(
+  run_headless_writes_saves_to_the_data_dir
+  ARGS run "${vnmaki_run_fixtures}/saves" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_run_fixtures}/saves.transcript"
+  EXPECTED_FILES "${vnmaki_saves_data}/auto.vnsave" "${vnmaki_saves_data}/quick.vnsave"
+                 "${vnmaki_saves_data}/persistent.vnpersist")
 
 # The engine RNG gives the same numbers on every platform and run.
 vnmaki_add_cli_stdout_file_test(

@@ -56,6 +56,8 @@ struct NarrateRequest {
 /// ScriptRuntime::choose().
 struct MenuRequest {
   std::vector<std::string> options;
+  /// `fixed = true`: once answered, rollback cannot go back to this menu or before it.
+  bool fixed = false;
 
   friend bool operator==(const MenuRequest&, const MenuRequest&) = default;
 };
@@ -440,6 +442,25 @@ class ScriptObserver {
   virtual void on_warning(std::string_view /*message*/) {}
 };
 
+/// How many steps back the player can roll unless ScriptRuntimeOptions::rollback_depth is set.
+inline constexpr std::size_t kDefaultRollbackDepth = 100;
+
+/// A position the player can roll back to: a say, narrate, menu or call_screen the story waited
+/// at (never a `wait`). It holds all that replaying to there takes, so every step stands alone.
+struct RollbackStep {
+  /// The label-entry snapshot and input log of the outermost running label at that time. Its
+  /// log covers the answers given in the labels it called.
+  LabelSnapshot root{};
+  std::vector<InputResult> inputs{};
+  /// Label and step of every running label, outermost first.
+  std::vector<ScriptPosition> stack{};
+  /// How many yield points (waits too) the outermost label reached, counting this one, in this
+  /// label and the labels it called: what replaying `root` has to count up to. At least 1.
+  std::uint32_t ordinal = 0;
+  /// What the story waited for there.
+  BlockingRequest request{};
+};
+
 /// The seed of the script RNG unless ScriptRuntimeOptions::random_seed is set.
 inline constexpr std::uint64_t kDefaultRandomSeed = 0x5EED0F7E570B5EULL;
 
@@ -456,6 +477,8 @@ struct ScriptRuntimeOptions {
   /// error, so an endless loop fails instead of hanging the engine. Counted
   /// in blocks of up to 1000 instructions, so the bound is approximate.
   std::uint32_t instruction_limit = 0;
+  /// How many steps back rollback can go (project.toml `rollback_depth`); 0 turns it off.
+  std::size_t rollback_depth = kDefaultRollbackDepth;
   /// Receives the scripts' requests; may be null. Nothing is reported while
   /// ScriptRuntime::replaying().
   ScriptObserver* observer = nullptr;
@@ -489,9 +512,10 @@ struct ScriptRuntimeOptions {
 /// engine Vfs. `print` goes to ScriptObserver::on_print.
 ///
 /// The engine API: `character { name =, color = "#rrggbb", voice_tag =, auto_multiplier = }`,
-/// `label(name, fn)`, `jump(name)`, `call(name)`, `ret()`, `say(who, text)`, `narrate(text)`, `menu { "option", ... }`
-/// (returns the number of the chosen option, from 1), `rand` (the same function as `math.random`)
-/// and the `store` table. Visuals: `scene(image)`, `show(tag, { image =, at =, x =, y =, layer =
+/// `label(name, fn)`, `jump(name)`, `call(name)`, `ret()`, `say(who, text)`, `narrate(text)`, `menu
+/// { "option", ... }` (returns the number of the chosen option, from 1), `rand` (the same function
+/// as `math.random`) and the `store` table. Visuals: `scene(image)`, `show(tag, { image =, at =, x
+/// =, y =, layer =
 /// })` and `hide(tag)`; option keys they do not know are ignored (later tickets add `with`,
 /// `outfit`...).
 /// Text: `say` and `narrate` take inline tags (docs/TEXT_TAGS.md), and a bad
@@ -590,6 +614,21 @@ class ScriptRuntime {
   /// with these inputs (e.g. the script changed).
   void replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
               std::uint32_t step);
+
+  /// Goes back one say, narrate, menu or call_screen (the previous one: `wait` steps do not
+  /// count), as replay() does: the story waits there again, and the observer hears that request.
+  /// Across a label boundary it replays from the label that was running then, with its callers.
+  /// At a menu or screen the player can answer again; a new answer removes what was after it.
+  /// `persistent` does not change. Returns false, changing nothing, if there is nowhere to go
+  /// back to: the story does not wait, the history is empty or its depth is spent, or the player
+  /// answered a `fixed` menu since. The runtime fails if the replay does.
+  bool roll_back();
+  /// True if roll_back() would go back.
+  [[nodiscard]] bool can_roll_back() const;
+  /// The positions roll_back() can go to, oldest first. While the story waits at a line, menu or
+  /// screen, the last one is that request. A load (replay()) empties it. Invalidated like
+  /// label_snapshot().
+  [[nodiscard]] std::span<const RollbackStep> rollback_steps() const;
 
   /// Makes the running label the outermost one, so a load does not return into the labels that
   /// called the label it replaced. Call it before replay() when a story is already running.

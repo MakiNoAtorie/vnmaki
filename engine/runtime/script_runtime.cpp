@@ -409,8 +409,8 @@ function volume(channel, value)
   engine.audio_command(format("volume %s %.14g", channel, value))
 end
 
--- The minimal menu: a list of option texts. Returns the number of the
--- chosen option, from 1.
+-- The minimal menu: a list of option texts, and `fixed = true` to stop rollback from choosing
+-- again. Returns the number of the chosen option, from 1.
 function menu(options)
   if type(options) ~= "table" then
     bad_argument("menu", 1, "table", options)
@@ -426,8 +426,12 @@ function menu(options)
   if #texts == 0 then
     error("menu() needs at least one option", 2)
   end
+  local fixed = options.fixed
+  if fixed ~= nil and type(fixed) ~= "boolean" then
+    error(format("bad option 'fixed' to 'menu' (boolean expected, got %s)", type(fixed)), 2)
+  end
   require_label("menu")
-  return engine.menu(texts)
+  return engine.menu(texts, fixed == true)
 end
 )lua" R"lua(
 -- Screens (docs/SPEC.md section 15). A node is a plain table the engine reads: kind, text (the
@@ -1346,6 +1350,9 @@ class ScriptRuntime::Impl {
   bool activate_link(std::string_view id);
   void replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
               std::uint32_t step);
+  bool roll_back();
+  [[nodiscard]] bool can_roll_back() const;
+  [[nodiscard]] std::span<const RollbackStep> rollback_steps() const { return rollback_; }
   void drop_callers();
   [[nodiscard]] std::string run_on_load(LabelSnapshot& snapshot, std::string_view old_version);
   [[nodiscard]] std::vector<SaveRequest> take_save_requests() {
@@ -1432,6 +1439,7 @@ class ScriptRuntime::Impl {
     sol::thread thread;
     sol::coroutine coroutine;
     std::uint32_t step = 0;
+    std::uint32_t stops = 0;  // yield points reached by this label and the labels it called
     LabelSnapshot snapshot{};
     std::vector<InputResult> inputs{};
   };
@@ -1454,6 +1462,10 @@ class ScriptRuntime::Impl {
   void run(std::optional<ScreenValue> resume_value = std::nullopt);
   [[nodiscard]] bool replay_answer(std::optional<ScreenValue>& resume_value);
   void record(const InputResult& input);
+  void begin_replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
+                    std::uint32_t step, std::uint32_t ordinal);
+  [[nodiscard]] bool at_replay_target() const;
+  void push_rollback_step();
   void restore_store(const StoreSnapshot& snapshot) { restore_table(store_, snapshot); }
   void restore_table(const sol::table& root, const StoreSnapshot& snapshot);
   void fail(std::string message);
@@ -1466,6 +1478,9 @@ class ScriptRuntime::Impl {
     std::size_t next_input = 0;
     std::size_t depth = 0;  // frames_.size() with the replayed label on top
     std::uint32_t step = 0;
+    // Set by roll_back(): replay the outermost label (and the labels it calls) to its n-th yield
+    // point. 0 for a load, which replays the one label to `step`.
+    std::uint32_t ordinal = 0;
   };
 
   const Vfs* vfs_;
@@ -1500,6 +1515,8 @@ class ScriptRuntime::Impl {
   std::string error_;
   bool replaying_ = false;
   Replay replay_;
+  std::vector<RollbackStep> rollback_;  // oldest first
+  bool rolling_back_ = false;           // the replay in progress is roll_back()'s
 };
 
 void* ScriptRuntime::Impl::allocate(void* user_data, void* block, std::size_t old_size,
@@ -1625,8 +1642,9 @@ void ScriptRuntime::Impl::bind_engine() {
   });
   // The prelude checked that `options` is a list of strings. A stack_table
   // makes no registry reference, so nothing here can raise a Lua error.
-  engine_["menu"] = sol::yielding([this](sol::this_state state, const sol::stack_table& options) {
-    MenuRequest request;
+  engine_["menu"] = sol::yielding([this](sol::this_state state, const sol::stack_table& options,
+                                         bool fixed) {
+    MenuRequest request{.fixed = fixed};
     const std::size_t count = options.size();
     request.options.reserve(count);
     for (std::size_t i = 1; i <= count; ++i) {
@@ -2157,6 +2175,9 @@ void ScriptRuntime::Impl::choose(std::size_t index) {
                             std::to_string(index));
   }
   record(MenuChoice{.index = index});
+  if (menu->fixed) {
+    rollback_.clear();  // the choice stays: rollback cannot go back to this menu
+  }
   run(ScreenValue{static_cast<std::int64_t>(index) + 1});
 }
 
@@ -2178,9 +2199,41 @@ void ScriptRuntime::Impl::record(const InputResult& input) {
 
 void ScriptRuntime::Impl::replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
                                  std::uint32_t step) {
+  rollback_.clear();  // a load starts the history again
+  begin_replay(snapshot, inputs, step, 0);
+}
+
+bool ScriptRuntime::Impl::can_roll_back() const {
+  if (state_ != RunState::kWaiting) {
+    return false;
+  }
+  // At a wait the last step is the line before it; elsewhere the last step is this request.
+  return rollback_.size() >= (std::holds_alternative<WaitRequest>(request_) ? 1U : 2U);
+}
+
+// Replays the label that was outermost at an earlier step, with every label it had called, to
+// the step before the one the story waits at (not counting waits).
+bool ScriptRuntime::Impl::roll_back() {
+  if (!can_roll_back()) {
+    return false;
+  }
+  if (!std::holds_alternative<WaitRequest>(request_)) {
+    rollback_.pop_back();
+  }
+  const RollbackStep target = rollback_.back();  // a copy: begin_replay changes the frames
+  rolling_back_ = true;
+  begin_replay(target.root, target.inputs, 0, target.ordinal);
+  return true;
+}
+
+// Does the work of replay(). A non-zero `ordinal` replays from the outermost label, whatever is
+// running now, and so rebuilds the call stack; otherwise `step` counts in the one label.
+void ScriptRuntime::Impl::begin_replay(const LabelSnapshot& snapshot,
+                                       std::span<const InputResult> inputs, std::uint32_t step,
+                                       std::uint32_t ordinal) {
   // Copies first: the arguments may belong to the frame replaced below.
   LabelSnapshot entry = snapshot;
-  Replay replay{.inputs = {inputs.begin(), inputs.end()}, .step = step};
+  Replay replay{.inputs = {inputs.begin(), inputs.end()}, .step = step, .ordinal = ordinal};
   started_ = true;
   sources_.clear();
   error_.clear();
@@ -2192,7 +2245,9 @@ void ScriptRuntime::Impl::replay(const LabelSnapshot& snapshot, std::span<const 
     fail("replay: the store snapshot of label '" + entry.label + "' is malformed");
     return;
   }
-  if (!frames_.empty()) {
+  if (ordinal != 0) {
+    frames_.clear();
+  } else if (!frames_.empty()) {
     frames_.pop_back();
   }
   if (options_.scene_state != nullptr) {
@@ -2204,7 +2259,7 @@ void ScriptRuntime::Impl::replay(const LabelSnapshot& snapshot, std::span<const 
       return;
     }
   }
-  replaying_ = step > 0;
+  replaying_ = step > 0 || ordinal > 0;
   restore_store(entry.store);
   frames_.push_back(make_frame(entry.label));
   frames_.back().snapshot = std::move(entry);
@@ -2335,8 +2390,9 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
     if (yielded && std::holds_alternative<BlockingRequest>(*pending_)) {
       Frame& frame = frames_.back();
       ++frame.step;
+      ++frames_.front().stops;
       request_ = std::get<BlockingRequest>(std::move(*pending_));
-      if (replaying_ && (frames_.size() != replay_.depth || frame.step != replay_.step)) {
+      if (replaying_ && !at_replay_target()) {
         // Not the target yet: answer from the log and go on, with a fresh
         // budget as in live play.
         if (!replay_answer(resume_value)) {
@@ -2347,6 +2403,10 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
       }
       replaying_ = false;
       state_ = RunState::kWaiting;
+      if (!rolling_back_ && !std::holds_alternative<WaitRequest>(request_)) {
+        push_rollback_step();
+      }
+      rolling_back_ = false;
       observer_->on_blocked(request_,
                             ScriptPosition{.label = frame.label,
                                            .step = frame.step,
@@ -2392,6 +2452,29 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
   }
 }
 
+bool ScriptRuntime::Impl::at_replay_target() const {
+  if (replay_.ordinal != 0) {
+    return frames_.front().stops == replay_.ordinal;
+  }
+  return frames_.size() == replay_.depth && frames_.back().step == replay_.step;
+}
+
+// Keeps the position the story just waited at, and forgets the oldest one past the depth.
+void ScriptRuntime::Impl::push_rollback_step() {
+  RollbackStep step{.root = frames_.front().snapshot,
+                    .inputs = frames_.front().inputs,
+                    .ordinal = frames_.front().stops,
+                    .request = request_};
+  step.stack.reserve(frames_.size());
+  for (const Frame& frame : frames_) {
+    step.stack.push_back({.label = frame.label, .step = frame.step});
+  }
+  rollback_.push_back(std::move(step));
+  if (rollback_.size() > options_.rollback_depth + 1) {
+    rollback_.erase(rollback_.begin());
+  }
+}
+
 bool ScriptRuntime::Impl::activate_link(std::string_view id) {
   if (state_ != RunState::kWaiting) {
     return false;
@@ -2409,6 +2492,7 @@ bool ScriptRuntime::Impl::activate_link(std::string_view id) {
 void ScriptRuntime::Impl::fail(std::string message) {
   state_ = RunState::kFailed;
   replaying_ = false;
+  rolling_back_ = false;
   error_ = std::move(message);
 }
 
@@ -2476,6 +2560,11 @@ bool ScriptRuntime::activate_link(std::string_view id) { return impl_->activate_
 void ScriptRuntime::replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
                            std::uint32_t step) {
   impl_->replay(snapshot, inputs, step);
+}
+bool ScriptRuntime::roll_back() { return impl_->roll_back(); }
+bool ScriptRuntime::can_roll_back() const { return impl_->can_roll_back(); }
+std::span<const RollbackStep> ScriptRuntime::rollback_steps() const {
+  return impl_->rollback_steps();
 }
 void ScriptRuntime::drop_callers() { impl_->drop_callers(); }
 std::string ScriptRuntime::run_on_load(LabelSnapshot& snapshot, std::string_view old_version) {
