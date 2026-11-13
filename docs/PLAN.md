@@ -128,10 +128,10 @@ Files: `engine/runtime/`, `engine/dialogue/`, `engine/runtime/default_screens.cp
 
 Files: `engine/ui/`, `engine/runtime/` (prelude, screen nodes), `engine/runtime/default_screens.cpp`.
 
-- [ ] `style(name, { font, size, color, background, padding, gap, border, focus = {...}, hover = {...} })` declares a style. A node takes `style = "name"`. Node fields override style fields.
-- [ ] `theme("name")` loads `styles/<name>.lua` and replaces the style table. The default screens use only named styles.
-- [ ] The `input` node edits a string bound with `bind`. It turns on SDL text input only while it has the focus (see the Platform contract). It has a max length and a placeholder.
-- [ ] Headless tests: style merge order, theme switch changes node rectangles, input typing, backspace and focus loss.
+- [x] `style(name, { font, size, color, background, padding, gap, border, focus = {...}, hover = {...} })` declares a style. A node takes `style = "name"`. Node fields override style fields.
+- [x] `theme("name")` loads `styles/<name>.lua` and replaces the style table. The default screens use only named styles.
+- [x] The `input` node edits a string bound with `bind`. It turns on SDL text input only while it has the focus (see the Platform contract). It has a max length and a placeholder.
+- [x] Headless tests: style merge order, theme switch changes node rectangles, input typing, backspace and focus loss.
 
 ### 31: WebP images and static analysis (SPEC §4, §5)
 
