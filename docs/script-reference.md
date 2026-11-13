@@ -97,6 +97,31 @@ show("light", { image = "spark" })
 - The animation starts at frame 1 when it is shown, or when the group takes the value. After a load or rollback, it starts again at frame 1.
 - With `loop = false`, the last frame stays, and `wait(tag)` waits for it.
 
+## 3D scenes
+
+A 3D scene draws glTF 2.0 models (`.gltf` or `.glb`, with textures) with a camera and lights into a picture of the screen size. The picture is on a layer (`3d` by default), so it mixes with the 2D layers, and it follows the 2D camera and tweens like an image.
+
+```lua
+scene3d("stage")
+camera("stage", { position = { 0, 1.5, 6 }, look_at = { 0, 1, 0 }, fov = 45 })
+light("stage", "sun", { kind = "directional", direction = { -0.3, -1, -0.5 }, intensity = 0.9 })
+light("stage", "fill", { kind = "ambient", intensity = 0.2 })
+model("hero", "models/hero.glb", { scene = "stage", shader = "toon", rotation = { 0, 30, 0 } })
+tween("@3d.stage.hero", { ry = 210, duration = 2, ease = "in_out_sine" })
+wait("@3d.stage.hero")
+hide("stage")
+```
+
+- `scene3d(name, { layer = "3d" })` makes the scene, or moves it to another layer. Its tag is `name`, so `hide(name)` removes it with its models, and `tween(name, { alpha = 0.5 })` fades it.
+- `model(tag, path, { scene, position = { x, y, z }, rotation = { x, y, z }, scale, shader, uniforms })` shows a model. `path` has its extension. The rotation is in degrees, and `scale` is one number. Calling again with the same tag changes only the options you name.
+- `shader` is `"unlit"` (the colour of the material, no light; the default), `"toon"` (three flat bands of light), `"pbr"` (the metallic and roughness of the material), or the name of a shader declared with `shader(name, { uniforms })`. A shader of yours must include `mesh.hlsli` (see `docs/CONVENTIONS.md`, Render). `uniforms` sets its values.
+- `light(scene, name, { kind, direction, position, color = "#rrggbb", intensity })`: `kind` is `"directional"` (the default; `direction` is the way the light travels), `"point"` (`position`; it weakens with the square of the distance) or `"ambient"` (the same everywhere). A scene has at most 4 lights besides ambient ones. A lit shader shows black without a light.
+- `camera(scene, { position, look_at, fov })` sets the camera: the default is at `{ 0, 0, 5 }` looking at the origin, with a field of view (up and down) of 60 degrees. `camera { x = 0.1 }` with a table and no scene name is the 2D camera.
+- `hide3d(scene, name)` removes a model or a light.
+- A point is `{ x, y, z }` (y is up, and the camera looks down -z by default). A name has no `.` and does not start with `@`.
+- Tweens and `wait` use the tag `@3d.<scene>.<name>`, where `<name>` is `camera`, a model or a light. A model has `x y z rx ry rz scale` and the uniforms of its shader, a light has `x y z r g b intensity`, and the camera has `x y z lx ly lz fov` (look-at point). They are options of `tween`, with `duration`, `delay`, `ease`, `loop` and `yoyo`, and `parallel` and `sequence` work with them. Other options (`alpha`, `crop`, ...) are an error.
+- 3D state is in saves and rollback. After a load or a rollback, loops start again, and tweens that end are at their end values.
+
 ## Camera, shake and parallax
 
 The camera moves the layers from `background` to `overlay`. `ui` and `transient` stay.
@@ -154,3 +179,13 @@ say(eileen, "Hello.")
 - Images and voices: `images/ja/<name>` and `audio/voice/ja/<name>` are used first in that language.
 - `[fonts.fallback]` gives the font chain of a language. `[text_direction]` with `ar = "rtl"` reverses the order of an `hbox`. `[styles]` with `ja = "styles/ja_look.lua"` (or `styles/<code>.lua`) is a file of `style(...)` calls that runs over the game styles.
 - A dev build has a "Translations" window in the overlay (F12): it lists the entries of the current label and saves an edit to the `.po` file.
+## Captions and reduced motion
+
+```lua
+sound("sfx/door", { caption = "a door slams" })
+music("bgm/theme", { fade = 1.5, caption = "soft music" })
+ambient("bgm/night", { caption = "wind" })   -- music on the channel "ambient"
+```
+
+- `caption` (a string) is what the captions screen says when the player turns on Captions in the preferences. A sound's caption shows as long as the sound; a music's caption shows for 5 seconds, and only when the music changes. A replay shows none. `ambient` takes the options of `music`.
+- The preference Reduce motion stops shakes, makes `camera` moves instant and turns every transition (`transition(...)`, `with = ...`) into a dissolve of at most 0.2 seconds.

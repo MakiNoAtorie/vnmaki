@@ -170,6 +170,12 @@ struct FontSet {
   std::vector<const Font*> fallbacks{};
 };
 
+/// `fonts` with the dyslexia-friendly font first (the `dyslexia_font` preference, docs/SPEC.md
+/// section 17): it is every style of the base family, and the old regular font and the fallback
+/// chain follow it, so a character it lacks still draws. The families of `font` tags stay.
+/// `dyslexia` must outlive the result.
+[[nodiscard]] FontSet with_dyslexia_font(const FontSet& fonts, const Font& dyslexia);
+
 /// As layout_text above, for text with styles (see parse_markup) and more than one font.
 /// - `size`, `font`, `b` and `i` select the size and font of each part. A line is as high as
 ///   its largest glyphs need.

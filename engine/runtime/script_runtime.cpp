@@ -355,8 +355,9 @@ function music(name, options)
   local fade = option("music", options, "fade", "number")
   local loop_start = option("music", options, "loop_start", "number")
   local loop_end = option("music", options, "loop_end", "number")
+  local caption = option("music", options, "caption", "string")
   require_label("music")
-  local problem = engine.music(name, channel, fade, loop_start, loop_end)
+  local problem = engine.music(name, channel, fade, loop_start, loop_end, caption)
   if problem then
     error(problem, 2)
   end
@@ -382,8 +383,9 @@ function sound(name, options)
   end
   options = options_argument("sound", options)
   local channel = option("sound", options, "channel", "string")
+  local caption = option("sound", options, "caption", "string")
   require_label("sound")
-  local problem = engine.sound(name, channel)
+  local problem = engine.sound(name, channel, caption)
   if problem then
     error(problem, 2)
   end
@@ -392,6 +394,16 @@ function sound(name, options)
     command = command .. " channel " .. channel
   end
   engine.audio_command(command)
+end
+
+-- ambient(name, options) is music on the `ambient` channel; its options are those of music.
+function ambient(name, options)
+  options = options_argument("ambient", options)
+  local merged = { channel = "ambient" }
+  for key, value in pairs(options) do
+    merged[key] = value
+  end
+  return music(name, merged)
 end
 
 function voice(name)
@@ -472,6 +484,9 @@ end
 -- The styles that the engine's default screens declare are the defaults of every theme.
 local styles, default_styles = {}, {}
 local apply_language_styles  -- set below: runs the style override file of the language
+-- While styles/high_contrast.lua runs over the game's styles, a style that it declares again keeps
+-- the options that it does not name (and its `extends`).
+local overlaying = false
 local plain_style_options = {
   font = true, size = true, color = true, padding = true, gap = true, margin = true, width = true,
   height = true, grow = true, align = true, justify = true, fill = true,
@@ -532,14 +547,58 @@ function style(name, definition)
     error(format("bad style option 'extends' (string expected, got %s)", type(extends)), 2)
   end
   local entry = { props = flatten_style(definition), extends = extends }
+  local old = overlaying and styles[name]
+  if old then
+    for key, value in pairs(old.props) do
+      if entry.props[key] == nil then
+        entry.props[key] = value
+      end
+    end
+    entry.extends = extends or old.extends
+  end
   styles[name] = entry
   if debug_getinfo(2, "S").source == "=engine/screens.lua" then
     default_styles[name] = entry
   end
 end
 
+-- prefs.high_contrast: styles/high_contrast.lua goes over the game's styles. It is checked when a
+-- style is resolved, so it holds at startup, after a toggle and after a reload. A screen that is
+-- already shown keeps its look until it is built again. A game that has no such file gets a
+-- warning.
+local contrast_on, plain_styles = false, nil
+local function sync_contrast()
+  local saved = rawget(persistent, "prefs")
+  local wanted = type(saved) == "table" and saved.high_contrast == true
+  if wanted == contrast_on then
+    return
+  end
+  contrast_on = wanted
+  if not wanted then
+    styles, plain_styles = plain_styles or styles, nil
+    return
+  end
+  local chunk = engine.load_theme("high_contrast")
+  if type(chunk) ~= "function" then
+    engine.warn(chunk)
+    return
+  end
+  plain_styles, styles = styles, {}
+  for key, entry in pairs(plain_styles) do
+    styles[key] = entry
+  end
+  overlaying = true
+  local ok, problem = pcall(chunk)
+  overlaying = false
+  if not ok then
+    styles, plain_styles = plain_styles, nil
+    engine.warn("styles/high_contrast.lua: " .. tostring(problem))
+  end
+end
+
 -- The options of style `name` for a node of `kind`: the styles it extends first, then its own.
 local function resolve_style(kind, name)
+  sync_contrast()
   if type(name) ~= "string" then
     error(format("bad option 'style' to '%s' (string expected, got %s)", kind, type(name)), 3)
   end
@@ -587,6 +646,7 @@ function theme(name)
     styles = before
     error(problem, 0)
   end
+  contrast_on, plain_styles = false, nil  -- high contrast goes over the new look
   apply_language_styles()
 end
 )lua" R"lua(
@@ -616,6 +676,9 @@ function apply_language_styles()
   end
 end
 function engine.set_language_styles(chunk)
+  if contrast_on then  -- high contrast goes over the language: it is set again when styles resolve
+    styles, plain_styles, contrast_on = plain_styles or styles, nil, false
+  end
   if styles_without_language ~= nil then
     styles = styles_without_language
   end
@@ -815,6 +878,8 @@ local function tween_node(fname, tag, options, level)
   end
   if tag == "@camera" then
     engine.camera_options(fname, options, node, level)
+  elseif tag:sub(1, 4) == "@3d." then
+    engine.tween3d_options(fname, options, node, level)
   end
   return node
 end
@@ -981,13 +1046,23 @@ local function transition_request(fname, options, level)
   return spec
 end
 
--- `level` is the error() level that reaches the script from this function.
+-- Reduced motion (the prefs flag, see engine.reduce_motion below) turns every transition into a
+-- short dissolve. The request is checked first, so a bad option is still an error, and the wait
+-- stays, so a replay counts the same steps.
+local reduced_transition_seconds = 0.2
+
+-- `level` is the error() level that reaches the script from this function. Returns the name of
+-- the transition that runs.
 local function start_transition(fname, name, options, level)
   local spec = transition_request(fname, options, level + 1)
+  if engine.reduce_motion() then
+    name, spec = "dissolve", { duration = math.min(spec.duration or 0.5, reduced_transition_seconds) }
+  end
   local problem = engine.transition(name, spec)
   if problem then
     error(problem, level)
   end
+  return name
 end
 
 local function finish_transition(name)
@@ -1001,8 +1076,7 @@ function transition(name, options)
   end
   options = options_argument("transition", options)
   require_label("transition")
-  start_transition("transition", name, options, 3)
-  finish_transition(name)
+  finish_transition(start_transition("transition", name, options, 3))
 end
 
 -- Starts the transition of a `with` option before the change, so that a bad name changes nothing,
@@ -1017,8 +1091,8 @@ begin_with = function(fname, options, level)
     error(format("bad option 'with' to '%s' (a transition name, or a table { name, ... } expected)",
                  fname), level)
   end
-  start_transition(fname, name, type(with) == "table" and with or {}, level + 1)
-  return name
+  local started = start_transition(fname, name, type(with) == "table" and with or {}, level + 1)
+  return started  -- not a tail call: it would remove a level that the error levels count
 end
 end_with = function(name)
   if name ~= nil then
@@ -1089,6 +1163,138 @@ function shake(options)
     error(problem, 2)
   end
   engine.scene_command("shake")
+end
+)lua" R"lua(
+-- 3D scenes (docs/SPEC.md section 12).
+--   scene3d(name, { layer = "3d" })                       makes a scene that draws on a layer
+--   model(tag, path, { scene =, position =, rotation =, scale =, shader = "unlit" | "toon" |
+--                      "pbr" | <a declared shader>, uniforms = {} })
+--   light(scene, name, { kind = "directional" | "point" | "ambient", direction =, position =,
+--                        color = "#rrggbb", intensity = })
+--   camera(scene, { position =, look_at =, fov = })       (camera { x, y, ... } is the 2D camera)
+--   hide3d(scene, name)                                   removes a model or a light
+-- A point is { x, y, z } (or { x = , y = , z = }). `tween("@3d.<scene>.<name>", { ... })` tweens
+-- a model (x, y, z, rx, ry, rz, scale and the uniforms of its shader), a light (x, y, z, r, g, b,
+-- intensity) or "camera" (x, y, z, lx, ly, lz, fov). `wait` waits for these like any tween.
+do
+  local pairs, ipairs = pairs, ipairs
+  local camera_2d = camera
+
+  -- A point option as { x, y, z }, or nil.
+  local function point(fname, options, key, level)
+    local value = options[key]
+    if value == nil then
+      return nil
+    end
+    if type(value) ~= "table" then
+      error(format("bad option '%s' to '%s' (a point { x, y, z } expected, got %s)", key, fname,
+                   type(value)), level)
+    end
+    local x, y, z = value[1] or value.x, value[2] or value.y, value[3] or value.z
+    if type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
+      error(format("bad option '%s' to '%s' (a point { x, y, z } of numbers expected)", key,
+                   fname), level)
+    end
+    return { x, y, z }
+  end
+
+  local function name_argument(fname, index, value)
+    if type(value) ~= "string" or value == "" then
+      error(format("bad argument #%d to '%s' (a name expected, got %s)", index, fname,
+                   type(value)), 3)
+    end
+  end
+
+  -- Sends the request to the scene and logs the command. Errors reach the script that called
+  -- the API function (this is called from it, not tail-called).
+  local function send(spec, command)
+    local problem = engine.scene3d(spec)
+    if problem then
+      error(problem, 3)
+    end
+    engine.scene_command(command)
+  end
+
+  function scene3d(name, options)
+    name_argument("scene3d", 1, name)
+    options = options_argument("scene3d", options)
+    require_label("scene3d")
+    send({ kind = "scene", scene = name, layer = typed("scene3d", options, "layer", "string", 2) },
+         "scene3d " .. name)
+  end
+
+  function model(tag, path, options)
+    name_argument("model", 1, tag)
+    if type(path) ~= "string" then
+      bad_argument("model", 2, "string", path)
+    end
+    options = options_argument("model", options)
+    local scene_name = typed("model", options, "scene", "string", 2)
+    if scene_name == nil then
+      error("bad option 'scene' to 'model' (the name of a scene3d expected)", 2)
+    end
+    require_label("model")
+    send({ kind = "model", scene = scene_name, name = tag, path = path,
+           shader = typed("model", options, "shader", "string", 2),
+           uniforms = typed("model", options, "uniforms", "table", 2),
+           position = point("model", options, "position", 2),
+           rotation = point("model", options, "rotation", 2),
+           scale = typed("model", options, "scale", "number", 2) }, "model " .. tag)
+  end
+
+  function light(scene_name, name, options)
+    name_argument("light", 1, scene_name)
+    name_argument("light", 2, name)
+    options = options_argument("light", options)
+    require_label("light")
+    local color = typed("light", options, "color", "string", 2)
+    if color ~= nil then
+      if not color:match("^#%x%x%x%x%x%x$") then
+        error("bad option 'color' to 'light' (\"#rrggbb\" expected)", 2)
+      end
+      color = tonumber(color:sub(2), 16)
+    end
+    send({ kind = "light", scene = scene_name, name = name,
+           light_kind = typed("light", options, "kind", "string", 2),
+           position = point("light", options, "position", 2),
+           direction = point("light", options, "direction", 2),
+           color = color, intensity = typed("light", options, "intensity", "number", 2) },
+         "light " .. name)
+  end
+
+  function hide3d(scene_name, name)
+    name_argument("hide3d", 1, scene_name)
+    name_argument("hide3d", 2, name)
+    require_label("hide3d")
+    send({ kind = "remove", scene = scene_name, name = name }, "hide3d " .. name)
+  end
+
+  function camera(first, second)
+    if type(first) ~= "string" then
+      return camera_2d(first)
+    end
+    local options = options_argument("camera", second)
+    require_label("camera")
+    send({ kind = "camera", scene = first, position = point("camera", options, "position", 2),
+           look_at = point("camera", options, "look_at", 2),
+           fov = typed("camera", options, "fov", "number", 2) }, "camera " .. first)
+  end
+
+  -- The options of a tween of "@3d.<scene>.<name>": the numbers that are channels of the object
+  -- become its `uniforms`. `level` is as for tween_node.
+  local channels = { "x", "y", "z", "rx", "ry", "rz", "scale", "lx", "ly", "lz", "fov", "r", "g",
+                     "b", "intensity" }
+  function engine.tween3d_options(fname, options, node, level)
+    local values = {}
+    for name, value in pairs(node.uniforms or {}) do
+      values[name] = value
+    end
+    for _, name in ipairs(channels) do
+      values[name] = typed(fname, options, name, "number", level + 1)
+    end
+    node.x, node.y, node.scale_x, node.scale_y = nil, nil, nil, nil
+    node.uniforms = values
+  end
 end
 )lua" R"lua(
 -- Layered sprites: layered(name, { order = { group, ... }, <group> = "image" or
@@ -1551,12 +1757,20 @@ end
 -- Preferences, bindings and the bridge the engine calls (docs/SPEC.md sections 15 and 17).
 -- `prefs` keeps what the player changed in persistent.prefs; a value never set reads as its
 -- default. The engine reads these keys: text_speed (characters a second), auto_delay (seconds),
--- volume_<channel> (0 to 1), fullscreen, skip_unseen, window_opacity (0.3 to 1)
--- reduce_motion and language (a code of project.toml; "" is the source language).
+-- volume_<channel> (0 to 1), fullscreen, skip_unseen, window_opacity (0.3 to 1), reduce_motion,
+-- and the accessibility keys text_scale (0.75 to 2), high_contrast, dyslexia_font, captions and
+-- input_<action> (the keys and buttons of an action: "key:enter pad:south"; engine/platform/
+-- input_map.hpp has the same defaults), self_voicing and language (a code of project.toml; "" is the
+-- source language).
 local pref_defaults = {
   text_speed = 40, auto_delay = 1, volume_music = 1, volume_sound = 1, volume_voice = 1,
   volume_ambient = 1, volume_ui = 1, fullscreen = false, skip_unseen = false, window_opacity = 1,
-  reduce_motion = false, language = "",
+  reduce_motion = false, text_scale = 1, high_contrast = false, dyslexia_font = false,
+  captions = false, self_voicing = false, language = "",
+  input_advance = "key:enter key:keypad_enter key:space pad:south",
+  input_rollback = "key:page_up pad:left_shoulder", input_auto = "key:a",
+  input_skip = "key:s pad:right_shoulder", input_backlog = "key:l pad:north",
+  input_menu = "key:escape pad:start", input_self_voicing = "key:v",
 }
 local prefs = setmetatable({}, {
   __index = function(_, key)
@@ -1910,6 +2124,62 @@ std::string read_uniforms(const sol::table& table, std::vector<UniformValue>& un
     uniforms.emplace_back(key.as<std::string>(), value.as<double>());
   }
   std::ranges::sort(uniforms);
+  return {};
+}
+
+// Reads the optional point `key` of a 3D request: the prelude gives { x, y, z }.
+std::optional<Vec3Option> read_point(const sol::table& table, const char* key) {
+  const auto point = table.get<sol::optional<sol::table>>(key);
+  if (!point) {
+    return std::nullopt;
+  }
+  return Vec3Option{point->get_or(1, 0.0), point->get_or(2, 0.0), point->get_or(3, 0.0)};
+}
+
+// Copies a table the prelude built for `scene3d`, `model`, `light`, `camera` or `hide3d` into
+// `request`. Returns why it cannot, or an empty string.
+std::string read_scene3d(const sol::table& table, Scene3dRequest& request) {
+  const auto text = [&table](const char* key) -> std::optional<std::string> {
+    const auto value = table.get<sol::optional<std::string>>(key);
+    return value ? std::optional<std::string>{*value} : std::nullopt;
+  };
+  const auto number = [&table](const char* key) -> std::optional<double> {
+    const auto value = table.get<sol::optional<double>>(key);
+    return value ? std::optional<double>{*value} : std::nullopt;
+  };
+  const std::string kind = table.get_or<std::string>("kind", "");
+  if (kind == "scene") {
+    request.kind = Scene3dRequest::Kind::kScene;
+  } else if (kind == "model") {
+    request.kind = Scene3dRequest::Kind::kModel;
+  } else if (kind == "light") {
+    request.kind = Scene3dRequest::Kind::kLight;
+  } else if (kind == "camera") {
+    request.kind = Scene3dRequest::Kind::kCamera;
+  } else if (kind == "remove") {
+    request.kind = Scene3dRequest::Kind::kRemove;
+  } else {
+    return "a 3D call is malformed";
+  }
+  request.scene = table.get_or<std::string>("scene", "");
+  request.name = table.get_or<std::string>("name", "");
+  request.path = table.get_or<std::string>("path", "");
+  request.layer = text("layer");
+  request.shader = text("shader");
+  request.light_kind = text("light_kind");
+  request.position = read_point(table, "position");
+  request.rotation = read_point(table, "rotation");
+  request.direction = read_point(table, "direction");
+  request.look_at = read_point(table, "look_at");
+  request.scale = number("scale");
+  request.fov = number("fov");
+  request.intensity = number("intensity");
+  if (const auto color = table.get<sol::optional<std::int64_t>>("color")) {
+    request.color = static_cast<std::uint32_t>(*color);
+  }
+  if (const auto uniforms = table.get<sol::optional<sol::table>>("uniforms")) {
+    return read_uniforms(*uniforms, request.uniforms);
+  }
   return {};
 }
 
@@ -2698,6 +2968,20 @@ void ScriptRuntime::Impl::bind_engine() {
                                             .duration = duration,
                                             .replaying = replaying_ || still}));
   };
+  // The 3D scenes are state: the calls arrive during a replay too, which only checks the files.
+  engine_["scene3d"] = [this, problem_or_nil](sol::this_state state, const sol::table& spec) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    Scene3dRequest request;
+    std::string problem = read_scene3d(spec, request);
+    if (problem.empty()) {
+      request.replaying = replaying_;
+      problem = options_.scene->scene3d(request);
+    }
+    return problem_or_nil(state, problem);
+  };
   engine_["wait"] = sol::yielding(
       [this](sol::this_state state, const std::string& tag, std::optional<double> seconds) {
         yield_at(state, WaitRequest{.tag = tag, .seconds = seconds.value_or(0)});
@@ -2724,12 +3008,16 @@ void ScriptRuntime::Impl::bind_engine() {
   engine_["music"] = [this, problem_or_nil](
                          sol::this_state state, const std::string& name,
                          const sol::optional<std::string>& channel, sol::optional<double> fade,
-                         sol::optional<double> loop_start, sol::optional<double> loop_end) {
+                         sol::optional<double> loop_start, sol::optional<double> loop_end,
+                         const sol::optional<std::string>& caption) {
     if (options_.audio == nullptr) {
       return problem_or_nil(state, {});
     }
     MusicRequest request;
     request.name = name;
+    if (caption && !replaying_) {
+      request.caption = *caption;
+    }
     if (channel) {
       request.channel = *channel;
     }
@@ -2745,12 +3033,16 @@ void ScriptRuntime::Impl::bind_engine() {
     return problem_or_nil(state, options_.audio->music(request));
   };
   engine_["sound"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
-                                            const sol::optional<std::string>& channel) {
+                                            const sol::optional<std::string>& channel,
+                                            const sol::optional<std::string>& caption) {
     if (options_.audio == nullptr || replaying_) {
       return problem_or_nil(state, {});
     }
     SoundRequest request;
     request.name = name;
+    if (caption) {
+      request.caption = *caption;
+    }
     if (channel) {
       request.channel = *channel;
     }

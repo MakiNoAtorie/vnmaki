@@ -56,6 +56,17 @@ void UiHost::set_text_measure(TextMeasure measure) {
   dirty_ = true;
 }
 
+void UiHost::set_text_scale(float scale) {
+  if (scale == text_scale_) {
+    return;
+  }
+  for (Screen& screen : screens_) {
+    scale_text_sizes(screen.root, scale / text_scale_);
+  }
+  text_scale_ = scale;
+  dirty_ = true;
+}
+
 std::string UiHost::check_screen(std::string_view name, const ScreenNodeDef& screen) {
   try {
     static_cast<void>(build_ui_tree(screen));
@@ -81,6 +92,9 @@ void UiHost::show(std::string name, UiNode root, bool modal) {
   hide(name);
   if (translator_ != nullptr && !name.starts_with(kEngineScreenPrefix)) {
     translate_nodes(root, *translator_, std::string{kScreenScope} + name);
+  }
+  if (text_scale_ != 1) {
+    scale_text_sizes(root, text_scale_);
   }
   if (modal) {
     static_cast<void>(move_focus(root, FocusMove::kNext));
@@ -127,6 +141,15 @@ std::vector<const UiNode*> UiHost::roots() {
     trees.push_back(&screen.root);
   }
   return trees;
+}
+
+std::vector<std::string> UiHost::screen_names() const {
+  std::vector<std::string> names;
+  names.reserve(screens_.size());
+  for (const Screen& screen : screens_) {
+    names.push_back(screen.name);
+  }
+  return names;
 }
 
 void UiHost::ensure_layout() {

@@ -1,5 +1,9 @@
 #include "engine/ui/ui_node.hpp"
 
+#include <algorithm>
+
+#include "engine/text/markup.hpp"
+
 namespace vnmaki {
 
 UiNode make_node(NodeKind kind) {
@@ -40,6 +44,13 @@ bool is_focusable(const UiNode& node) {
   const bool takes_focus = node.kind == NodeKind::kButton || node.kind == NodeKind::kToggle ||
                            node.kind == NodeKind::kSlider || node.kind == NodeKind::kInput;
   return takes_focus && !node.state.disabled;
+}
+
+void scale_text_sizes(UiNode& node, float factor) {
+  node.style.text_size = std::min(node.style.text_size * factor, kMaxFontPixelSize);
+  for (UiNode& child : node.children) {
+    scale_text_sizes(child, factor);
+  }
 }
 
 const std::string& display_text(const UiNode& node) {

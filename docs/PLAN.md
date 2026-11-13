@@ -368,11 +368,11 @@ Files: new `engine/tools/debugger.*`, `engine/tools/dap.*`, `engine/runtime/scri
 
 This task is the Phase 4 acceptance demo.
 
-- [ ] End-to-end headless test on Windows: start the template, change a say line on disk, and check the new text at the same step.
-- [ ] A DAP session test on the template: a breakpoint in `start`, step, read `store.affection`, goto `warm`.
-- [ ] `vnmaki check` and `vnmaki graph` on the template and on a broken fixture give the expected CSV.
-- [ ] A profile CSV of 120 frames of the template.
-- [ ] Write `docs/tools.md`: the overlay keys, hot reload rules, a VS Code `launch.json` for `vnmaki debug`, and the check codes.
+- [x] End-to-end test: start the template, change a say line on disk, and check the new text at the same step (`tests/unit/tools_demo_test.cpp`; on Windows the batch comes from a real `FileWatcher`).
+- [x] A DAP session test on the template: a breakpoint in `start`, step, read `store.affection`, goto `warm` (`cli.debug_template`, `tools/generators/debug_fixtures.py`).
+- [x] `vnmaki check` and `vnmaki graph` on the template and on a broken fixture give the expected CSV (`cli.check_template_has_no_findings`, `cli.check_mixed`, `cli.graph_prints_the_csv_of_the_template`, `cli.graph_prints_the_csv_of_a_project`).
+- [x] A profile CSV of 120 frames of the template (`cli.run_profile_of_the_template_has_120_frames`, a window test that needs a GPU).
+- [x] Write `docs/tools.md`: the overlay keys, hot reload rules, a VS Code extension and `launch.json` for `vnmaki debug`, the check codes, `extract-strings` and the profile CSV columns.
 
 ### Deferred
 
@@ -424,32 +424,32 @@ Files: `engine/l10n/`, `engine/runtime/`, `engine/vfs/` (language lookup), `engi
 
 Files: `engine/ui/`, `engine/text/`, `engine/audio/`, `engine/platform/input.*`, `templates/default/`.
 
-- [ ] `prefs.text_scale` (0.75–2.0) scales the say box and UI text, and the layout reflows.
-- [ ] `prefs.high_contrast` loads `styles/high_contrast.lua`. `prefs.dyslexia_font` puts `fonts/dyslexia.ttf` (an OFL font in the template) first in the chain.
-- [ ] `prefs.reduce_motion` also changes all transitions to a short dissolve (task 23 does shake and camera).
-- [ ] `sound`, `music` and `ambient` accept `caption = "..."`. `prefs.captions` shows them in a caption screen for the sound length.
-- [ ] Input actions (advance, rollback, skip, menu, ...) map to keys and gamepad buttons. A "Controls" screen changes the map, which is saved in `persistent`.
-- [ ] Headless tests for each preference, and a remap test with injected input.
+- [x] `prefs.text_scale` (0.75–2.0) scales the say box and UI text, and the layout reflows.
+- [x] `prefs.high_contrast` loads `styles/high_contrast.lua`. `prefs.dyslexia_font` puts `fonts/dyslexia.ttf` (an OFL font in the template) first in the chain. Open: the template has a generated placeholder font (wider spacing), not a real OFL font. Replace it with OpenDyslexic or similar (`templates/default/ASSETS.txt`).
+- [x] `prefs.reduce_motion` also changes all transitions to a short dissolve (task 23 does shake and camera).
+- [x] `sound`, `music` and `ambient` accept `caption = "..."`. `prefs.captions` shows them in a caption screen for the sound length.
+- [x] Input actions (advance, rollback, skip, menu, ...) map to keys and gamepad buttons. A "Controls" screen changes the map, which is saved in `persistent`.
+- [x] Headless tests for each preference, and a remap test with injected input.
 
 ### 43: Self-voicing (SPEC §17)
 
 Files: new `engine/platform/tts.hpp`, `engine/platform/win_tts.cpp`, `engine/dialogue/`, `engine/ui/`.
 
-- [ ] Windows TTS through SAPI (`ISpVoice`, COM). No new dependency. Other platforms get a null backend.
-- [ ] `prefs.self_voicing` and the V key. It speaks each say line (speaker, then text without tags), the menu choices, and the role, label and state of the focused UI node.
-- [ ] New speech stops the old speech. Skip mode and replay do not speak.
-- [ ] Tests: a recording fake backend gives the exact spoken strings for a scripted session. A Windows platform test speaks one line with a timeout.
+- [x] Windows TTS through SAPI (`ISpVoice`, COM). No new dependency. Other platforms get a null backend.
+- [x] `prefs.self_voicing` and the V key. It speaks each say line (speaker, then text without tags), the menu choices, and the role, label and state of the focused UI node.
+- [x] New speech stops the old speech. Skip mode and replay do not speak.
+- [x] Tests: a recording fake backend gives the exact spoken strings for a scripted session. A Windows platform test speaks one line with a timeout.
 
 ### 44: Asset import (SPEC §19, §9)
 
 Files: new `engine/assets/`, `vcpkg.json`, `cli/`.
 
-- [ ] The import cache is `.vnmaki/cache/`. The key is a hash of the source file, the importer name and its version. Dev mode imports changed files through the task 32 watcher.
-- [ ] Audio: WAV and FLAC to Opus (libopusenc, vcpkg), with a peak or RMS gain to the target in `project.toml`.
-- [ ] Fonts: a subset for each language with the characters of its strings plus ASCII (HarfBuzz subset).
-- [ ] glTF: validation with cgltf (vcpkg). Missing textures and buffers are errors.
-- [ ] Game shaders: precompile to SPIR-V and DXIL. Release builds load these and do not link SDL_shadercross.
-- [ ] Tests: cache hit and miss, the gain of a generated WAV, glyph count of a subset font, and a bad glTF error.
+- [x] The import cache is `.vnmaki/cache/`. The key is a hash of the source file, the importer name and its version. Dev mode imports changed files through the task 32 watcher.
+- [x] Audio: WAV and FLAC to Opus (libopusenc, vcpkg), with a peak or RMS gain to the target in `project.toml`.
+- [x] Fonts: a subset for each language with the characters of its strings plus ASCII (HarfBuzz subset).
+- [x] glTF: validation with cgltf (vcpkg). Missing textures and buffers are errors.
+- [x] Game shaders: precompile to SPIR-V and DXIL. Release builds load these and do not link SDL_shadercross.
+- [x] Tests: cache hit and miss, the gain of a generated WAV, glyph count of a subset font, and a bad glTF error.
 
 ### 45: `.vnpak` and `vnmaki build windows` (SPEC §19, §5)
 
@@ -465,12 +465,12 @@ Files: new `engine/vfs/pak_mount.*`, `engine/vfs/pak_writer.*`, new `cli/build_c
 
 Files: new `engine/model3d/`, `engine/render/` (depth targets, meshes), `shaders/mesh_*.hlsl`, runtime, `tools/generators/model_fixtures.py`.
 
-- [ ] cgltf loads glTF 2.0 (meshes, materials, textures) from the VFS. Add a fuzz target.
-- [ ] `scene3d(name, { layer = "3d" })` renders into a target with a depth buffer. The 3D layer mixes with 2D layers.
-- [ ] `model(tag, path, { scene, position, rotation, scale })`, `light(...)` (directional, point), and `camera(scene, { position, look_at, fov })`. Tweens and `wait` work on them.
-- [ ] Shaders: unlit, toon, simple PBR, and custom (task 24).
-- [ ] The 3D state is in the snapshot.
-- [ ] Tests: the generator writes a cube glTF with Python `json` and `struct`. GPU golden for unlit. Pixel probes with a tolerance for toon and PBR.
+- [x] cgltf loads glTF 2.0 (meshes, materials, textures) from the VFS. Add a fuzz target.
+- [x] `scene3d(name, { layer = "3d" })` renders into a target with a depth buffer. The 3D layer mixes with 2D layers.
+- [x] `model(tag, path, { scene, position, rotation, scale })`, `light(...)` (directional, point), and `camera(scene, { position, look_at, fov })`. Tweens and `wait` work on them.
+- [x] Shaders: unlit, toon, simple PBR, and custom (task 24).
+- [x] The 3D state is in the snapshot.
+- [x] Tests: the generator writes a cube glTF with Python `json` and `struct`. GPU golden for unlit. Pixel probes with a tolerance for toon and PBR.
 
 ### 47: 3D animation (SPEC §12, §10)
 
@@ -529,11 +529,11 @@ Do not do these tasks in parallel, because they change the same files:
 
 Files: new `engine/tools/screen_editor.*`, `engine/tools/script_scan.*`.
 
-- [ ] An overlay mode: click a node in a screen that shows to select it. Its outline and Yoga rectangle show.
-- [ ] The editor changes only literal number, string and boolean fields that are already in the screen table (`gap`, `align`, `text`, style values).
-- [ ] The scan records the source span of each literal. A save replaces only those bytes. All other bytes and comments stay the same.
-- [ ] After a save, hot reload (task 32) shows the change. A field with a computed value is read-only.
-- [ ] Tests: span rewrite on a generated screen file (byte-exact diff), and a computed field that is read-only.
+- [x] An overlay mode: click a node in a screen that shows to select it. Its outline and Yoga rectangle show.
+- [x] The editor changes only literal number, string and boolean fields that are already in the screen table (`gap`, `align`, `text`, style values).
+- [x] The scan records the source span of each literal. A save replaces only those bytes. All other bytes and comments stay the same.
+- [x] After a save, hot reload (task 32) shows the change. A field with a computed value is read-only.
+- [x] Tests: span rewrite on a generated screen file (byte-exact diff), and a computed field that is read-only.
 
 ### 51: Launcher (SPEC §19)
 

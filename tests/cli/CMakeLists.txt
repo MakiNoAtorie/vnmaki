@@ -336,6 +336,29 @@ if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
                        PROPERTIES SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
 endif()
 
+set(vnmaki_new_precompiled "")
+if(NOT VNMAKI_SHADER_COMPILER)
+  set(vnmaki_new_precompiled "-DPRECOMPILED_DIR=${VNMAKI_PRECOMPILED_DIR}")
+endif()
+
+# The Phase 4 demo (ticket 37): the profile CSV of 120 frames of the template.
+add_test(NAME cli.run_profile_of_the_template_has_120_frames
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+                 -DPROJECT=${PROJECT_SOURCE_DIR}/templates/default -DFRAMES=120
+                 ${vnmaki_new_precompiled}
+                 -DOUT=${CMAKE_CURRENT_BINARY_DIR}/profile/template.csv
+                 -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/run_profile_template -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_profile.cmake")
+set_tests_properties(cli.run_profile_of_the_template_has_120_frames PROPERTIES TIMEOUT 60)
+if(vnmaki_gpu_cli_env)
+  set_tests_properties(cli.run_profile_of_the_template_has_120_frames
+                       PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
+endif()
+if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+  set_tests_properties(cli.run_profile_of_the_template_has_120_frames
+                       PROPERTIES SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
+endif()
+
 vnmaki_add_cli_test(
   run_rejects_profile_with_headless
   ARGS run "${vnmaki_run_fixtures}/demo" --headless --profile out.csv
@@ -350,14 +373,14 @@ add_test(NAME cli.new_makes_a_game_and_stops_at_a_second_one
                  -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/plain -P
                  "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
 add_test(NAME cli.new_game_runs_in_a_window
-         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> ${vnmaki_new_precompiled}
                  -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/windowed -DFRAMES=3
                  -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/new_game_runs_in_a_window -P
                  "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
 # The presentation demo (ticket 28) in a window: the story starts at its label, so the GPU draws the
 # dissolve, the layered sprite with the blink, the camera, the shake and the sepia layer shader.
 add_test(NAME cli.new_presentation_runs_in_a_window
-         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> ${vnmaki_new_precompiled}
                  -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/presentation -DFRAMES=300
                  -DPRESENTATION=ON
                  -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/new_presentation_runs_in_a_window -P
@@ -407,6 +430,12 @@ vnmaki_add_cli_stdout_file_test(
   ARGS graph --format dot "${vnmaki_graph_fixtures}/story"
   EXIT 0
   STDOUT_FILE "${vnmaki_graph_fixtures}/story.dot")
+# The template (the Phase 4 demo, ticket 37): the expected CSV comes from graph_fixtures.py.
+vnmaki_add_cli_stdout_file_test(
+  graph_prints_the_csv_of_the_template
+  ARGS graph "${PROJECT_SOURCE_DIR}/templates/default" --format csv
+  EXIT 0
+  STDOUT_FILE "${vnmaki_graph_fixtures}/template.csv")
 vnmaki_add_cli_stdout_file_test(
   graph_prints_the_csv_of_a_random_project
   ARGS graph "${vnmaki_graph_fixtures}/random" --format csv
@@ -454,6 +483,7 @@ set_tests_properties(
   cli.graph_prints_dot_by_default
   cli.graph_prints_dot_when_asked
   cli.graph_prints_the_csv_of_a_random_project
+  cli.graph_prints_the_csv_of_the_template
   cli.graph_of_a_folder_without_scripts_has_only_the_header
   cli.graph_reports_a_missing_folder
   cli.graph_needs_a_folder
@@ -538,6 +568,22 @@ if(VNMAKI_DEV_TOOLS AND WIN32)
         "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_dap.cmake")
     set_tests_properties(cli.debug_${session} PROPERTIES TIMEOUT 120)
   endforeach()
+endif()
+
+# The Phase 4 demo (ticket 37): the same on the template, in templates/default: a breakpoint in
+# `start`, a step, `store.affection` and a goto to `warm`.
+if(VNMAKI_DEV_TOOLS AND WIN32)
+  set(data_dir "${CMAKE_CURRENT_BINARY_DIR}/data/debug_template")
+  add_test(
+    NAME cli.debug_template
+    COMMAND
+      ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+      "-DARGS=debug;${PROJECT_SOURCE_DIR}/templates/default;--headless;--data-dir;${data_dir}"
+      -DEXPECTED_EXIT=0 -DDATA_DIR=${data_dir}
+      -DINPUT_FILE=${vnmaki_debug_fixtures}/template.in.dap
+      -DEXPECTED_STDOUT_FILE=${vnmaki_debug_fixtures}/template.out.dap -P
+      "${CMAKE_CURRENT_SOURCE_DIR}/run_cli_dap.cmake")
+  set_tests_properties(cli.debug_template PROPERTIES TIMEOUT 120)
 endif()
 
 vnmaki_add_cli_test(
@@ -632,3 +678,54 @@ set_tests_properties(
   cli.extract_strings_reports_a_missing_folder
   cli.extract_strings_needs_a_folder
   cli.extract_strings_rejects_a_second_folder PROPERTIES TIMEOUT 60)
+
+# vnmaki import (ticket 44), on the projects tools/generators/import_fixtures.py writes. The shader
+# is only imported by a build that has the shader compiler (VNMAKI_SHADER_COMPILER).
+set(vnmaki_import_fixtures "${VNMAKI_FIXTURES_DIR}/import")
+if(VNMAKI_SHADER_COMPILER)
+  set(vnmaki_import_shaders ON)
+else()
+  set(vnmaki_import_shaders OFF)
+endif()
+add_test(
+  NAME cli.import_writes_the_outputs_and_uses_the_cache
+  COMMAND
+    ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> "-DPROJECT=${vnmaki_import_fixtures}/project"
+    "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/work/import" -DSHADERS=${vnmaki_import_shaders} -P
+    "${CMAKE_CURRENT_SOURCE_DIR}/run_import.cmake")
+
+vnmaki_add_cli_test(
+  import_reports_a_missing_buffer_and_texture
+  ARGS import "${vnmaki_import_fixtures}/project_broken"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "models/missing.gltf: buffer 0 'nothing.bin' not found.*texture image 0 'nothing.png' not found")
+
+vnmaki_add_cli_test(
+  import_reports_a_missing_folder
+  ARGS import "${vnmaki_import_fixtures}/does_not_exist"
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "does_not_exist.* is not a directory")
+
+vnmaki_add_cli_test(
+  import_needs_a_folder
+  ARGS import
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki import <dir>")
+
+vnmaki_add_cli_test(
+  import_rejects_a_second_folder
+  ARGS import "${vnmaki_import_fixtures}/project" "${vnmaki_import_fixtures}/project_broken"
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "^usage: vnmaki import")
+
+# vnmaki import never opens a window or waits for input, so a hang is a bug.
+set_tests_properties(
+  cli.import_writes_the_outputs_and_uses_the_cache
+  cli.import_reports_a_missing_buffer_and_texture
+  cli.import_reports_a_missing_folder
+  cli.import_needs_a_folder
+  cli.import_rejects_a_second_folder PROPERTIES TIMEOUT 120)

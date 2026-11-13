@@ -14,6 +14,7 @@
 
 #include "engine/platform/geometry.hpp"
 #include "engine/render/image.hpp"
+#include "engine/render/mesh.hpp"
 #include "engine/render/shader.hpp"
 
 namespace vnmaki {
@@ -114,6 +115,25 @@ struct DrawState {
   std::array<TextureId, 2> more_textures{};
 };
 
+/// One mesh draw in a pass with a depth buffer (RenderPass::depth). The vertex shader takes a
+/// vertex to world space with `model` and then to clip space with `view_projection`. The fragment
+/// shader gets world positions and normals (turned by the upper 3x3 of `model`, so its scale must
+/// be uniform) and is lit by itself: shaders/mesh.hlsli says what it receives.
+struct MeshDraw {
+  MeshId mesh{};
+  /// World space to clip space, with depth from 0 (near) to 1 (far) and y up.
+  Mat4 view_projection{};
+  /// Model space to world space.
+  Mat4 model{};
+  /// The base colour texture (`sample_base` in shaders/mesh.hlsli). Required.
+  TextureId texture{};
+  /// A fragment shader made with create_shader from a shader that includes shaders/mesh.hlsli.
+  /// Required: there is no default mesh shader.
+  ShaderId shader{};
+  /// The bytes of the shader's constant buffer (register(b0, space3)); as for DrawState.
+  std::span<const std::byte> uniforms{};
+};
+
 /// The most textures a custom fragment shader may read: `texture` and `DrawState::more_textures`.
 inline constexpr std::uint32_t kMaxShaderTextures = 3;
 
@@ -123,6 +143,9 @@ struct RenderPass {
   TextureId target = kScreen;
   /// Clears the target to this colour first; without it the pass draws over what is there.
   std::optional<Color> clear{};
+  /// The pass has a depth buffer (cleared to far). It draws meshes (draw_mesh) and no quads, and
+  /// its target must be a render target.
+  bool depth = false;
 };
 
 /// Work the GPU did for one frame.
@@ -176,6 +199,18 @@ class IRenderer {
   /// RenderError if it has no bytecode for this backend or uses resources it may not.
   [[nodiscard]] virtual ShaderId create_shader(const ShaderBytecode& fragment) = 0;
 
+  /// Uploads a triangle mesh: `indices` are triples into `vertices`. Throws RenderError for an
+  /// index out of range or a count that is not a multiple of 3. The default throws, for renderers
+  /// that cannot draw meshes.
+  [[nodiscard]] virtual MeshId create_mesh(std::span<const MeshVertex> vertices,
+                                           std::span<const std::uint32_t> indices) {
+    static_cast<void>(vertices);
+    static_cast<void>(indices);
+    throw RenderError{"this renderer cannot draw meshes"};
+  }
+  /// Releases a mesh. Unknown ids are ignored.
+  virtual void destroy_mesh(MeshId /*mesh*/) {}
+
   /// Releases a texture or render target. Unknown ids are ignored.
   virtual void destroy_texture(TextureId texture) = 0;
   /// Releases a custom shader. Unknown ids are ignored.
@@ -195,6 +230,13 @@ class IRenderer {
   /// shader, for the pass's own target as the texture, or for uniforms the shader does not take.
   virtual void draw(std::span<const Quad> quads, const DrawState& state) = 0;
   void draw(const Quad& quad, const DrawState& state) { draw(std::span{&quad, 1}, state); }
+  /// Draws a mesh in the current pass, which must have a depth buffer. Throws RenderError outside
+  /// such a pass, for an unknown mesh, texture or shader (the sprite shader is not one), or for
+  /// uniforms the shader does not take. The default throws.
+  virtual void draw_mesh(const MeshDraw& draw) {
+    static_cast<void>(draw);
+    throw RenderError{"this renderer cannot draw meshes"};
+  }
   /// Submits the frame to the GPU and presents the screen, if a pass drew to it.
   virtual FrameStats end_frame() = 0;
 

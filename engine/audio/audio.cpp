@@ -281,6 +281,7 @@ struct Audio::Impl {
   std::vector<float> block;  ///< One block of one track, before it is mixed in.
 
   // Used by the engine's thread only.
+  std::vector<AudioCaption> captions;
   bool pending = false;            ///< restore() changed the music; the tracks follow at update().
   std::uint64_t movie_tokens = 0;  ///< The last token start_movie_audio() gave.
   std::string language;            ///< set_language(); voice() looks in voice/<language>/ first.
@@ -595,7 +596,16 @@ std::string Audio::music(const MusicRequest& request) {
     }
     music.loop_end = frames_of(*request.loop_end);
   }
-  return impl_->set_music(request.channel, std::move(music), request.fade);
+  bool changes = false;
+  if (!request.caption.empty()) {
+    const std::scoped_lock lock{impl_->mutex};
+    changes = !plays(impl_->channel(request.channel), music);
+  }
+  std::string problem = impl_->set_music(request.channel, std::move(music), request.fade);
+  if (problem.empty() && changes) {
+    impl_->captions.push_back({.text = request.caption, .seconds = kMusicCaptionSeconds});
+  }
+  return problem;
 }
 
 std::string Audio::sound(const SoundRequest& request) {
@@ -607,10 +617,17 @@ std::string Audio::sound(const SoundRequest& request) {
   if (!track) {
     return problem;
   }
+  if (!request.caption.empty()) {
+    impl_->captions.push_back(
+        {.text = request.caption,
+         .seconds = track->decoder.seconds().value_or(kUnknownCaptionSeconds)});
+  }
   const std::scoped_lock lock{impl_->mutex};
   impl_->channel(request.channel).tracks.push_back(std::move(*track));
   return {};
 }
+
+std::vector<AudioCaption> Audio::take_captions() { return std::exchange(impl_->captions, {}); }
 
 std::string voice_audio_name(const Vfs& vfs, std::string_view name, std::string_view language) {
   std::string file{kVoicePrefix};

@@ -35,6 +35,8 @@
 
 namespace vnmaki {
 
+class ModelLibrary;
+class Scene3dDisplayable;
 class Vfs;
 
 /// The file of image name `name`: "images/<name>.png", else ".jpg", else ".webp" (a name may hold
@@ -141,11 +143,20 @@ inline constexpr std::string_view kLayerTagPrefix = "@layer.";
 /// it is not in the snapshot and a replay does not start it. Layers draw through a CameraRenderer
 /// when the camera moves them, so every displayable follows it.
 ///
+/// `scene3d(name, { layer })` puts a 3D scene on a layer (engine/model3d/scene3d.hpp): a camera,
+/// lights and glTF models drawn into a target with a depth buffer, which then draws like an image.
+/// `model`, `light` and `camera(scene, ...)` change it; `tween("@3d.<scene>.<name>", ...)` moves a
+/// model, a light or the "camera". prepare() uploads the models and makes the target, and draw()
+/// renders each 3D scene in a pass of its own before the layer that holds it, then goes on in a
+/// new pass on its target. A model that has a game shader needs the shader to include
+/// shaders/mesh.hlsli.
+///
 /// The snapshot is a map from a part's name to its bytes, so a later feature adds a part without
 /// changing the others: "displayables" (the images), "layered" (the layered sprites),
 /// "animations" (the frame animations), "movies" (the movies), "tweens" (the loops), "shaders"
 /// (the shader and uniform values of displayables and layers; left out when no shader is set) and
-/// "camera" (the camera and the parallax of the layers; left out when they are the default). It
+/// "camera" (the camera and the parallax of the layers; left out when they are the default) and
+/// "scene3d" (the 3D scenes, put back last of the displayables; left out when there are none). It
 /// keeps the properties as a replay would leave them: tweens that end are at their end values,
 /// loops at the value they started from, and restore() starts each loop again at time 0.
 class Scene final : public SceneState, public SceneCommands {
@@ -177,6 +188,7 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] std::string transition(const TransitionRequest& request) override;
   [[nodiscard]] std::string set_parallax(std::string_view layer, double factor) override;
   [[nodiscard]] std::string shake(const ShakeRequest& request) override;
+  [[nodiscard]] std::string scene3d(const Scene3dRequest& request) override;
 
   [[nodiscard]] std::vector<std::byte> capture() const override;
   void restore(std::span<const std::byte> state) override;
@@ -304,6 +316,10 @@ class Scene final : public SceneState, public SceneCommands {
   void read_layered(std::span<const std::byte> bytes, Layers& layers) const;
   // Reads the "animations" part into `layers`. Throws std::invalid_argument.
   void read_animations(std::span<const std::byte> bytes, Layers& layers) const;
+  // Reads the "scene3d" part into `layers`. Throws std::invalid_argument.
+  void read_scene3d(std::span<const std::byte> bytes, Layers& layers) const;
+  // Sets the model `request.name` of a 3D scene. Returns why it cannot.
+  [[nodiscard]] std::string set_model_3d(Scene3dDisplayable& scene, const Scene3dRequest& request);
   // Reads the "movies" part into `layers`. Throws std::invalid_argument.
   static void read_movies(std::span<const std::byte> bytes, Layers& layers,
                           const std::shared_ptr<std::vector<TextureId>>& retired);
@@ -322,6 +338,7 @@ class Scene final : public SceneState, public SceneCommands {
   std::array<TextureId, kLayerOrder.size()> layer_targets_{};
   std::vector<ShaderId> retired_shaders_;  // GPU shaders of redeclared shaders, to destroy
   std::map<std::string, Texture, std::less<>> textures_;
+  std::shared_ptr<ModelLibrary> models_;  // the models of the 3D scenes
   MovieAudio* movie_audio_ = nullptr;
   std::function<void(std::string_view)> warn_;
   std::set<std::string, std::less<>> failed_paths_;  // images that did not load: not tried again

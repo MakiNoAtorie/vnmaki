@@ -119,17 +119,28 @@ UiNode* find_reveal(UiNode& node) {
 }  // namespace
 
 void SayBoxView::set_language(FontSet fonts, TextDirection direction) {
-  fonts_ = fonts;
-  ui_.set_fonts(std::move(fonts));
   direction_ = direction;
-  built_for_.reset();
-  built_.reset();
-  has_layout_ = false;
+  set_fonts(std::move(fonts));  // also builds and lays the screen out again
 }
 
 void SayBoxView::set_screen_source(ScreenSource source, Size canvas) {
   source_ = std::move(source);
   canvas_ = canvas;
+  built_for_.reset();
+  built_.reset();
+  has_layout_ = false;
+}
+
+void SayBoxView::set_text_scale(float scale) {
+  text_scale_ = scale;
+  built_for_.reset();
+  built_.reset();
+  has_layout_ = false;
+}
+
+void SayBoxView::set_fonts(FontSet fonts) {
+  fonts_ = fonts;
+  ui_.set_fonts(std::move(fonts));
   built_for_.reset();
   built_.reset();
   has_layout_ = false;
@@ -148,6 +159,7 @@ UiNode* SayBoxView::scripted_screen(const DialogueLine& line) {
       built_.reset();
     }
     if (built_) {
+      scale_text_sizes(*built_, text_scale_);
       layout_tree(*built_, canvas_, ui_.text_measure(), direction_);
     }
     has_layout_ = false;
@@ -160,7 +172,7 @@ void SayBoxView::layout(const DialogueLine& line) {
   if (has_layout_ && line.text == laid_out_text_) {
     return;
   }
-  float text_size = style_.text_size;
+  float text_size = style_.text_size * text_scale_;
   float wrap_width = style_.wrap_width;
   if (scripted != nullptr) {
     const UiNode& reveal = *find_reveal(*scripted);
@@ -181,6 +193,7 @@ void SayBoxView::layout(const DialogueLine& line) {
 UiNode SayBoxView::laid_out_screen(const DialogueLine& line,
                                    std::optional<std::size_t> visible_glyphs) {
   UiNode screen = make_say_screen(style_, line, visible_glyphs);
+  scale_text_sizes(screen, text_scale_);
   const Size canvas{.width = static_cast<int>(std::ceil(style_.box.x + style_.box.width)),
                     .height = static_cast<int>(std::ceil(style_.box.y + style_.box.height))};
   layout_tree(screen, canvas, ui_.text_measure(), direction_);

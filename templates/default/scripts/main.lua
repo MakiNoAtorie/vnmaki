@@ -35,7 +35,7 @@ label("start", function()
 end)
 
 label("classroom", function()
-  music("bgm/theme", { fade = 1.5 })
+  music("bgm/theme", { fade = 1.5, caption = "soft music" })
   scene("bg/classroom", { with = "dissolve" })
   show("eileen", { outfit = "school", face = "smile", at = "center" })
   say(eileen, "You came back.")

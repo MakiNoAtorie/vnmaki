@@ -3,8 +3,9 @@
 # reaches Vulkan through a software driver such as Mesa's lavapipe.
 add_executable(vnmaki_render_tests ../unit/main.cpp gpu_test_support.cpp gpu_test_support.hpp
                                    camera_render_test.cpp frame_anim_render_test.cpp
-                                   layered_render_test.cpp presentation_render_test.cpp
-                                   renderer_test.cpp say_box_render_test.cpp
+                                   layered_render_test.cpp model3d_render_test.cpp
+                                   presentation_render_test.cpp renderer_test.cpp
+                                   say_box_render_test.cpp
                                    scene_render_test.cpp shader_render_test.cpp
                                    text_render_test.cpp
                                    transition_render_test.cpp window_renderer_test.cpp)
@@ -14,6 +15,11 @@ target_compile_definitions(
   PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS
           VNMAKI_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/templates"
           VNMAKI_GPU_TSAN_SUPPRESSIONS="${CMAKE_CURRENT_SOURCE_DIR}/gpu_driver.tsan.supp")
+# The precompiled sepia shader of a build without a shader compiler (tests/CMakeLists.txt).
+if(NOT VNMAKI_SHADER_COMPILER)
+  add_dependencies(vnmaki_render_tests vnmaki_precompiled_sepia)
+endif()
+target_compile_definitions(vnmaki_render_tests PRIVATE VNMAKI_PRECOMPILED_DIR="${VNMAKI_PRECOMPILED_DIR}")
 # A custom shader, built the way a game's would be.
 target_sources(vnmaki_render_tests PRIVATE test_shaders.hpp)
 vnmaki_add_shaders(

@@ -403,6 +403,7 @@ UiNode build(const ScreenNodeDef& def) {
   node.children.reserve(def.children.size());
   for (const ScreenNodeDef& child : def.children) {
     node.children.push_back(build(child));
+    node.children.back().source_index = static_cast<int>(node.children.size() - 1);
   }
   if (def.kind == "grid") {
     return make_grid_rows(std::move(node), pending.columns);

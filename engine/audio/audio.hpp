@@ -66,6 +66,17 @@ struct AudioOptions {
   double duck_fade = kDefaultDuckFade;
 };
 
+/// A line for the captions screen (docs/SPEC.md section 17): `text` shows for `seconds`.
+struct AudioCaption {
+  std::string text{};
+  double seconds = 0;
+};
+
+/// How long the caption of music shows: the music has no length of its own, because it loops.
+inline constexpr double kMusicCaptionSeconds = 5;
+/// How long a caption of a sound shows when the file does not say how long it is.
+inline constexpr double kUnknownCaptionSeconds = 3;
+
 /// One file playing on a channel.
 struct AudioTrackState {
   std::string name{};  ///< As the script named it; a voice has the "voice/" prefix.
@@ -161,6 +172,11 @@ class Audio final : public SceneState,
   /// AudioError, after doing the rest, if a file of that state cannot be played (without a
   /// warning handler). With AudioOutput::kManual it then mixes `seconds` of audio.
   void update(double seconds);
+
+  /// The captions that `sound` and `music` calls with a `caption` made since the last call, oldest
+  /// first. A sound's caption lasts as long as the file; a music's kMusicCaptionSeconds, and only
+  /// when the music changes. Not state: restore() makes none.
+  [[nodiscard]] std::vector<AudioCaption> take_captions();
 
   /// Every channel, in byte order of the names.
   [[nodiscard]] std::vector<std::string> channels() const;

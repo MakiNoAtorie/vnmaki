@@ -157,6 +157,10 @@ struct UiNode {
   std::vector<UiNode> children{};
   /// Set by layout_tree(): the node's rectangle in virtual pixels, from the canvas' top-left.
   RectF rect{};
+  /// The place of this node in the `children` of the script's node that holds it (a
+  /// ScreenNodeDef). -1 for a root and for a node the engine added (the rows of a grid). The
+  /// screen editor (engine/tools/screen_editor.hpp) maps a node back to its source with it.
+  int source_index = -1;
 };
 
 /// A node of `kind` with the role that fits it.
@@ -164,6 +168,10 @@ struct UiNode {
 
 /// Whether a button, toggle, slider or input can take the focus.
 [[nodiscard]] bool is_focusable(const UiNode& node);
+
+/// Multiplies the text size of `node` and all nodes under it by `factor` (the text scale
+/// preference). A size stays at most kMaxFontPixelSize (docs/SPEC.md section 17).
+void scale_text_sizes(UiNode& node, float factor);
 
 /// What a node draws and measures as text: its `text`, or the placeholder of an empty input.
 [[nodiscard]] const std::string& display_text(const UiNode& node);

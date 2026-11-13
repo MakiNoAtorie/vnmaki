@@ -98,3 +98,14 @@ add_test(NAME fuzz.script_scan.dictionary
 vnmaki_add_fuzzer(po po_fuzzer.cpp po_properties.hpp)
 add_test(NAME fuzz.po.dictionary
          COMMAND fuzz_po -runs=10000 -seed=1 "-dict=${CMAKE_CURRENT_SOURCE_DIR}/po.dict")
+
+# glTF models (ticket 46). Random bytes never make a glTF file, so a second smoke run starts from
+# the generated cubes (seeds, never written to).
+vnmaki_add_fuzzer(model model_fuzzer.cpp model_properties.hpp)
+if(TARGET vnmaki_fixtures_model3d)
+  add_dependencies(fuzz_model vnmaki_fixtures_model3d)
+  set(vnmaki_model_corpus "${CMAKE_CURRENT_BINARY_DIR}/corpus/model")
+  file(MAKE_DIRECTORY "${vnmaki_model_corpus}")
+  add_test(NAME fuzz.model.seeded COMMAND fuzz_model -runs=10000 -seed=1 "${vnmaki_model_corpus}"
+                                          "${PROJECT_BINARY_DIR}/fixtures/model3d/game/models")
+endif()

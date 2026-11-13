@@ -5,7 +5,7 @@ find_package(SDL3 CONFIG REQUIRED COMPONENTS SDL3)
 add_executable(
   vnmaki_platform_tests
   ../unit/main.cpp headless_platform_test.cpp main_loop_test.cpp sdl_events_test.cpp
-  sdl_platform_test.cpp viewport_test.cpp)
+  sdl_platform_test.cpp tts_test.cpp viewport_test.cpp)
 target_link_libraries(vnmaki_platform_tests PRIVATE vnmaki::engine vnmaki::options
                                                     doctest::doctest SDL3::SDL3)
 # Hot reload watches a real folder (ticket 32). Only Windows is tested: it is the platform the
@@ -20,8 +20,9 @@ target_compile_definitions(vnmaki_platform_tests PRIVATE DOCTEST_CONFIG_USE_STD_
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(vnmaki_platform_test_env "SDL_VIDEO_DRIVER=offscreen")
 endif()
+# A machine without a TTS voice prints "VNMAKI_SKIP: <reason>" in tts_test.cpp, and ctest skips it.
 doctest_discover_tests(vnmaki_platform_tests TEST_PREFIX "unit." PROPERTIES ENVIRONMENT
-                       "${vnmaki_platform_test_env}")
+                       "${vnmaki_platform_test_env}" SKIP_REGULAR_EXPRESSION "VNMAKI_SKIP:")
 
 # Engine code outside the platform backend never includes SDL headers.
 add_test(NAME lint.no_sdl_outside_platform

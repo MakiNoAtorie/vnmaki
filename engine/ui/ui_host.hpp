@@ -56,6 +56,14 @@ class UiHost final : public ScreenCommands {
   /// change at once. The screens `vnmaki:...` of the engine are left as they are. `translator` must
   /// outlive the host; null unsets it.
   void set_translator(const Translator* translator);
+  /// Multiplies the text of every screen, shown now or later, by `scale` (the `text_scale`
+  /// preference; 1 is the size the screen says). The layout is done again. A tree given to show()
+  /// has the sizes the screen says; the host scales it.
+  void set_text_scale(float scale);
+  [[nodiscard]] float text_scale() const { return text_scale_; }
+  /// Lays the screens out again at the next use: call it when the fonts that the measure uses
+  /// changed.
+  void relayout() { dirty_ = true; }
   /// Where toggles, sliders and bars with a `bind` read and write their data (ScriptRuntime::
   /// binding() and set_binding()). Without it they keep their own value. `runtime` must outlive
   /// the host; null unsets it.
@@ -85,6 +93,9 @@ class UiHost final : public ScreenCommands {
   [[nodiscard]] bool has_modal() const;
   /// Whether screen `name` is the topmost modal screen.
   [[nodiscard]] bool is_top_modal(std::string_view name) const;
+
+  /// The names of the shown screens, bottom first.
+  [[nodiscard]] std::vector<std::string> screen_names() const;
 
   /// The tree of screen `name`, laid out; null if it is not shown.
   [[nodiscard]] UiNode* find(std::string_view name);
@@ -130,6 +141,7 @@ class UiHost final : public ScreenCommands {
   [[nodiscard]] UiEventResult activate_focused(Screen& screen);
 
   Size canvas_;
+  float text_scale_ = 1;
   ScriptRuntime* bindings_ = nullptr;
   const Translator* translator_ = nullptr;
   std::uint64_t translation_revision_ = 0;

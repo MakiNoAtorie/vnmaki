@@ -74,6 +74,9 @@ class SdlGpuRenderer final : public IRenderer {
   [[nodiscard]] TextureId create_texture(const Image& image, TextureFilter filter) override;
   [[nodiscard]] TextureId create_render_target(Size size, TextureFilter filter) override;
   [[nodiscard]] ShaderId create_shader(const ShaderBytecode& fragment) override;
+  [[nodiscard]] MeshId create_mesh(std::span<const MeshVertex> vertices,
+                                   std::span<const std::uint32_t> indices) override;
+  void destroy_mesh(MeshId mesh) override;
   void destroy_texture(TextureId texture) override;
   void destroy_shader(ShaderId shader) override;
   [[nodiscard]] Size texture_size(TextureId texture) const override;
@@ -82,6 +85,7 @@ class SdlGpuRenderer final : public IRenderer {
   void begin_pass(const RenderPass& pass) override;
   using IRenderer::draw;
   void draw(std::span<const Quad> quads, const DrawState& state) override;
+  void draw_mesh(const MeshDraw& draw) override;
   FrameStats end_frame() override;
   [[nodiscard]] Image read_pixels(TextureId texture) override;
 

@@ -24,6 +24,8 @@ if(VNMAKI_DEV_TOOLS)
             debugger.hpp
             file_watcher.cpp
             file_watcher.hpp
+            hot_import.cpp
+            hot_import.hpp
             hot_reload.cpp
             hot_reload.hpp
             imgui_backend.cpp
@@ -40,7 +42,9 @@ if(VNMAKI_DEV_TOOLS)
             repl.cpp
             repl.hpp
             translation_editor.cpp
-            translation_editor.hpp)
+            translation_editor.hpp
+            screen_editor.cpp
+            screen_editor.hpp)
 
   # The ImGui renderer backend draws through SDL GPU, so only imgui_backend.cpp includes SDL
   # (lint.no_sdl_outside_platform). The ImGui input comes from InputEvents, not from SDL events.

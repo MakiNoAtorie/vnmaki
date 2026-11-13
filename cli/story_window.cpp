@@ -28,8 +28,10 @@
 #include "engine/l10n/translator.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
+#include "engine/platform/input_map.hpp"
 #include "engine/platform/main_loop.hpp"
 #include "engine/platform/sdl_platform.hpp"
+#include "engine/platform/tts.hpp"
 #include "engine/platform/viewport.hpp"
 #include "engine/render/image.hpp"
 #include "engine/render/renderer.hpp"
@@ -44,18 +46,22 @@
 #if VNMAKI_DEV_TOOLS
 #include "engine/tools/debugger.hpp"
 #include "engine/tools/file_watcher.hpp"
+#include "engine/tools/hot_import.hpp"
 #include "engine/tools/hot_reload.hpp"
 #include "engine/tools/log_buffer.hpp"
 #include "engine/tools/observer_chain.hpp"
 #include "engine/tools/overlay.hpp"
+#include "engine/tools/screen_editor.hpp"
 #include "engine/tools/story_graph.hpp"
 #include "engine/tools/translation_editor.hpp"
 #endif
 #include "engine/ui/backlog_screen.hpp"
+#include "engine/ui/caption_presenter.hpp"
 #include "engine/ui/playback_indicator.hpp"
 #include "engine/ui/preferences.hpp"
 #include "engine/ui/screen_actions.hpp"
 #include "engine/ui/screen_presenter.hpp"
+#include "engine/ui/self_voicing.hpp"
 #include "engine/ui/ui_build.hpp"
 #include "engine/ui/ui_host.hpp"
 #include "engine/ui/ui_renderer.hpp"
@@ -74,9 +80,9 @@ constexpr Duration kFrameTime = std::chrono::duration_cast<Duration>(std::chrono
 /// The organization part of the user-data path, where saves and the persistent file go.
 constexpr std::string_view kUserDataOrganization = "VNMaki";
 
-bool is_advance_key(Key key) {
-  return key == Key::kEnter || key == Key::kKeypadEnter || key == Key::kSpace;
-}
+/// The dyslexia-friendly font (the `dyslexia_font` preference); a game without it has no such
+/// option.
+constexpr std::string_view kDyslexiaFontPath = "fonts/dyslexia.ttf";
 
 // The system output; if there is none, a device that plays to nowhere, so that a game with no
 // sound card still runs. Builds without threads mix by hand (Audio::update does it).
@@ -127,6 +133,10 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       font_sets.emplace(code, std::move(set));
     }
     FontSet fonts = font_sets.at(config.languages.front());
+    std::optional<Font> dyslexia_font;
+    if (vfs.exists(kDyslexiaFontPath)) {
+      dyslexia_font.emplace(load_font(vfs, kDyslexiaFontPath));
+    }
     // The audio comes first, so that it outlives the scene: a movie stops its audio when it goes.
     const std::unique_ptr<Audio> audio = make_audio(vfs, err);
     Scene scene{vfs, virtual_size};
@@ -232,6 +242,13 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     // is called for the first language, for the preference and for @language.
     std::string applied_language;
     bool reopen_quick_menu = false;
+    // The font chain of the language that is shown, with the dyslexia-friendly font first when the
+    // preference is on.
+    bool dyslexia_on = false;
+    const auto current_fonts = [&] {
+      const FontSet& plain = font_sets.at(translator.language());
+      return dyslexia_on && dyslexia_font ? with_dyslexia_font(plain, *dyslexia_font) : plain;
+    };
     const auto apply_language = [&](const std::string& code) {
       const std::string target = code.empty() ? translator.source_language() : code;
       if (target != translator.language()) {
@@ -246,9 +263,10 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       applied_language = translator.language();
       scene.set_language(applied_language);
       audio->set_language(applied_language);
-      const FontSet& set = font_sets.at(applied_language);
-      ui_renderer.set_fonts(set);
-      say_box.set_language(set, translator.direction());
+      const FontSet chosen = current_fonts();
+      ui_renderer.set_fonts(chosen);
+      say_box.set_language(chosen, translator.direction());
+      ui.relayout();
       if (const std::string problem = runtime.set_language_styles(translator.style_file());
           !problem.empty()) {
         warn(problem);
@@ -290,13 +308,35 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                       {.voice_playing = [&] { return audio->voice_playing(); },
                        .skip_wait = [&] { return waits.skip() || movies.skip(); }}};
     PlaybackIndicator indicator{ui};
+    CaptionPresenter captions{runtime, ui, warn};
+    InputMap input_map;  // PreferenceApplier fills it from the preferences
+    screens.set_input_map(&input_map);
     const Backlog backlog{runtime, audio.get(), config.backlog_length, &translator};
     BacklogScreen backlog_screen{ui, backlog, ui_renderer.text_measure()};
+    const std::unique_ptr<TtsBackend> tts = make_system_tts();  // the COM thread is this one
+    SelfVoicing self_voicing{*tts, runtime, presenter, playback, ui};
+    self_voicing.set_translator(&translator);
+    backlog_screen.set_input_map(&input_map);
+    const auto use_dyslexia_font = [&](bool on) {
+      if (on && !dyslexia_font) {
+        warn(std::string{kDyslexiaFontPath} + " is missing: the dyslexia-friendly font is off");
+      }
+      dyslexia_on = on;
+      const FontSet chosen = current_fonts();
+      ui_renderer.set_fonts(chosen);
+      say_box.set_fonts(chosen);
+      ui.relayout();
+    };
     PreferenceApplier preferences{runtime,
                                   {.presenter = &presenter,
                                    .playback = &playback,
                                    .audio = audio.get(),
                                    .platform = &platform,
+                                   .self_voicing = &self_voicing,
+                                   .ui = &ui,
+                                   .say_box = &say_box,
+                                   .controls = &input_map,
+                                   .dyslexia_font = use_dyslexia_font,
                                    .language = apply_language}};
 
 #if VNMAKI_DEV_TOOLS
@@ -321,6 +361,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     HotReload hot_reload{runtime, scene, jobs, ui, dev_log};
     hot_reload.set_on_scripts_reloaded(
         [&] { static_cast<void>(actions.open("quick_menu", {}, false)); });
+    HotImport hot_import{vfs, project_dir, dev_log};  // changed assets go through the importers
     std::optional<FileWatcher> watcher;
     try {
       watcher.emplace(project_dir);
@@ -332,6 +373,10 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     const auto viewport = [&] {
       return compute_viewport(virtual_size, platform.window_metrics().pixels, ScaleMode::kFit);
     };
+#if VNMAKI_DEV_TOOLS
+    ScreenEditor screen_editor{vfs, project_dir, ui};  // the overlay's "Screen editor" window
+    dev_overlay.set_screen_editor(&screen_editor, viewport);
+#endif
     const auto inside_canvas = [&](PointF window_point) {
       const PointF point = window_to_virtual(viewport(), window_point);
       return point.x >= 0 && point.y >= 0 && point.x < static_cast<float>(virtual_size.width) &&
@@ -352,6 +397,10 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
         return;
       }
 #endif
+      // The Controls screen waits for a key or button.
+      if (actions.capture(event)) {
+        return;
+      }
       // L opens the backlog, and L or Esc close it, unless the player types into an input.
       if (!ui.wants_text_input() && backlog_screen.handle_event(event, viewport())) {
         return;
@@ -359,21 +408,23 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       if (screens.handle_event(event, viewport())) {
         return;
       }
-      if (is_rollback_event(event)) {
+      if (is_rollback_event(event, input_map)) {
         playback.set_skip(SkipMode::kOff);
         static_cast<void>(runtime.roll_back());
         return;
       }
-      if (const auto* key = std::get_if<KeyEvent>(&event)) {
-        if (key->pressed && !key->repeat && is_advance_key(key->key)) {
-          playback.set_skip(SkipMode::kOff);
-          advance();
-        } else if (key->pressed && !key->repeat && key->key == Key::kA) {
-          playback.set_auto(!playback.automatic());
-        } else if (key->pressed && !key->repeat && key->key == Key::kS) {
-          playback.toggle_skip(preferences.current().skip_unseen ? SkipMode::kAll
-                                                                 : SkipMode::kSeen);
-        }
+      if (input_map.matches(InputAction::kAdvance, event)) {
+        playback.set_skip(SkipMode::kOff);
+        advance();
+      } else if (input_map.matches(InputAction::kAuto, event)) {
+        playback.set_auto(!playback.automatic());
+      } else if (input_map.matches(InputAction::kSkip, event)) {
+        playback.toggle_skip(preferences.current().skip_unseen ? SkipMode::kAll : SkipMode::kSeen);
+      } else if (input_map.matches(InputAction::kMenu, event)) {
+        static_cast<void>(actions.open("preferences"));
+      } else if (input_map.matches(InputAction::kSelfVoicing, event)) {
+        static_cast<void>(runtime.set_binding("prefs", "self_voicing",
+                                              !preferences.current().self_voicing));
       } else if (const auto* click = std::get_if<PointerButtonEvent>(&event)) {
         if (click->pressed && click->button == MouseButton::kLeft &&
             inside_canvas(click->position)) {
@@ -383,10 +434,6 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
           if (link.empty() || !runtime.activate_link(link)) {
             advance();
           }
-        }
-      } else if (const auto* button = std::get_if<GamepadButtonEvent>(&event)) {
-        if (button->pressed && button->button == GamepadButton::kSouth) {
-          advance();
         }
       }
     };
@@ -398,6 +445,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       if (watcher) {
         if (const std::vector<std::string> changed = watcher->poll(); !changed.empty()) {
           hot_reload.apply(changed);
+          hot_import.apply(changed);
         }
       }
 #endif
@@ -405,6 +453,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       saves.poll();  // a script's save or load, or a load in the middle of a line
       presenter.update(seconds);
       preferences.update();
+      captions.update(audio->take_captions(), seconds, preferences.current().captions);
       if (!backlog_screen.is_open() && !ui.has_modal()) {  // auto and skip wait while the player
         playback.update(seconds);                          // reads or sets something
       }
@@ -421,6 +470,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
         static_cast<void>(actions.open("quick_menu", {}, false));
       }
       screens.sync();
+      self_voicing.update();
       indicator.sync(playback.skip(), playback.automatic());
       persistent.flush();
     };

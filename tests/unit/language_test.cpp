@@ -522,7 +522,10 @@ TEST_CASE("language: the preferences screen has a button for each language") {
     if (node.kind == "button") {
       for (const auto& [name, value] : node.props) {
         if (name == "returns") {
-          returns.push_back(std::get<std::string>(value));
+          const std::string target = std::get<std::string>(value);
+          if (target.starts_with("@language:")) {
+            returns.push_back(target);
+          }
         }
       }
     }
@@ -531,7 +534,7 @@ TEST_CASE("language: the preferences screen has a button for each language") {
     }
   };
   walk(walk, tree);
-  CHECK(returns == Lines{"@language:en", "@language:ja", "@close"});
+  CHECK(returns == Lines{"@language:en", "@language:ja"});
 
   // A game with one language has no such row.
   vnmaki::ScriptRuntime single{vfs, {.languages = {"en"}}};
@@ -540,7 +543,7 @@ TEST_CASE("language: the preferences screen has a button for each language") {
   REQUIRE(single.build_screen("preferences", {}, tree).empty());
   returns.clear();
   walk(walk, tree);
-  CHECK(returns == Lines{"@close"});
+  CHECK(returns.empty());
 }
 
 TEST_CASE("language: a right-to-left hbox puts its first child at the right edge") {

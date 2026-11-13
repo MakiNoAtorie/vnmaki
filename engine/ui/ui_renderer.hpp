@@ -47,8 +47,8 @@ class UiRenderer {
     generated_ = std::move(source);
   }
 
-  /// Uses `fonts` from now on (the font chain of another language). The fonts must outlive this
-  /// object. Texts are laid out again.
+  /// Replaces the fonts (the dyslexia font preference) and forgets the layouts made with the old
+  /// ones. The fonts must outlive this object. Layouts that a caller keeps are not changed.
   void set_fonts(FontSet fonts);
 
   /// The measure that sizes text with the font. Valid while this object lives.

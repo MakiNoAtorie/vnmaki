@@ -24,6 +24,7 @@
 #include "engine/audio/audio.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/sdl_platform.hpp"
+#include "engine/render/shader_compiler.hpp"
 #include "engine/runtime/project_config.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/saves/saves.hpp"
@@ -47,7 +48,7 @@ constexpr std::string_view kFontPath = "fonts/default.ttf";
 constexpr float kFontSize = 40;
 constexpr float kNoWrap = 100000;
 // Thirteen images, the music, the voice line, the font and the shader.
-constexpr std::size_t kAssetCount = 17;
+constexpr std::size_t kAssetCount = 18;
 
 // A directory under the system temp directory, empty at the start and removed at the end.
 class TempDir {
@@ -271,6 +272,9 @@ class SampleGame {
   vnmaki::ProjectConfig prepare() {
     vnmaki::create_project(default_template(), project_, vnmaki::project_title(project_));
     REQUIRE(vfs_.mount(vnmaki::make_directory_mount(project_)));
+    if (!vnmaki::shader_compiler_available()) {  // a release build loads the precompiled sepia
+      REQUIRE(vfs_.mount(vnmaki::make_directory_mount(VNMAKI_PRECOMPILED_DIR)));
+    }
     return vnmaki::load_project_config(vfs_);
   }
 
