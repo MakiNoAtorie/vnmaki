@@ -30,6 +30,11 @@ inline constexpr std::string_view kVoicePrefix = "voice/";
 /// hold "/"). Nothing when none exists. `vnmaki check` uses the same rule.
 [[nodiscard]] std::optional<std::string> resolve_audio(const Vfs& vfs, std::string_view name);
 
+/// The audio name that `voice(name)` plays: "voice/<language>/<name>" if that file exists (and
+/// `language` is not empty), else "voice/<name>".
+[[nodiscard]] std::string voice_audio_name(const Vfs& vfs, std::string_view name,
+                                           std::string_view language);
+
 /// The channels every game has. A script makes another by naming it.
 inline constexpr std::string_view kMusicChannel = "music";
 inline constexpr std::string_view kSoundChannel = "sound";
@@ -124,8 +129,11 @@ class Audio final : public SceneState,
 
   [[nodiscard]] std::string music(const MusicRequest& request) override;
   [[nodiscard]] std::string sound(const SoundRequest& request) override;
-  /// Also how a backlog entry plays its voice again: `name` is what the script passed.
+  /// Also how a backlog entry plays its voice again: `name` is what the script passed. With a
+  /// language (set_language), the file `voice/<language>/<name>` is played if it exists.
   [[nodiscard]] std::string voice(std::string_view name) override;
+  /// The language whose voice folder `voice` looks in first. It is not state: a load keeps it.
+  void set_language(std::string language);
   void tag_voice(std::string_view tag) override;
   [[nodiscard]] std::optional<double> voice_level(std::string_view tag) const override;
   [[nodiscard]] std::string stop(std::string_view channel_name, double fade) override;
