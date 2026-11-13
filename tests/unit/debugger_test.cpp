@@ -39,6 +39,7 @@ class ScriptedChannel final : public DapChannel {
                           {"arguments", std::move(arguments)}};
     incoming_.push_back(message.dump());
   }
+  void push_raw(std::string text) { incoming_.push_back(std::move(text)); }
   void push_gap() { incoming_.emplace_back(); }
   void end_input() { closed_ = true; }
 
@@ -361,4 +362,21 @@ TEST_CASE("debugger: a request it does not know, or with bad arguments, gets an 
   CHECK(s.channel.response(1)["success"] == false);
   CHECK(s.channel.response(2)["success"] == false);
   CHECK(s.channel.response(3)["success"] == false);  // the story is not stopped
+}
+
+TEST_CASE("debugger: a message with fields of the wrong type or not an object does not throw") {
+  Session s;
+  s.channel.push_raw(R"({"type":"request","seq":"1","command":"initialize"})");
+  s.channel.push_raw(R"({"type":5,"seq":1,"command":"initialize"})");
+  s.channel.push_raw(R"({"type":"request","seq":{},"command":7})");
+  s.channel.push_raw(R"({"type":"request","seq":1.5,"command":"threads","arguments":[]})");
+  s.channel.push_raw(R"({"seq":1,"command":"threads"})");
+  s.channel.push_raw("[1,2]");
+  s.channel.push_raw("\"text\"");
+  s.channel.push_raw("not json");
+  s.channel.push_raw(
+      R"({"type":"request","command":"setBreakpoints","arguments":{"source":{"path":5}}})");
+  s.channel.push("threads");  // a valid request after the bad ones still gets its answer
+  CHECK_NOTHROW(s.debugger->poll());
+  CHECK(s.channel.response(1)["success"] == true);  // the raw messages do not use a seq
 }

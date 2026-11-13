@@ -366,21 +366,32 @@ class Debugger::Impl {
     channel_->send(message.dump(-1, ' ', false, Json::error_handler_t::replace));
   }
 
+  // A field of the wrong type reads as absent: Json::value() throws on it, and these run in the
+  // catch below and in the Lua line hook, where nothing may escape.
+  static std::string text_field(const Json& message, const char* key) {
+    const auto found = message.find(key);
+    return found != message.end() && found->is_string() ? found->get<std::string>() : std::string{};
+  }
+  static std::int64_t seq_field(const Json& message) {
+    const auto found = message.find("seq");
+    return found != message.end() && found->is_number_integer() ? found->get<std::int64_t>() : 0;
+  }
+
   void respond(const Json& request, Json body = Json::object()) {
     send({{"seq", next_seq_++},
           {"type", "response"},
-          {"request_seq", request.value("seq", 0)},
+          {"request_seq", seq_field(request)},
           {"success", true},
-          {"command", request.value("command", "")},
+          {"command", text_field(request, "command")},
           {"body", std::move(body)}});
   }
 
   void respond_error(const Json& request, std::string_view message) {
     send({{"seq", next_seq_++},
           {"type", "response"},
-          {"request_seq", request.value("seq", 0)},
+          {"request_seq", seq_field(request)},
           {"success", false},
-          {"command", request.value("command", "")},
+          {"command", text_field(request, "command")},
           {"message", message}});
   }
 
@@ -394,14 +405,14 @@ class Debugger::Impl {
 
   void dispatch(const std::string& text) {
     const Json request = Json::parse(text, nullptr, false);
-    if (!request.is_object() || request.value("type", "") != "request") {
+    if (!request.is_object() || text_field(request, "type") != "request") {
       return;
     }
-    const std::string command = request.value("command", "");
+    const std::string command = text_field(request, "command");
     try {
       handle(command, request, request.value("arguments", Json::object()));
-    } catch (const Json::exception& error) {
-      respond_error(request, std::string{"bad arguments for '"} + command + "': " + error.what());
+    } catch (const std::exception& error) {
+      respond_error(request, std::string{"bad request '"} + command + "': " + error.what());
     }
   }
 
