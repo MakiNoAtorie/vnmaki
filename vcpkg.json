@@ -32,7 +32,8 @@
     "sheenbidi",
     "sol2",
     "stb",
-    "tomlplusplus"
+    "tomlplusplus",
+    "yoga"
   ],
   "overrides": [
     {

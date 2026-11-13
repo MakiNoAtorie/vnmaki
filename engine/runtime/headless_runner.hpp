@@ -25,8 +25,13 @@ struct ChooseInput {
   std::size_t index = 0;
 };
 
+/// The screen a `call_screen` waits at returns `value`.
+struct ReturnScreenInput {
+  ScreenValue value{};
+};
+
 /// One scripted player input.
-using ScriptInput = std::variant<AdvanceInput, ChooseInput>;
+using ScriptInput = std::variant<AdvanceInput, ChooseInput, ReturnScreenInput>;
 
 enum class HeadlessOutcome : std::uint8_t {
   kFinished,    ///< The story ended.
@@ -41,6 +46,7 @@ enum class HeadlessOutcome : std::uint8_t {
 ///   say <who>: <text>     say(who, text)
 ///   narrate <text>        narrate(text), or say(nil, text)
 ///   menu <n>: <text>      option n (from 1) of a menu; one line per option
+///   screen <name>         call_screen(name)
 ///   scene <image>         scene(image)
 ///   show <tag> ...        show(tag, options), then the options given (see
 ///                         ScriptObserver::on_scene_command)
@@ -71,8 +77,8 @@ struct HeadlessOptions {
 /// Loads every script under `scripts/` in `vfs`, enters the start label and
 /// answers each yield point with the next input until the story ends, the
 /// inputs run out or a script fails. An input that does not fit the yield
-/// point (an advance at a menu, a choice at a line or of an option the menu
-/// does not have) also fails the run.
+/// point (an advance at a menu or a screen, a choice at a line or of an option
+/// the menu does not have, a screen result anywhere else) also fails the run.
 [[nodiscard]] HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
                                           const HeadlessOptions& options = {});
 

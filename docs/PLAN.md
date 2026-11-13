@@ -30,12 +30,12 @@ Do not do these tasks in parallel, because they change the same files:
 
 ### 10: UI system and `menu` (SPEC §15, §7)
 
-- [ ] Yoga layout (vcpkg). Nodes: box, hbox, vbox, text, image, button.
-- [ ] `screen`, `show_screen`, `hide_screen`, `call_screen`. `call_screen` yields until the screen returns a value.
-- [ ] `menu{...}` yields and returns a 1-based index.
-- [ ] Keys, d-pad, Tab and mouse hover move the focus. Each node has a role, a label and a state.
-- [ ] Make the say box a screen. The task 08 tests must pass.
-- [ ] Headless tests: node rectangles, focus order, menu choice.
+- [x] Yoga layout (vcpkg). Nodes: box, hbox, vbox, text, image, button.
+- [x] `screen`, `show_screen`, `hide_screen`, `call_screen`. `call_screen` yields until the screen returns a value.
+- [x] `menu{...}` yields and returns a 1-based index.
+- [x] Keys, d-pad, Tab and mouse hover move the focus. Each node has a role, a label and a state.
+- [x] Make the say box a screen. The task 08 tests must pass.
+- [x] Headless tests: node rectangles, focus order, menu choice.
 
 ### 12: Saves (SPEC §8)
 

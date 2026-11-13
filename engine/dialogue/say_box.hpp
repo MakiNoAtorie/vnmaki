@@ -1,8 +1,8 @@
 #pragma once
 
 // The say box (docs/SPEC.md section 7): a panel at a fixed place in virtual resolution with the
-// speaker's name and the typed-out line. Its look is hard-coded here until screens (ticket 10)
-// describe it.
+// speaker's name and the typed-out line. It is a UI screen (engine/ui/): SayBoxStyle describes its
+// look until a Lua screen replaces it.
 
 #include <cstddef>
 #include <optional>
@@ -12,6 +12,8 @@
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
 #include "engine/text/text.hpp"
+#include "engine/ui/ui_node.hpp"
+#include "engine/ui/ui_renderer.hpp"
 
 namespace vnmaki {
 
@@ -32,8 +34,15 @@ struct SayBoxStyle {
   [[nodiscard]] static SayBoxStyle for_resolution(Size virtual_size);
 };
 
-/// Draws the say box. The line may have text tags (docs/TEXT_TAGS.md); the speaker's name is plain
-/// text. Owns the textures it makes; `renderer` and the fonts must outlive it. Use it from the thread that owns the renderer and the font.
+/// The say box as a screen: a canvas-sized box holding the panel, the speaker's name and the line
+/// (its first `visible_glyphs` glyphs; unset shows all). The nodes sit where `style` says; layout
+/// them with layout_tree() and draw them with UiRenderer. The line has text tags.
+[[nodiscard]] UiNode make_say_screen(const SayBoxStyle& style, const DialogueLine& line,
+                                     std::optional<std::size_t> visible_glyphs = std::nullopt);
+
+/// Draws the say box screen. The line may have text tags (docs/TEXT_TAGS.md); the speaker's name
+/// is plain text. Owns the textures it makes; `renderer` and the fonts must outlive it. Use it
+/// from the thread that owns the renderer and the fonts.
 class SayBoxView {
  public:
   /// One font, no fallbacks.
@@ -44,7 +53,7 @@ class SayBoxView {
   SayBoxView& operator=(const SayBoxView&) = delete;
   SayBoxView(SayBoxView&&) = delete;
   SayBoxView& operator=(SayBoxView&&) = delete;
-  ~SayBoxView();
+  ~SayBoxView() = default;
 
   /// Lays `line` out and returns its glyph count (what DialoguePresenter needs).
   [[nodiscard]] std::size_t glyph_count(const DialogueLine& line);
@@ -70,25 +79,14 @@ class SayBoxView {
 
  private:
   void layout(const DialogueLine& line);
-  void upload(const GlyphAtlas& atlas, std::optional<TextureId>& texture);
-  void prepare_text(const TextLayout& text, GlyphAtlas& atlas, std::optional<TextureId>& texture,
-                    float scale);
-  void draw_text(const TextLayout& text, const GlyphAtlas& atlas,
-                 const std::optional<TextureId>& texture, PointF origin, std::size_t visible_glyphs,
-                 Color tint);
+  [[nodiscard]] UiNode laid_out_screen(const DialogueLine& line,
+                                       std::optional<std::size_t> visible_glyphs);
 
-  IRenderer* renderer_;
   FontSet fonts_;
   SayBoxStyle style_;
-  TextureId white_;
-  GlyphAtlas name_atlas_;
-  GlyphAtlas text_atlas_;
-  std::optional<TextureId> name_texture_;
-  std::optional<TextureId> text_texture_;
-  std::string laid_out_speaker_;
+  UiRenderer ui_;
   std::string laid_out_text_;
   bool has_layout_ = false;
-  TextLayout name_layout_;
   TextLayout text_layout_;
 };
 

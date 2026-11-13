@@ -25,6 +25,9 @@
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/text/text.hpp"
+#include "engine/ui/screen_presenter.hpp"
+#include "engine/ui/ui_host.hpp"
+#include "engine/ui/ui_renderer.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki::cli {
@@ -64,16 +67,20 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       fonts.fallbacks.push_back(&fallback);
     }
     Scene scene{vfs, virtual_size};
-    ScriptRuntime runtime{vfs, {.scene_state = &scene, .scene = &scene}};
+    UiHost ui{virtual_size};
+    ScriptRuntime runtime{vfs, {.scene_state = &scene, .scene = &scene, .screens = &ui}};
     runtime.load_scripts();
 
     SdlPlatform platform{WindowConfig{.title = config.title, .size = kDefaultWindowSize}};
     const std::unique_ptr<SdlGpuRenderer> renderer = SdlGpuRenderer::create_for_window(platform);
     JobSystem jobs;
     const TextureId canvas = renderer->create_render_target(virtual_size, TextureFilter::kLinear);
+    UiRenderer ui_renderer{*renderer, fonts, &vfs};
+    ui.set_text_measure(ui_renderer.text_measure());
     SayBoxView say_box{*renderer, std::move(fonts), SayBoxStyle::for_resolution(virtual_size)};
 
     runtime.start("start");
+    ScreenPresenter screens{runtime, ui};
     DialoguePresenter presenter{
         runtime,
         [&](const DialogueLine& line) { return say_box.glyph_count(line); },
@@ -95,6 +102,9 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
 
     MainLoopHooks hooks;
     hooks.on_event = [&](const InputEvent& event) {
+      if (screens.handle_event(event, viewport())) {
+        return;
+      }
       if (const auto* key = std::get_if<KeyEvent>(&event)) {
         if (key->pressed && !key->repeat && is_advance_key(key->key)) {
           presenter.advance();
@@ -119,6 +129,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       const double seconds = std::chrono::duration<double>(step).count();
       presenter.update(seconds);
       scene.update(seconds);
+      screens.sync();
     };
     hooks.draw = [&](double /*alpha*/) {
       if (presenter.ended()) {
@@ -131,6 +142,12 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       if (line && placed.scale > 0) {
         say_box.prepare(*line, placed.scale);
       }
+      const std::vector<const UiNode*> screen_roots = ui.roots();
+      if (placed.scale > 0) {
+        for (const UiNode* root : screen_roots) {
+          ui_renderer.prepare(*root, placed.scale);
+        }
+      }
       renderer->begin_frame();
       renderer->begin_pass({.target = canvas, .clear = rgba8(0, 0, 0)});
       scene.draw(*renderer);
@@ -139,6 +156,11 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       if (line && placed.scale > 0) {
         say_box.draw(*line, presenter.visible_glyphs(), placed.scale,
                      {.x = placed.rect.x, .y = placed.rect.y});
+      }
+      if (placed.scale > 0) {
+        for (const UiNode* root : screen_roots) {
+          ui_renderer.draw(*root, placed.scale, {.x = placed.rect.x, .y = placed.rect.y});
+        }
       }
       static_cast<void>(renderer->end_frame());
     };

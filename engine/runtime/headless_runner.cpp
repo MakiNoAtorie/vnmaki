@@ -34,6 +34,8 @@ class TranscriptRecorder final : public ScriptObserver {
       for (std::size_t i = 0; i < menu->options.size(); ++i) {
         result_->transcript.push_back("menu " + std::to_string(i + 1) + ": " + menu->options[i]);
       }
+    } else if (const auto* screen = std::get_if<CallScreenRequest>(&request)) {
+      add("screen ", screen->name);
     }
   }
 
@@ -69,17 +71,28 @@ HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
   auto next_input = inputs.begin();
   while (runtime.state() == RunState::kWaiting && next_input != inputs.end()) {
     const auto* menu = std::get_if<MenuRequest>(runtime.request());
+    const bool at_screen = std::holds_alternative<CallScreenRequest>(*runtime.request());
     const auto* choice = std::get_if<ChooseInput>(&*next_input);
-    if (menu == nullptr && choice == nullptr) {
+    const auto* returned = std::get_if<ReturnScreenInput>(&*next_input);
+    if (menu == nullptr && !at_screen && choice == nullptr && returned == nullptr) {
       runtime.advance();
     } else if (menu != nullptr && choice != nullptr && choice->index < menu->options.size()) {
       runtime.choose(choice->index);
+    } else if (at_screen && returned != nullptr) {
+      runtime.return_screen(returned->value);
     } else {
       result.outcome = HeadlessOutcome::kFailed;
-      result.error =
-          menu == nullptr
-              ? "the next input is a menu choice, but the story does not wait at a menu"
-              : "the story waits at a menu, and the next input is not one of its options";
+      if (at_screen) {
+        result.error = "the story waits at a screen, and the next input is not its result";
+      } else if (menu == nullptr) {
+        result.error = returned != nullptr
+                           ? "the next input is a screen result, but the story does not wait at a "
+                             "screen"
+                           : "the next input is a menu choice, but the story does not wait at a "
+                             "menu";
+      } else {
+        result.error = "the story waits at a menu, and the next input is not one of its options";
+      }
       return result;
     }
     ++next_input;

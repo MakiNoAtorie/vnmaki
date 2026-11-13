@@ -58,9 +58,34 @@ struct MenuRequest {
   friend bool operator==(const MenuRequest&, const MenuRequest&) = default;
 };
 
+/// A value a screen hands back to the script, or a property of a screen node: nil, a boolean, a
+/// number or a string.
+using ScreenValue = std::variant<std::monostate, bool, std::int64_t, double, std::string>;
+
+/// One node of a screen tree, as the scripts wrote it (docs/SPEC.md section 15). `kind` is
+/// `box`, `hbox`, `vbox`, `text`, `image` or `button`; `text` is the content a node was given
+/// first (a caption, an image name); `props` are the named options. engine/ui/ interprets them.
+struct ScreenNodeDef {
+  std::string kind{};
+  std::string text{};
+  std::vector<std::pair<std::string, ScreenValue>> props{};
+  std::vector<ScreenNodeDef> children{};
+
+  friend bool operator==(const ScreenNodeDef&, const ScreenNodeDef&) = default;
+};
+
+/// `call_screen(name, args)`: the script waits until the screen returns a value. Answered with
+/// ScriptRuntime::return_screen().
+struct CallScreenRequest {
+  std::string name{};
+  ScreenNodeDef screen{};
+
+  friend bool operator==(const CallScreenRequest&, const CallScreenRequest&) = default;
+};
+
 /// What a suspended label waits for. Every alternative is one kind of yield
 /// point; later tickets add pauses.
-using BlockingRequest = std::variant<SayRequest, NarrateRequest, MenuRequest>;
+using BlockingRequest = std::variant<SayRequest, NarrateRequest, MenuRequest, CallScreenRequest>;
 
 /// The answer to a MenuRequest: the chosen option, counted from 0.
 struct MenuChoice {
@@ -69,9 +94,16 @@ struct MenuChoice {
   friend bool operator==(const MenuChoice&, const MenuChoice&) = default;
 };
 
+/// The answer to a CallScreenRequest: what the screen returned.
+struct ScreenResult {
+  ScreenValue value{};
+
+  friend bool operator==(const ScreenResult&, const ScreenResult&) = default;
+};
+
 /// One entry of the input log: an answer the player gave that a replay must
 /// give again. Advancing past a line carries no data, so it is not logged.
-using InputResult = std::variant<MenuChoice>;
+using InputResult = std::variant<MenuChoice, ScreenResult>;
 
 /// A table inside a StoreSnapshot, by its index in StoreSnapshot::tables.
 struct StoreTableRef {
@@ -176,6 +208,29 @@ class SceneCommands {
   [[nodiscard]] virtual std::string scene(std::string_view image) = 0;
   [[nodiscard]] virtual std::string show(const ShowRequest& request) = 0;
   virtual void hide(std::string_view tag) = 0;
+};
+
+/// What `show_screen`, `hide_screen` and `call_screen` need from the engine (engine/ui/ui_host.hpp
+/// implements it). A call that cannot be done returns why, and the runtime raises that as a
+/// script error at the calling script line; it returns an empty string otherwise. Calls arrive
+/// during a replay too, so showing a screen that is already shown must replace it, and hiding one
+/// that is not shown must do nothing.
+class ScreenCommands {
+ public:
+  ScreenCommands() = default;
+  ScreenCommands(const ScreenCommands&) = default;
+  ScreenCommands(ScreenCommands&&) = default;
+  ScreenCommands& operator=(const ScreenCommands&) = default;
+  ScreenCommands& operator=(ScreenCommands&&) = default;
+  virtual ~ScreenCommands() = default;
+
+  /// Called for every tree before show_screen or call_screen uses it: returns why `screen`
+  /// cannot be shown, without showing it.
+  [[nodiscard]] virtual std::string check_screen(std::string_view name,
+                                                 const ScreenNodeDef& screen) = 0;
+  [[nodiscard]] virtual std::string show_screen(std::string_view name,
+                                                const ScreenNodeDef& screen) = 0;
+  virtual void hide_screen(std::string_view name) = 0;
 };
 
 /// `music(name, options)`: `name` loops on `channel`, replacing the music there.
@@ -302,6 +357,9 @@ struct ScriptRuntimeOptions {
   /// calls only reach the observer. Must outlive the runtime. A Scene goes
   /// here and in `scene_state`.
   SceneCommands* scene = nullptr;
+  /// Carries out `show_screen` and `hide_screen`; may be null, and then those calls do nothing
+  /// and no screen is checked. Must outlive the runtime.
+  ScreenCommands* screens = nullptr;
   /// Carries out `music`, `sound`, `voice`, `stop` and `volume`; may be null, and then those
   /// calls only reach the observer. Must outlive the runtime. An Audio goes here, and in
   /// `scene_state` (inside a CompositeSceneState when there is a Scene too).
@@ -333,6 +391,10 @@ struct ScriptRuntimeOptions {
 /// Audio: `music(name, { channel =, fade =, loop_start =, loop_end = })`,
 /// `sound(name, { channel = })`, `voice(name)`, `stop(channel, { fade = })` and
 /// `volume(channel, number)`; times are in seconds.
+/// Screens: `screen "name" { node... }` (or a function of the arguments that
+/// returns nodes), the node constructors `box`, `hbox`, `vbox`, `text`, `image` and `button`,
+/// `show_screen(name, args)`, `hide_screen(name)` and `call_screen(name, args)`, which waits for
+/// the screen to return a value (a button's `returns` option).
 ///
 /// `store` is owned by the engine: scripts change its fields but cannot
 /// replace it. It keeps booleans, numbers, strings and tables with such keys
@@ -373,6 +435,10 @@ class ScriptRuntime {
   /// unless kWaiting at a menu. Throws std::out_of_range for a bad index.
   void choose(std::size_t index);
 
+  /// Answers the CallScreenRequest the label waits at: `call_screen` returns `value` (nil for
+  /// std::monostate). Logs the answer and runs the label to its next yield point. Does nothing
+  /// unless kWaiting at a call_screen.
+  void return_screen(ScreenValue value);
   /// The player activated the part of the text on screen that has the tag
   /// `{link=id}` (find it with link_at in engine/text/text.hpp). Calls the
   /// function the script gave to `on_link` with `id` and returns true, or
