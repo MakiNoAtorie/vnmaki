@@ -375,3 +375,34 @@ TEST_CASE("renderer: a headless renderer has no screen and names its backend") {
   CHECK_FALSE(renderer->backend_name().empty());
   MESSAGE("GPU backend: " << renderer->backend_name());
 }
+
+TEST_CASE("renderer: counts the bytes of textures and render targets on create and destroy") {
+  const auto renderer = vnmaki::test::make_headless_renderer();
+  if (!renderer) {
+    return;
+  }
+  constexpr std::uint64_t kBytesPerPixel = 4;
+  constexpr vnmaki::Size kTextureSize{.width = 4, .height = 2};
+  constexpr auto kTextureBytes =
+      static_cast<std::uint64_t>(kTextureSize.width * kTextureSize.height) * kBytesPerPixel;
+  constexpr auto kTargetBytes =
+      static_cast<std::uint64_t>(kTargetSize.width * kTargetSize.height) * kBytesPerPixel;
+  CHECK(renderer->texture_memory() == vnmaki::TextureMemory{});
+
+  const vnmaki::Image image{.size = kTextureSize,
+                            .pixels = std::vector<std::uint8_t>(kTextureBytes)};
+  const vnmaki::TextureId texture =
+      renderer->create_texture(image, vnmaki::TextureFilter::kNearest);
+  const vnmaki::TextureId target = make_target(*renderer);
+  CHECK(renderer->texture_memory() == vnmaki::TextureMemory{.texture_bytes = kTextureBytes,
+                                                            .target_bytes = kTargetBytes,
+                                                            .textures = 1,
+                                                            .targets = 1});
+
+  renderer->destroy_texture(texture);
+  renderer->destroy_texture(texture);  // a second destroy changes nothing
+  CHECK(renderer->texture_memory() == vnmaki::TextureMemory{.target_bytes = kTargetBytes,
+                                                            .targets = 1});
+  renderer->destroy_texture(target);
+  CHECK(renderer->texture_memory() == vnmaki::TextureMemory{});
+}
