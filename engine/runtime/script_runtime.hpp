@@ -229,6 +229,20 @@ struct LayeredRequest {
   double crossfade = 0;  ///< Seconds an attribute change takes; 0 for a cut.
 };
 
+/// `animation(name, options)`: frames from `frames` (image names), or from the `columns` x `rows`
+/// cells of the image `sheet`, read row by row. `show` of `name` shows the animation, and it can
+/// be the value of a layered group. Fields the script left out are empty.
+struct AnimationRequest {
+  std::string name{};
+  std::vector<std::string> frames{};
+  std::string sheet{};
+  std::optional<double> columns{};
+  std::optional<double> rows{};
+  std::optional<double> count{};  ///< The cells that are frames; all of them by default.
+  std::optional<double> fps{};
+  bool loop = true;  ///< False: the last frame stays when the animation has played once.
+};
+
 /// A uniform of a shader by name and its value.
 using UniformValue = std::pair<std::string, double>;
 
@@ -315,13 +329,18 @@ class SceneCommands {
   /// as for `show`. The default does nothing, for implementations without layered sprites.
   [[nodiscard]] virtual std::string layered(const LayeredRequest& /*request*/) { return {}; }
 
+  /// Defines a frame animation. Returns why it cannot (a missing image, a bad rate, ...), as for
+  /// `show`. The default does nothing, for implementations without frame animation.
+  [[nodiscard]] virtual std::string animation(const AnimationRequest& /*request*/) { return {}; }
+
   /// Starts the tweens. Returns why it cannot (an unknown tag or easing, ...), as for `show`. The
   /// defaults do nothing, for implementations without an animation system.
   [[nodiscard]] virtual std::string tween(const TweenRequest& /*request*/) { return {}; }
   /// Puts the tweens of `tag` (all when empty) that end at their end values: a click or skip
-  /// ends a `wait`.
+  /// ends a `wait`. Frame animations that end go to their last frame.
   virtual void finish_tweens(std::string_view /*tag*/) {}
-  /// True while a tween that ends changes `tag` (any tag when empty): what `wait` waits for.
+  /// True while a tween that ends changes `tag`, or an animation that ends plays on it (any tag
+  /// when empty): what `wait` waits for.
   [[nodiscard]] virtual bool tweening(std::string_view /*tag*/) const { return false; }
 
   /// `shader(name, { "uniform", ... })`: declares the game shader `shaders/<name>.frag.hlsl` and
@@ -500,6 +519,9 @@ class ScriptObserver {
 /// How many steps back the player can roll unless ScriptRuntimeOptions::rollback_depth is set.
 inline constexpr std::size_t kDefaultRollbackDepth = 100;
 
+/// How many lines the backlog shows at most unless project.toml `backlog_length` says otherwise.
+inline constexpr std::size_t kDefaultBacklogLength = 100;
+
 /// A position the player can roll back to: a say, narrate, menu or call_screen the story waited
 /// at (never a `wait`). It holds all that replaying to there takes, so every step stands alone.
 struct RollbackStep {
@@ -514,6 +536,9 @@ struct RollbackStep {
   std::uint32_t ordinal = 0;
   /// What the story waited for there.
   BlockingRequest request{};
+  /// The name of the last `voice(name)` call before this say or menu (and after the one before);
+  /// empty if there was none. The backlog plays it again.
+  std::string voice{};
 };
 
 /// The seed of the script RNG unless ScriptRuntimeOptions::random_seed is set.

@@ -67,10 +67,10 @@ Do not do these tasks in parallel, because they change the same files:
 
 ### 15: Backlog (SPEC §8)
 
-- [ ] An entry has speaker, text, label, step and an optional voice.
-- [ ] Make entries from the rollback step log. They must be correct after load and rollback.
-- [ ] Configurable length. A screen with a scroll viewport for keyboard and gamepad.
-- [ ] Headless tests: contents after play, rollback, load.
+- [x] An entry has speaker, text, label, step and an optional voice.
+- [x] Make entries from the rollback step log. They must be correct after load and rollback.
+- [x] Configurable length. A screen with a scroll viewport for keyboard and gamepad.
+- [x] Headless tests: contents after play, rollback, load.
 
 ### 16: Audio (SPEC §14, §7)
 
@@ -79,7 +79,7 @@ Do not do these tasks in parallel, because they change the same files:
 - [x] `music`, `sound`, `voice`, `stop(channel, { fade })`. Music crossfades and has loop points.
 - [x] Music volume decreases while voice plays.
 - [x] Music state is in the scene snapshot. After replay or load, one-shot sounds do not play.
-- [ ] Backlog replays voice. Auto-advance waits for the voice end.
+- [x] Backlog replays voice. Auto-advance waits for the voice end.
 - [x] Null audio device in headless tests. Fuzz target for the decoders.
 
 ### 17: Text tags, bidi, font fallback (SPEC §13, §7)
@@ -220,10 +220,10 @@ Files: `engine/audio/` (voice level), `engine/scene/layered_sprite.*`, runtime.
 
 Files: new `engine/scene/frame_animation.*`, `engine/scene/scene.cpp`, runtime, a fixture generator.
 
-- [ ] `animation(name, { frames = { "a", "b" }, fps, loop })` makes an animation from images. `animation(name, { sheet = "x", columns, rows, count, fps })` makes one from a sprite sheet.
-- [ ] `show` accepts an animation name as it accepts an image name. A layered sprite group value can be an animation, for example a blink.
-- [ ] `loop = false` holds the last frame, and `wait(tag)` waits for that last frame. After a load, the animation restarts at frame 1.
-- [ ] Tests: the frame index at fixed times, and a GPU golden of one sheet frame.
+- [x] `animation(name, { frames = { "a", "b" }, fps, loop })` makes an animation from images. `animation(name, { sheet = "x", columns, rows, count, fps })` makes one from a sprite sheet.
+- [x] `show` accepts an animation name as it accepts an image name. A layered sprite group value can be an animation, for example a blink.
+- [x] `loop = false` holds the last frame, and `wait(tag)` waits for that last frame. After a load, the animation restarts at frame 1.
+- [x] Tests: the frame index at fixed times, and a GPU golden of one sheet frame.
 
 ### 28: Presentation demo (SPEC §22)
 

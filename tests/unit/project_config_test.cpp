@@ -146,6 +146,15 @@ TEST_CASE("project.toml: rollback_depth defaults to 100 and takes a whole number
         "project.toml:2:18: 'rollback_depth' must be a whole number from 0 to 10000");
 }
 
+TEST_CASE("project.toml: backlog_length defaults to 100 and takes a whole number from 0") {
+  constexpr std::size_t kLength = 30;
+  CHECK(vnmaki::parse_project_config("title = \"A\"\n").backlog_length == 100);
+  CHECK(vnmaki::parse_project_config("title = \"A\"\nbacklog_length = 30\n").backlog_length ==
+        kLength);
+  CHECK(error_for("title = \"A\"\nbacklog_length = -1\n") ==
+        "project.toml:2:18: 'backlog_length' must be a whole number from 0 to 10000");
+}
+
 TEST_CASE("project.toml: a missing file is an error") {
   const vnmaki::Vfs vfs = vnmaki::test::memory_vfs({{"scripts/main.lua", ""}});
 

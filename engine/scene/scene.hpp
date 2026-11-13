@@ -24,6 +24,7 @@
 #include "engine/render/shader_compiler.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/scene/displayable.hpp"
+#include "engine/scene/frame_animation.hpp"
 #include "engine/scene/layered_sprite.hpp"
 
 namespace vnmaki {
@@ -75,6 +76,14 @@ inline constexpr std::string_view kLayerTagPrefix = "@layer.";
 /// layers and puts the image on the background with its top-left corner at the origin. `hide` of a
 /// tag not shown does nothing.
 ///
+/// `animation(name, ...)` defines a frame animation (engine/scene/frame_animation.hpp). `show` of
+/// that name shows it, and it plays from frame 1 on the clock of update(). The name of an
+/// animation can be a value of a layered group. An animation takes the place of an image of the
+/// same name, and a layered sprite takes the place of both; so scripts define an animation before
+/// the layered sprite that uses it. An animation that does not loop ends at its last frame: it is
+/// what `tweening` reports while it plays, and `finish_tweens` puts it at its end. After a
+/// restore it plays again from frame 1.
+///
 /// `tween` changes the properties of shown displayables over time (engine/anim/timeline.hpp), as
 /// update() moves the clock on. `hide` and `scene` end the tweens of the displayables they remove.
 ///
@@ -103,10 +112,10 @@ inline constexpr std::string_view kLayerTagPrefix = "@layer.";
 /// ends at once with finish_tweens(kTransitionTag).
 ///
 /// The snapshot is a map from a part's name to its bytes, so a later feature adds a part without
-/// changing the others: "displayables" (the images), "layered" (the layered sprites), "tweens"
-/// (the loops) and "shaders" (the shader and uniform values of displayables and layers; left out
-/// when no shader is set). It keeps the properties as a replay would leave them: tweens that end
-/// are at their end values, loops at the
+/// changing the others: "displayables" (the images), "layered" (the layered sprites),
+/// "animations" (the frame animations), "tweens" (the loops) and "shaders" (the shader and
+/// uniform values of displayables and layers; left out when no shader is set). It keeps the
+/// properties as a replay would leave them: tweens that end are at their end values, loops at the
 /// value they started from, and restore() starts each loop again at time 0.
 class Scene final : public SceneState, public SceneCommands {
  public:
@@ -117,6 +126,7 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] std::string show(const ShowRequest& request) override;
   void hide(std::string_view tag) override;
   [[nodiscard]] std::string layered(const LayeredRequest& request) override;
+  [[nodiscard]] std::string animation(const AnimationRequest& request) override;
   [[nodiscard]] std::string tween(const TweenRequest& request) override;
   void finish_tweens(std::string_view tag) override;
   [[nodiscard]] bool tweening(std::string_view tag) const override;
@@ -217,6 +227,8 @@ class Scene final : public SceneState, public SceneCommands {
   void capture_old_frame();
   // Reads the "layered" part into `layers`. Throws std::invalid_argument.
   void read_layered(std::span<const std::byte> bytes, Layers& layers) const;
+  // Reads the "animations" part into `layers`. Throws std::invalid_argument.
+  void read_animations(std::span<const std::byte> bytes, Layers& layers) const;
 
   [[nodiscard]] std::vector<Entry>& entries(Layer layer);
   [[nodiscard]] const std::vector<Entry>& entries(Layer layer) const;
@@ -230,6 +242,7 @@ class Scene final : public SceneState, public SceneCommands {
   std::vector<ShaderId> retired_shaders_;  // GPU shaders of redeclared shaders, to destroy
   std::map<std::string, Texture, std::less<>> textures_;
   std::map<std::string, std::shared_ptr<const LayeredDefinition>, std::less<>> definitions_;
+  std::map<std::string, std::shared_ptr<const AnimationDefinition>, std::less<>> animations_;
   Timeline timeline_;
   std::optional<ActiveTransition> transition_;
   TransitionShaders transition_shaders_;

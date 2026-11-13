@@ -955,6 +955,33 @@ layered_attributes = function(options, name)
   return attributes, text
 end
 )lua" R"lua(
+-- Frame animations: animation(name, { frames = { "image", ... }, fps = n, loop = true }) or
+-- animation(name, { sheet = "image", columns = n, rows = n, count = n, fps = n, loop = true }).
+-- `show` and the values of a layered group take the name as they take an image name.
+function animation(name, definition)
+  if type(name) ~= "string" then
+    bad_argument("animation", 1, "string", name)
+  end
+  if type(definition) ~= "table" then
+    bad_argument("animation", 2, "table", definition)
+  end
+  local frames = option("animation", definition, "frames", "table")
+  for i = 1, frames and #frames or 0 do
+    if type(frames[i]) ~= "string" then
+      error(format("bad option 'frames' to 'animation' (item #%d is not a string)", i), 2)
+    end
+  end
+  local request = { frames = frames, loop = option("animation", definition, "loop", "boolean") }
+  for _, key in ipairs { "columns", "rows", "count", "fps" } do
+    request[key] = option("animation", definition, key, "number")
+  end
+  request.sheet = option("animation", definition, "sheet", "string")
+  local problem = engine.animation(name, request)
+  if problem then
+    error(problem, 2)
+  end
+end
+)lua" R"lua(
 
 -- Saves. A call only queues a request; the host carries it out when the story waits.
 local function slot_name(slot)
@@ -1470,6 +1497,27 @@ void read_layered(const sol::table& table, LayeredRequest& request) {
   }
 }
 
+// Copies the definition table that the prelude's `animation` built into `request`.
+void read_animation(const sol::table& table, AnimationRequest& request) {
+  request.sheet = table.get_or<std::string>("sheet", "");
+  const auto number = [&table](const char* key) -> std::optional<double> {
+    const auto value = table.get<sol::optional<double>>(key);
+    return value ? std::optional<double>{*value} : std::nullopt;
+  };
+  request.columns = number("columns");
+  request.rows = number("rows");
+  request.count = number("count");
+  request.fps = number("fps");
+  request.loop = table.get_or("loop", true);
+  if (const auto frames = table.get<sol::optional<sol::table>>("frames")) {
+    const std::size_t count = frames->size();
+    request.frames.reserve(count);
+    for (std::size_t i = 1; i <= count; ++i) {
+      request.frames.push_back(frames->get_or<std::string>(i, ""));
+    }
+  }
+}
+
 // Continues `coroutine` with the answer of a blocking call as its result.
 sol::protected_function_result resume_with(sol::coroutine& coroutine, const ScreenValue& value) {
   return std::visit(
@@ -1619,7 +1667,7 @@ class ScriptRuntime::Impl {
   void begin_replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
                     std::uint32_t step, std::uint32_t ordinal);
   [[nodiscard]] bool at_replay_target() const;
-  void push_rollback_step();
+  void push_rollback_step(std::string voice);
   void restore_store(const StoreSnapshot& snapshot) { restore_table(store_, snapshot); }
   void restore_table(const sol::table& root, const StoreSnapshot& snapshot);
   void fail(std::string message);
@@ -1671,6 +1719,7 @@ class ScriptRuntime::Impl {
   Replay replay_;
   std::vector<RollbackStep> rollback_;  // oldest first
   bool rolling_back_ = false;           // the replay in progress is roll_back()'s
+  std::string pending_voice_;           // the last `voice(name)`, until the next say or menu
 };
 
 void* ScriptRuntime::Impl::allocate(void* user_data, void* block, std::size_t old_size,
@@ -1886,6 +1935,16 @@ void ScriptRuntime::Impl::bind_engine() {
     read_layered(definition, request);
     return problem_or_nil(state, options_.scene->layered(request));
   };
+  engine_["animation"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
+                                                const sol::table& definition) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    AnimationRequest request{.name = name};
+    read_animation(definition, request);
+    return problem_or_nil(state, options_.scene->animation(request));
+  };
   engine_["hide"] = [this](const std::string& tag) {
     if (options_.scene != nullptr) {
       options_.scene->hide(tag);
@@ -2012,6 +2071,7 @@ void ScriptRuntime::Impl::bind_engine() {
     return problem_or_nil(state, options_.audio->sound(request));
   };
   engine_["voice"] = [this, problem_or_nil](sol::this_state state, const std::string& name) {
+    pending_voice_ = name;  // kept during a replay too: the backlog of a loaded story needs it
     if (options_.audio == nullptr || replaying_) {
       return problem_or_nil(state, {});
     }
@@ -2451,6 +2511,7 @@ void ScriptRuntime::Impl::begin_replay(const LabelSnapshot& snapshot,
   Replay replay{.inputs = {inputs.begin(), inputs.end()}, .step = step, .ordinal = ordinal};
   started_ = true;
   sources_.clear();
+  pending_voice_.clear();
   error_.clear();
   if (!has_label(entry.label)) {
     fail("replay: unknown label '" + entry.label + "'");
@@ -2607,6 +2668,10 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
       ++frame.step;
       ++frames_.front().stops;
       request_ = std::get<BlockingRequest>(std::move(*pending_));
+      std::string voice;
+      if (!std::holds_alternative<WaitRequest>(request_)) {
+        voice = std::exchange(pending_voice_, std::string{});
+      }
       if (replaying_ && !at_replay_target()) {
         // Not the target yet: answer from the log and go on, with a fresh
         // budget as in live play.
@@ -2619,7 +2684,7 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
       replaying_ = false;
       state_ = RunState::kWaiting;
       if (!rolling_back_ && !std::holds_alternative<WaitRequest>(request_)) {
-        push_rollback_step();
+        push_rollback_step(std::move(voice));
       }
       rolling_back_ = false;
       observer_->on_blocked(request_,
@@ -2675,11 +2740,12 @@ bool ScriptRuntime::Impl::at_replay_target() const {
 }
 
 // Keeps the position the story just waited at, and forgets the oldest one past the depth.
-void ScriptRuntime::Impl::push_rollback_step() {
+void ScriptRuntime::Impl::push_rollback_step(std::string voice) {
   RollbackStep step{.root = frames_.front().snapshot,
                     .inputs = frames_.front().inputs,
                     .ordinal = frames_.front().stops,
-                    .request = request_};
+                    .request = request_,
+                    .voice = std::move(voice)};
   step.stack.reserve(frames_.size());
   for (const Frame& frame : frames_) {
     step.stack.push_back({.label = frame.label, .step = frame.step});
