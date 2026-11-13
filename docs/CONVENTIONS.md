@@ -13,8 +13,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `fuzz` and `clang-tidy` work only on Linux with LLVM Clang. Set `CC=clang CXX=clang++`.
 - On Windows, use `tools\dev\vsenv.cmd cmake --workflow --preset debug`. It uses MSVC and the vcpkg in Visual Studio. Sanitizers, clang-tidy and fuzzers then run only in CI.
 - In cloud containers, `tools/dev/bootstrap-deps.sh` builds the dependencies for the `system-*` presets.
-- Before a push, run `debug`, `asan-ubsan` and `clang-tidy`. Also run `tsan` for threaded code and `fuzz` for loaders.
-- Then run `git ls-files -z '*.cpp' '*.hpp' | xargs -0 clang-format --dry-run --Werror`.
+- While you work, run only the tests for the changed code: `ctest --test-dir build/debug -R <pattern>`.
+- Before a push, run `cmake --workflow --preset debug`. CI runs the other presets, clang-tidy and the format check.
 - CI (`.github/workflows/ci.yml`) runs:
   - Windows, MSVC: debug, release.
   - Linux, Clang 18: asan-ubsan, tsan, fuzz, release, a build without threads.
