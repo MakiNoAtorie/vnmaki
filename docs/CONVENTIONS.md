@@ -25,7 +25,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - vcpkg pins:
   - Lua is 5.4.8, because the specification requires 5.4.
   - `sdl3` has no default features. On Linux, it has `x11` and `wayland`.
-  - mpack has no vcpkg port. It is in `third_party/mpack/` (MIT).
+  - mpack has no vcpkg port, and `third_party/` has no copy of it. The save format (`engine/saves/save_file.cpp`) has a small MessagePack reader and writer of its own. It is plain MessagePack, so mpack can replace it.
+  - zstd is a vcpkg dependency. `engine/saves/CMakeLists.txt` finds `zstd::libzstd` (vcpkg) or the plain library (Debian: `libzstd-dev`).
 
 ## Code
 
@@ -101,6 +102,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Pointer positions are in window pixels. Convert them with `window_to_virtual(compute_viewport(...), pos)`.
 - Clicks in the letterbox bars are outside the virtual area.
 - Text input is off when no text field has the focus.
+- `user_data_directory(organization, application)` (`sdl_platform.hpp`) is SDL's per-user preference path. Saves go there.
 - Only one `SdlPlatform` can exist. Other SDL users call `SDL_InitSubSystem` and `SDL_QuitSubSystem`. They do not call `SDL_Quit`.
 
 ### Render (`engine/render/`)
@@ -201,4 +203,37 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `menu { "a", "b" }` returns a 1-based number. C++ gives the answer with `choose(index)`, which is 0-based. There is no menu UI.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it.
-- `project.toml` has `title` (required), `version`, `resolution` and `languages`.
+- `project.toml` has `title` (required), `version`, `resolution`, `languages` and `auto_save` (a list of `"label"` and `"menu"`).
+- `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
+  - A slot is an integer from 1. `load` with a number is a slot. With a string or function it is Lua's `load`.
+- `on_load(function(old_version, store) ... end)` registers the migration hook while the scripts load. `run_on_load(snapshot, old_version)` runs it on the store of a snapshot, not on the live `store`.
+- `drop_callers()` makes the running label the outermost label. A load calls it before `replay()`.
+
+### Saves (`engine/saves/`)
+
+- A save has these fields: versions, label, step, source hash, label-entry snapshot, input log, persistent pointer, thumbnail, time, title. `save_file.hpp` has the byte layout.
+  - Format: zstd around MessagePack. A map with string keys. A reader skips keys that it does not know. A file with another `format` number is rejected.
+  - The persistent pointer is a string (`SavesOptions::persistent`). The persistent store itself is not in the save.
+- Saves are files in `SavesOptions::directory`, one for each slot: `<slot>.vnsave`. They are not in the VFS.
+  - The host gives the directory: `user_data_directory(...)` in a game, a temporary directory in a test.
+  - A slot name is 1 to 32 characters of `a-z`, `0-9`, `_` and `-`. Scripts use numbers, `quick` and `auto`.
+  - A file is written beside its slot and renamed over it.
+- `decode_save` never trusts a file. It rejects bad data with `SaveError`.
+  - It also checks what replay needs: table references, NaN keys, the thumbnail size, the payload size (`kMaxSavePayloadBytes`).
+  - `fuzz_save_loader` checks this. It edits a valid payload, so it has no seed corpus.
+- `Saves` works with one `ScriptRuntime`. `save()` needs `RunState::kWaiting`.
+  - It saves the running label only. A save made inside a called label has no callers, so `ret` at the end of that label ends the story.
+  - `poll()` is for the host. Call it whenever the story waits. It does the requests of scripts, then the auto save.
+  - A script request is done at the next yield point after the call, not at the call.
+  - Auto-save events: `label` (step 1 of a label) and `menu`. Each position fires once. A load does not auto save its own position.
+  - Errors of requests that have no caller (scripts, auto save) go to `SavesOptions::on_warning`.
+- `load(slot)` does these steps:
+  1. Decode the file. A bad file, a missing label or a failed `on_load` returns an error. The story is not changed.
+  2. Run `on_load(old_version, store)` on the saved store. `old_version` is the game version in the save. It runs on every load.
+  3. If `label_source_hash` is different, call `on_warning` and `replay(snapshot, {}, 0)`: the label starts from its first line.
+  4. Otherwise `replay(snapshot, inputs, step)`.
+  5. If the replay fails (for example, a helper that the label calls was changed), replay the earlier position. Return the error.
+- Thumbnails are RGBA8 with premultiplied alpha, at most `kThumbnailWidth` wide (`thumbnail.hpp`).
+  - `capture_thumbnail(renderer, target)` reads the target with `read_pixels`. Call it between frames. Set it as `SavesOptions::thumbnail`.
+  - Without a thumbnail function, saves get `stub_thumbnail()`. Headless runs and tests use it.
+- This module has no UI. Task 18 shows the slot list (`Saves::list()`).
