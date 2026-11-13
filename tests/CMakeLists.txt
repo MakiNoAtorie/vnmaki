@@ -184,6 +184,15 @@ vnmaki_add_fixture_generator(
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_render_tests)
 
+# The Phase 7 demo (ticket 53): the golden of the template say box in vertical Japanese, drawn by
+# tools/generators/template_vertical_fixtures.py.
+vnmaki_add_fixture_generator(
+  template_vertical SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/template_vertical_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
 # Persistent store, seen text, skip and auto-advance (ticket 14).
 target_sources(vnmaki_unit_tests PRIVATE unit/playback_test.cpp)
 
@@ -288,6 +297,12 @@ endif()
 # are CLI tests.
 if(VNMAKI_DEV_TOOLS)
   target_sources(vnmaki_unit_tests PRIVATE unit/tools_demo_test.cpp)
+endif()
+
+# The Phase 7 demo (ticket 53): the screen editor on the template quick menu. The launcher and the
+# vertical say box are in launcher_test.cpp and tests/render/template_vertical_render_test.cpp.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/later_demo_test.cpp)
 endif()
 
 # Profiler: frame phases with a fake clock, the CSV text and the load timing (ticket 33). It needs
