@@ -67,10 +67,10 @@ Do not do these tasks in parallel, because they change the same files:
 
 ### 15: Backlog (SPEC §8)
 
-- [ ] An entry has speaker, text, label, step and an optional voice.
-- [ ] Make entries from the rollback step log. They must be correct after load and rollback.
-- [ ] Configurable length. A screen with a scroll viewport for keyboard and gamepad.
-- [ ] Headless tests: contents after play, rollback, load.
+- [x] An entry has speaker, text, label, step and an optional voice.
+- [x] Make entries from the rollback step log. They must be correct after load and rollback.
+- [x] Configurable length. A screen with a scroll viewport for keyboard and gamepad.
+- [x] Headless tests: contents after play, rollback, load.
 
 ### 16: Audio (SPEC §14, §7)
 
@@ -79,7 +79,7 @@ Do not do these tasks in parallel, because they change the same files:
 - [x] `music`, `sound`, `voice`, `stop(channel, { fade })`. Music crossfades and has loop points.
 - [x] Music volume decreases while voice plays.
 - [x] Music state is in the scene snapshot. After replay or load, one-shot sounds do not play.
-- [ ] Backlog replays voice. Auto-advance waits for the voice end.
+- [x] Backlog replays voice. Auto-advance waits for the voice end.
 - [x] Null audio device in headless tests. Fuzz target for the decoders.
 
 ### 17: Text tags, bidi, font fallback (SPEC §13, §7)
