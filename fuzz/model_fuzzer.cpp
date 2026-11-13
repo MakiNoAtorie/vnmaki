@@ -2,7 +2,7 @@
 // Vfs has one more file, the texture, so a file that names it can load.
 //
 // Besides "does not crash": the loader either throws ModelError or returns a model that is safe to
-// draw (fuzz/model_properties.hpp).
+// draw (fuzz/model_properties.hpp), and every clip of it plays to its end without leaving a range.
 
 #include <cstddef>
 #include <cstdint>
@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/model3d/animation.hpp"
 #include "engine/model3d/model.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "fuzz/model_properties.hpp"
@@ -51,6 +52,16 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     const vnmaki::ModelData model = vnmaki::parse_model(vfs, "model.gltf", bytes);
     if (!vnmaki::fuzz::model_is_consistent(model)) {
       std::abort();
+    }
+    for (const vnmaki::ModelClip& clip : model.clips) {
+      vnmaki::ClipPlayer player;
+      vnmaki::start_clip(player, clip.name, vnmaki::PlayOptions{.seek = clip.duration});
+      const vnmaki::ModelPose pose = vnmaki::evaluate_pose(model, player);
+      const auto skins = vnmaki::skin_matrices(model, pose);
+      std::vector<vnmaki::MeshVertex> vertices;
+      for (const vnmaki::ModelMesh& mesh : model.meshes) {
+        vnmaki::pose_vertices(mesh, pose, skins, vertices);
+      }
     }
   } catch (const vnmaki::ModelError&) {
     return 0;
