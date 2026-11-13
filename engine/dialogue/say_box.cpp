@@ -1,11 +1,12 @@
 #include "engine/dialogue/say_box.hpp"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <vector>
+#include <utility>
 
-#include "engine/render/image.hpp"
+#include "engine/ui/ui_layout.hpp"
 
 namespace vnmaki {
 
@@ -61,96 +62,65 @@ SayBoxStyle SayBoxStyle::for_resolution(Size virtual_size) {
   };
 }
 
-SayBoxView::SayBoxView(IRenderer& renderer, const Font& font, SayBoxStyle style)
-    : renderer_(&renderer),
-      font_(&font),
-      style_(style),
-      white_(renderer.create_texture(Image{.size = {.width = 1, .height = 1},
-                                           .pixels = {UINT8_MAX, UINT8_MAX, UINT8_MAX, UINT8_MAX}},
-                                     TextureFilter::kNearest)),
-      name_atlas_(font),
-      text_atlas_(font) {}
+UiNode make_say_screen(const SayBoxStyle& style, const DialogueLine& line,
+                       std::optional<std::size_t> visible_glyphs) {
+  UiNode name = make_node(NodeKind::kText);
+  name.text = line.speaker;
+  name.label = line.speaker;
+  name.style.position = style.name_offset;
+  name.style.text_size = style.name_size;
+  name.style.color = line.color ? color_from_rgb(*line.color) : style.text_color;
 
-SayBoxView::~SayBoxView() {
-  renderer_->destroy_texture(white_);
-  if (name_texture_) {
-    renderer_->destroy_texture(*name_texture_);
-  }
-  if (text_texture_) {
-    renderer_->destroy_texture(*text_texture_);
-  }
+  UiNode text = make_node(NodeKind::kText);
+  text.text = line.text;
+  text.label = line.text;
+  text.style.position = style.text_offset;
+  text.style.width = style.wrap_width;
+  text.style.text_size = style.text_size;
+  text.style.color = style.text_color;
+  text.visible_glyphs = visible_glyphs;
+
+  UiNode panel = make_node(NodeKind::kBox);
+  panel.style.position = PointF{.x = style.box.x, .y = style.box.y};
+  panel.style.width = style.box.width;
+  panel.style.height = style.box.height;
+  panel.style.background = style.box_color;
+  panel.children.push_back(std::move(name));
+  panel.children.push_back(std::move(text));
+
+  UiNode root = make_node(NodeKind::kBox);
+  root.children.push_back(std::move(panel));
+  return root;
 }
 
-void SayBoxView::layout(const DialogueLine& line) {
-  if (has_layout_ && line.speaker == laid_out_speaker_ && line.text == laid_out_text_) {
-    return;
-  }
-  name_layout_ = layout_text(*font_, line.speaker, style_.name_size, kNoWrap);
-  text_layout_ = layout_text(*font_, line.text, style_.text_size, style_.wrap_width);
-  laid_out_speaker_ = line.speaker;
-  laid_out_text_ = line.text;
-  has_layout_ = true;
+SayBoxView::SayBoxView(IRenderer& renderer, const Font& font, SayBoxStyle style)
+    : font_(&font), style_(style), ui_(renderer, font) {}
+
+UiNode SayBoxView::laid_out_screen(const DialogueLine& line,
+                                   std::optional<std::size_t> visible_glyphs) {
+  UiNode screen = make_say_screen(style_, line, visible_glyphs);
+  const Size canvas{.width = static_cast<int>(std::ceil(style_.box.x + style_.box.width)),
+                    .height = static_cast<int>(std::ceil(style_.box.y + style_.box.height))};
+  layout_tree(screen, canvas, ui_.text_measure());
+  return screen;
 }
 
 std::size_t SayBoxView::glyph_count(const DialogueLine& line) {
-  layout(line);
+  if (!has_layout_ || line.text != laid_out_text_) {
+    text_layout_ = layout_text(*font_, line.text, style_.text_size, style_.wrap_width);
+    laid_out_text_ = line.text;
+    has_layout_ = true;
+  }
   return text_layout_.glyph_count;
 }
 
-void SayBoxView::upload(const GlyphAtlas& atlas, std::optional<TextureId>& texture) {
-  if (texture) {
-    renderer_->destroy_texture(*texture);
-    texture.reset();
-  }
-  texture = renderer_->create_texture(atlas.image(), TextureFilter::kNearest);
-}
-
-void SayBoxView::prepare_text(const TextLayout& text, GlyphAtlas& atlas,
-                              std::optional<TextureId>& texture, float scale) {
-  if (text.glyph_count == 0) {
-    return;  // An empty atlas image cannot be a texture.
-  }
-  if (atlas.prepare(text, scale) || !texture) {
-    upload(atlas, texture);
-  }
-}
-
-void SayBoxView::draw_text(const TextLayout& text, const GlyphAtlas& atlas,
-                           const std::optional<TextureId>& texture, PointF origin,
-                           std::size_t visible_glyphs, Color tint) {
-  if (text.glyph_count == 0 || !texture) {
-    return;
-  }
-  const std::vector<Quad> quads = text_quads(text, atlas, origin, visible_glyphs, tint);
-  if (!quads.empty()) {
-    renderer_->draw(quads, {.texture = *texture});
-  }
-}
-
 void SayBoxView::prepare(const DialogueLine& line, float scale) {
-  layout(line);
-  prepare_text(name_layout_, name_atlas_, name_texture_, scale);
-  prepare_text(text_layout_, text_atlas_, text_texture_, scale);
+  ui_.prepare(laid_out_screen(line, std::nullopt), scale);
 }
 
 void SayBoxView::draw(const DialogueLine& line, std::size_t visible_glyphs, float scale,
                       PointF origin) {
-  prepare(line, scale);
-  const auto place = [&](PointF offset) {
-    return PointF{.x = origin.x + ((style_.box.x + offset.x) * scale),
-                  .y = origin.y + ((style_.box.y + offset.y) * scale)};
-  };
-  const RectF box{.x = place({}).x,
-                  .y = place({}).y,
-                  .width = style_.box.width * scale,
-                  .height = style_.box.height * scale};
-  renderer_->draw(std::vector<Quad>{quad_from_rect(box, kWholeTexture, style_.box_color)},
-                  {.texture = white_});
-  const Color name_color = line.color ? color_from_rgb(*line.color) : style_.text_color;
-  draw_text(name_layout_, name_atlas_, name_texture_, place(style_.name_offset),
-            name_layout_.glyph_count, name_color);
-  draw_text(text_layout_, text_atlas_, text_texture_, place(style_.text_offset), visible_glyphs,
-            style_.text_color);
+  ui_.draw(laid_out_screen(line, visible_glyphs), scale, origin);
 }
 
 }  // namespace vnmaki
