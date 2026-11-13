@@ -154,6 +154,10 @@ struct UiNode {
   std::vector<UiNode> children{};
   /// Set by layout_tree(): the node's rectangle in virtual pixels, from the canvas' top-left.
   RectF rect{};
+  /// The place of this node in the `children` of the script's node that holds it (a
+  /// ScreenNodeDef). -1 for a root and for a node the engine added (the rows of a grid). The
+  /// screen editor (engine/tools/screen_editor.hpp) maps a node back to its source with it.
+  int source_index = -1;
 };
 
 /// A node of `kind` with the role that fits it.

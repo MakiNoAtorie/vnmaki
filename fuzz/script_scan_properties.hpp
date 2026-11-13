@@ -35,6 +35,16 @@ inline bool is_plain_name(std::string_view text) {
   return true;
 }
 
+/// The spans of the fields of a node are inside the source, and each node's children too.
+inline void check_node_spans(const ScanNode& node, std::size_t source_size) {
+  for (const ScanField& field : node.fields) {
+    require_scan(field.begin < field.end && field.end <= source_size);
+  }
+  for (const ScanNode& child : node.children) {
+    check_node_spans(child, source_size);
+  }
+}
+
 /// The tokens as source: a token on a later line than the one before follows after the line breaks
 /// that make the difference, any other token follows after a space. A string is a short string with
 /// each byte that is not printable ASCII (and `"` and `\`) as a three-digit escape.
@@ -80,7 +90,9 @@ inline std::string render_lua_tokens(const std::vector<LuaToken>& tokens) {
 ///   longer than the input;
 /// - the tokens rendered as source (`render_lua_tokens`) tokenize to the same tokens, with the same
 ///   lines, and scan to the same labels (the scan reads tokens only);
-/// - each label ends at or after its line, and its calls are in order, between those two lines.
+/// - each label ends at or after its line, and its calls are in order, between those two lines;
+/// - the byte spans of the tokens are in the input, not empty, and in order without overlap, and
+///   the spans of the fields of the screens' nodes (`scan_screen_trees`) are in the input.
 inline void check_script_scan_properties(std::string_view source) {
   const std::vector<LuaToken> tokens = tokenize_lua(source);
 
@@ -90,7 +102,10 @@ inline void check_script_scan_properties(std::string_view source) {
   }
   std::uint32_t line = 1;
   std::size_t text_size = 0;
+  std::size_t span_end = 0;
   for (const LuaToken& token : tokens) {
+    require_scan(token.begin >= span_end && token.begin < token.end && token.end <= source.size());
+    span_end = token.end;
     require_scan(token.line >= line && token.line <= 1 + line_breaks);
     line = token.line;
     text_size += token.text.size();
@@ -106,6 +121,12 @@ inline void check_script_scan_properties(std::string_view source) {
 
   const std::string rendered = render_lua_tokens(tokens);
   require_scan(tokenize_lua(rendered) == tokens);
+
+  for (const ScanScreenTree& screen : scan_screen_trees(tokens)) {
+    if (screen.root) {
+      check_node_spans(*screen.root, source.size());
+    }
+  }
 
   const std::vector<ScanLabel> labels = scan_tokens(tokens);
   require_scan(scan_labels(rendered) == labels);

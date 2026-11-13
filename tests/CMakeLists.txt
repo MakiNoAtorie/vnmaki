@@ -241,6 +241,16 @@ if(VNMAKI_DEV_TOOLS)
                                            unit/hot_import_test.cpp)
 endif()
 
+# Dev tools: the screen editor (ticket 50): the literal spans of a screen table, the byte-exact
+# rewrite, the map from a node to its table, and hot reload on the saved file. The generator writes
+# the project and the expected file.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/screen_editor_test.cpp)
+  vnmaki_add_fixture_generator(
+    screen_editor SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/screen_editor_fixtures.py"
+    TEST_TARGETS vnmaki_unit_tests)
+endif()
+
 # Dev tools: the row functions of the inspectors, on the default template (ticket 31).
 if(VNMAKI_DEV_TOOLS)
   target_sources(vnmaki_unit_tests PRIVATE unit/inspect_test.cpp)
