@@ -110,6 +110,18 @@ label("start", function()
 end)
 """,
     },
+    # Writes an auto save, a quick save and the persistent file (`--data-dir` test).
+    "saves": {
+        "project.toml": 'title = "Saves"\nauto_save = ["label"]\n',
+        "scripts/start.lua": """\
+label("start", function()
+  persistent.played = true
+  narrate("one")
+  quick_save()
+  narrate("two")
+end)
+""",
+    },
     # Stops at a menu, which `vnmaki run --headless` cannot answer yet.
     "menu": {
         "project.toml": 'title = "Menu"\n',
@@ -167,6 +179,11 @@ FONT_PROJECTS = ["say", "finished", "broken_with_font"]
 PIXEL_PNG = png_rgba([[(128, 128, 128, 255)]])
 
 TRANSCRIPTS = {
+    "saves": """\
+label start
+narrate one
+narrate two
+""",
     "say": """\
 label start
 narrate It was raining.
