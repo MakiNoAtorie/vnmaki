@@ -53,7 +53,6 @@ Do not do these tasks in parallel, because they change the same files:
 - [ ] A ring buffer keeps snapshots and input logs. Default depth: 100 steps, set in `project.toml`.
 - [ ] In a label, replay to step N-1. Across a label, restore the previous snapshot and replay.
 - [ ] At a menu, the player can choose again. A new choice removes the forward history. `fixed = true` prevents this.
-- [ ] Rollback does not change `persistent`.
 - [ ] Headless tests: in a label, across labels, across a menu, at the depth limit.
 
 ### 14: Persistent store, seen text, skip, auto (SPEC §8)
@@ -100,7 +99,7 @@ Do not do these tasks in parallel, because they change the same files:
 - [ ] Mouse, keyboard and gamepad operate all screens. A game can replace a Lua screen by name.
 - [ ] Headless tests: save and load through the screens, a preference change.
 
-### 19: `vnmaki new` and template (SPEC §19, §22)
+### 19: `vnmaki new` and template (SPEC §19)
 
 This task is the Phase 2 acceptance demo.
 
@@ -123,27 +122,4 @@ Plan these SPEC items before Phase 2 ends:
 
 ## Phases 3–7
 
-### Phase 3: Presentation (SPEC §9, §10, §14)
-
-- Timeline, tweens with easing, `tween`, `wait`, `wait_all`.
-- Transitions, sprite sheets, layered characters, camera, HLSL shaders, texture atlases.
-- Video (`movie`, AV1 in WebM), lip sync, text effects for each character.
-
-### Phase 4: Tools (SPEC §18)
-
-- Hot reload, DAP debugger, ImGui dev overlay, story graph, profiler, `vnmaki check`.
-
-### Phase 5: Content features (SPEC §11, §12, §16, §17, §19, §20)
-
-- Localization with `.po` files, accessibility, asset pipeline, `.vnpak` packages.
-- Inochi2D puppets, glTF 3D playback, C++ and Lua plugins, more fuzz targets.
-
-### Phase 6: Platforms (SPEC §3, §21)
-
-- macOS and Linux parity, Web, Android, iOS, consoles.
-- `IPlatformServices` with `achievement`, `stat`, `rich_presence`.
-- No runtime code load, no JIT, all file access through the VFS.
-
-### Phase 7: Later
-
-- WYSIWYG screen editor, launcher GUI, vertical text.
+See the SPEC §22 roadmap.

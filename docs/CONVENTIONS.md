@@ -30,6 +30,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 ## Code
 
 - C++20, namespace `vnmaki`.
+- RAII. No raw `new` or `delete`; use `std::unique_ptr` by default. Use `std::span` or `std::string_view`, not a pointer and a length.
+- Use the Lua C API only through sol2 wrappers.
 - Names: types `PascalCase`, functions and variables `snake_case`, enumerators `kName`.
 - Scoped enums have a small base type, for example `: std::uint8_t`.
 - Files are `.hpp` and `.cpp`. Format: Google style, 100 columns.
@@ -131,7 +133,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 
 ### Scene (`engine/scene/`)
 
-- `Scene` keeps tagged displayables on layers: background, master, characters, 3D, overlay, UI, transient.
+- `Scene` keeps tagged displayables on the SPEC §9 layers.
 - `Scene` implements `SceneState` and `SceneCommands`. Set `ScriptRuntimeOptions::scene` and `::scene_state` to it.
 - The runtime includes no scene headers.
 - Image name `N` is the VFS file `images/N.png`. If that file does not exist, it is `images/N.jpg`.
