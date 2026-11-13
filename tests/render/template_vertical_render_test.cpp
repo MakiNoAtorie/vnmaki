@@ -19,6 +19,7 @@
 #include "engine/l10n/translator.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
+#include "engine/render/shader_compiler.hpp"
 #include "engine/runtime/project_config.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/scene/scene.hpp"
@@ -45,6 +46,10 @@ TEST_CASE("template: the say box in vertical Japanese matches the golden") {
   vnmaki::Vfs vfs;
   REQUIRE(vfs.mount(
       vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_TEMPLATES_DIR} / "default")));
+  if (!vnmaki::shader_compiler_available()) {
+    // A release build cannot compile the sepia shader that the template's scripts load.
+    REQUIRE(vfs.mount(vnmaki::make_directory_mount(VNMAKI_PRECOMPILED_DIR)));
+  }
   const vnmaki::ProjectConfig config = vnmaki::load_project_config(vfs);
   REQUIRE(config.languages == std::vector<std::string>{"en", "ja"});
   vnmaki::Translator translator{vfs, config};
