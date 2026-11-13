@@ -103,11 +103,11 @@ Do not do these tasks in parallel, because they change the same files:
 
 This task is the Phase 2 acceptance demo.
 
-- [ ] `vnmaki new <name>` copies `templates/default/` and fills in `project.toml`. It stops if the folder is not empty.
-- [ ] Assets with an MIT, OFL or CC0 license, or from generator scripts.
-- [ ] The sample is the §7 example: classroom, Eileen, a menu to `warm` and `cold`.
-- [ ] End-to-end headless test on the three CI platforms: new, both branches, save, load, rollback.
-- [ ] "Getting started" document for `new` and `run`.
+- [x] `vnmaki new <name>` copies `templates/default/` and fills in `project.toml`. It stops if the folder is not empty.
+- [x] Assets with an MIT, OFL or CC0 license, or from generator scripts.
+- [x] The sample is the §7 example: classroom, Eileen, a menu to `warm` and `cold`.
+- [x] End-to-end headless test on the three CI platforms: new, both branches, save, load, rollback.
+- [x] "Getting started" document for `new` and `run`.
 
 ### Order for 29–31
 

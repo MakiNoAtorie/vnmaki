@@ -2,4 +2,8 @@ add_executable(vnmaki main.cpp)
 target_link_libraries(vnmaki PRIVATE vnmaki::engine vnmaki::options)
 target_sources(vnmaki PRIVATE window_command.cpp window_command.hpp)
 target_sources(vnmaki PRIVATE image_view.cpp image_view.hpp)
+target_sources(vnmaki PRIVATE new_command.cpp new_command.hpp)
+# Where `vnmaki new` finds templates/ when none is next to the executable: the source tree.
+target_compile_definitions(vnmaki
+                           PRIVATE VNMAKI_SOURCE_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/templates")
 target_sources(vnmaki PRIVATE run_command.cpp run_command.hpp story_window.cpp story_window.hpp)

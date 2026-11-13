@@ -318,6 +318,28 @@ vnmaki_add_cli_test(
   NO_STDOUT
   STDERR_REGEX "vnmaki run: --max-steps needs a positive whole number")
 
+# vnmaki new (ticket 19). The scripts delete the game folder first, so a second run of the test
+# starts clean. The second test needs a GPU, like the other window tests.
+add_test(NAME cli.new_makes_a_game_and_stops_at_a_second_one
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+                 -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/plain -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
+add_test(NAME cli.new_game_runs_in_a_window
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki>
+                 -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/windowed -DFRAMES=3
+                 -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/new_game_runs_in_a_window -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
+set_tests_properties(cli.new_makes_a_game_and_stops_at_a_second_one cli.new_game_runs_in_a_window
+                     PROPERTIES TIMEOUT 60)
+if(vnmaki_gpu_cli_env)
+  set_tests_properties(cli.new_game_runs_in_a_window PROPERTIES ENVIRONMENT
+                                                                "${vnmaki_gpu_cli_env}")
+endif()
+if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+  set_tests_properties(cli.new_game_runs_in_a_window PROPERTIES SKIP_REGULAR_EXPRESSION
+                                                                "cannot create a GPU device")
+endif()
+
 # Audio (ticket 16), on the projects tools/generators/audio_fixtures.py writes.
 set(vnmaki_audio_fixtures "${VNMAKI_FIXTURES_DIR}/audio")
 vnmaki_add_cli_stdout_file_test(

@@ -1,0 +1,351 @@
+#!/usr/bin/env python3
+"""Generate the images, music and font of templates/default/.
+
+Usage: template_assets.py OUT_DIR
+
+OUT_DIR is the template folder (templates/default/), or a copy of the layout. The script
+writes only its own files and never deletes anything:
+
+  images/bg/classroom.png            the backdrop, 1280 by 720
+  images/eileen/base.png             the layers of the sprite "eileen" (see scripts/main.lua),
+  images/eileen/outfit_school.png    all 300 by 560 with a transparent background
+  images/eileen/face_smile.png
+  images/eileen/face_sad.png
+  audio/bgm/theme.wav                a 4 second loop of sine notes
+  fonts/default.ttf                  a 5 by 7 pixel font for ASCII, one rectangle for each run
+                                     of pixels (built with text_fixtures.build_font)
+
+Everything is made of rectangles, ellipses and sine waves, so no source art or font file is
+involved. The assets are CC0 1.0 (templates/default/ASSETS.txt). Only the standard library is used.
+"""
+
+import io
+import math
+import struct
+import sys
+import wave
+import zlib
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # No __pycache__ in the source tree.
+import render_fixtures as rf  # noqa: E402  (the PNG chunks)
+import text_fixtures as tf  # noqa: E402  (the TrueType writer)
+
+# --- Images ------------------------------------------------------------------------------
+
+BACKDROP_SIZE = (1280, 720)
+SPRITE_SIZE = (300, 560)
+CLEAR = (0, 0, 0, 0)
+
+
+class Image:
+    """An RGBA image made of rows of bytes, drawn with filled shapes."""
+
+    def __init__(self, width: int, height: int, color: tuple = CLEAR) -> None:
+        self.width, self.height = width, height
+        self.rows = [bytearray(bytes(color) * width) for _ in range(height)]
+
+    def rect(self, x0: int, y0: int, x1: int, y1: int, color: tuple) -> None:
+        """Fills the pixels from (x0, y0) up to, but not including, (x1, y1)."""
+        x0, x1 = max(x0, 0), min(x1, self.width)
+        for y in range(max(y0, 0), min(y1, self.height)):
+            self.rows[y][x0 * 4:x1 * 4] = bytes(color) * max(x1 - x0, 0)
+
+    def ellipse(self, cx: int, cy: int, rx: int, ry: int, color: tuple) -> None:
+        for y in range(cy - ry, cy + ry + 1):
+            half = round(rx * math.sqrt(max(0.0, 1 - ((y - cy) / ry) ** 2)))
+            self.rect(cx - half, y, cx + half + 1, y + 1, color)
+
+    def curve(self, cx: int, cy: int, half_width: int, bend: int, thickness: int,
+              color: tuple) -> None:
+        """A parabola through (cx - half_width, cy), (cx, cy + bend), (cx + half_width, cy)."""
+        for dx in range(-half_width, half_width + 1):
+            y = cy + round(bend * (1 - (dx / half_width) ** 2))
+            self.rect(cx + dx, y, cx + dx + thickness, y + thickness, color)
+
+    def png(self) -> bytes:
+        raw = b"".join(b"\0" + bytes(row) for row in self.rows)
+        header = struct.pack(">IIBBBBB", self.width, self.height, 8, rf.COLOR_TYPE_RGBA, 0, 0, 0)
+        return (rf.PNG_SIGNATURE + rf.png_chunk(b"IHDR", header) +
+                rf.png_chunk(b"IDAT", zlib.compress(raw, 9)) + rf.png_chunk(b"IEND", b""))
+
+
+def classroom() -> Image:
+    wall, floor, plank = (236, 228, 205, 255), (178, 134, 94, 255), (150, 108, 72, 255)
+    wood, frame = (120, 84, 56, 255), (92, 64, 44, 255)
+    image = Image(*BACKDROP_SIZE, wall)
+    width, height = BACKDROP_SIZE
+    horizon = 470
+    image.rect(0, 440, width, horizon, (210, 198, 170, 255))  # the skirting board
+    image.rect(0, horizon, width, height, floor)
+    for y in range(horizon + 40, height, 60):
+        image.rect(0, y, width, y + 3, plank)
+    # The blackboard.
+    image.rect(70, 90, 570, 330, frame)
+    image.rect(84, 104, 556, 316, (44, 74, 62, 255))
+    image.rect(120, 150, 330, 156, (230, 230, 220, 255))
+    image.rect(120, 190, 420, 196, (230, 230, 220, 255))
+    image.rect(120, 230, 260, 236, (230, 230, 220, 255))
+    image.rect(84, 316, 556, 330, wood)
+    # A window with a sky and a sun.
+    image.rect(800, 70, 1180, 380, frame)
+    image.rect(812, 82, 1168, 368, (150, 200, 235, 255))
+    image.ellipse(1060, 160, 38, 38, (255, 236, 150, 255))
+    image.rect(982, 82, 998, 368, frame)
+    image.rect(812, 218, 1168, 232, frame)
+    image.rect(790, 380, 1190, 396, wood)
+    # A clock.
+    image.ellipse(680, 90, 34, 34, frame)
+    image.ellipse(680, 90, 28, 28, (250, 248, 240, 255))
+    image.rect(678, 66, 682, 92, (40, 40, 40, 255))
+    image.rect(680, 88, 700, 92, (40, 40, 40, 255))
+    # Two rows of desks.
+    for row, (top, size) in enumerate(((520, 150), (590, 190))):
+        for left in range(60 + 90 * row, width, 330 - 40 * row):
+            image.rect(left, top, left + size, top + 22, wood)
+            image.rect(left + 10, top + 22, left + 22, top + 100, frame)
+            image.rect(left + size - 22, top + 22, left + size - 10, top + 100, frame)
+    return image
+
+
+SKIN, HAIR, HAIR_SHADE = (250, 221, 200, 255), (200, 162, 200, 255), (168, 128, 170, 255)
+BLOUSE, SKIRT, RIBBON = (246, 246, 250, 255), (52, 62, 112, 255), (190, 50, 60, 255)
+INK, BLUSH = (60, 40, 70, 255), (244, 170, 170, 255)
+
+
+def sprite_base() -> Image:
+    image = Image(*SPRITE_SIZE)
+    image.ellipse(150, 120, 104, 96, HAIR_SHADE)  # the hair behind
+    image.rect(46, 120, 254, 330, HAIR_SHADE)
+    image.rect(132, 190, 168, 250, SKIN)  # the neck
+    image.rect(20, 262, 52, 420, SKIN)  # the arms
+    image.rect(248, 262, 280, 420, SKIN)
+    image.rect(112, 400, 140, 540, SKIN)  # the legs
+    image.rect(160, 400, 188, 540, SKIN)
+    image.ellipse(150, 126, 76, 88, SKIN)  # the head
+    image.ellipse(150, 66, 80, 46, HAIR)  # the fringe
+    image.rect(70, 66, 230, 96, HAIR)
+    return image
+
+
+def sprite_outfit() -> Image:
+    image = Image(*SPRITE_SIZE)
+    image.rect(70, 244, 230, 350, BLOUSE)
+    image.rect(36, 250, 70, 330, BLOUSE)  # the sleeves
+    image.rect(230, 250, 264, 330, BLOUSE)
+    image.rect(70, 350, 230, 460, SKIRT)
+    image.rect(56, 440, 244, 470, SKIRT)
+    image.rect(124, 244, 176, 262, RIBBON)  # the ribbon
+    image.rect(140, 244, 160, 300, RIBBON)
+    return image
+
+
+def sprite_face(smiling: bool) -> Image:
+    image = Image(*SPRITE_SIZE)
+    for cx in (112, 188):
+        image.ellipse(cx, 134, 11, 16, INK)
+        image.rect(cx - 5, 126, cx - 1, 132, BLOUSE)  # a glint
+        image.ellipse(cx, 168, 14, 7, BLUSH)
+    brow = 0 if smiling else 8  # sad brows slope down at the outer end
+    image.rect(96, 104 + brow, 128, 108 + brow, INK)
+    image.rect(172, 104 + brow, 204, 108 + brow, INK)
+    image.curve(150, 176 if smiling else 192, 22, 12 if smiling else -12, 4, INK)
+    return image
+
+
+def images() -> dict:
+    return {
+        "images/bg/classroom.png": classroom().png(),
+        "images/eileen/base.png": sprite_base().png(),
+        "images/eileen/outfit_school.png": sprite_outfit().png(),
+        "images/eileen/face_smile.png": sprite_face(True).png(),
+        "images/eileen/face_sad.png": sprite_face(False).png(),
+    }
+
+
+# --- Music -------------------------------------------------------------------------------
+
+RATE = 16000
+NOTE_SECONDS = 0.5
+AMPLITUDE = 0.3
+FADE_SECONDS = 0.05
+# C major, then A minor: the arpeggio of a slow loop. Hertz.
+NOTES = (262, 330, 392, 330, 220, 262, 330, 262)
+
+
+def theme() -> bytes:
+    frames = bytearray()
+    length = round(RATE * NOTE_SECONDS)
+    fade = round(RATE * FADE_SECONDS)
+    for hertz in NOTES:
+        for i in range(length):
+            envelope = min(1.0, i / fade, (length - i) / fade)
+            sample = AMPLITUDE * envelope * math.sin(2 * math.pi * hertz * i / RATE)
+            frames += struct.pack("<h", round(sample * 32767))
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(RATE)
+        out.writeframes(bytes(frames))
+    return buffer.getvalue()
+
+
+# --- Font --------------------------------------------------------------------------------
+
+CELL = 100  # Font units of one pixel of the 5 by 7 grid; the baseline is under row 6.
+GLYPH_ADVANCE = 600
+SPACE_ADVANCE = 400
+CAP_TOP = 700
+
+# Glyphs are rows of five columns. TALL (capitals, numbers, tall lowercase) has seven rows from
+# row 0, SHORT five rows from row 2, TAILED seven rows from row 2 (two under the baseline).
+TALL = {
+    "A": [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+    "B": ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
+    "C": [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."],
+    "D": ["####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."],
+    "E": ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
+    "F": ["#####", "#....", "#....", "####.", "#....", "#....", "#...."],
+    "G": [".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".###."],
+    "H": ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
+    "I": [".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."],
+    "J": ["..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."],
+    "K": ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
+    "L": ["#....", "#....", "#....", "#....", "#....", "#....", "#####"],
+    "M": ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
+    "N": ["#...#", "##..#", "#.#.#", "#.#.#", "#..##", "#...#", "#...#"],
+    "O": [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+    "P": ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
+    "Q": [".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"],
+    "R": ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"],
+    "S": [".####", "#....", "#....", ".###.", "....#", "....#", "####."],
+    "T": ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."],
+    "U": ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
+    "V": ["#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."],
+    "W": ["#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#"],
+    "X": ["#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"],
+    "Y": ["#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."],
+    "Z": ["#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"],
+    "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
+    "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
+    "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
+    "3": [".###.", "#...#", "....#", "..##.", "....#", "#...#", ".###."],
+    "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
+    "5": ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
+    "6": ["..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."],
+    "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
+    "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
+    "9": [".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."],
+    # Lowercase letters with an ascender.
+    "b": ["#....", "#....", "####.", "#...#", "#...#", "#...#", "####."],
+    "d": ["....#", "....#", ".####", "#...#", "#...#", "#...#", ".####"],
+    "f": ["..##.", ".#..#", ".#...", "###..", ".#...", ".#...", ".#..."],
+    "h": ["#....", "#....", "#.##.", "##..#", "#...#", "#...#", "#...#"],
+    "i": ["..#..", ".....", ".##..", "..#..", "..#..", "..#..", ".###."],
+    "k": ["#....", "#....", "#..#.", "#.#..", "##...", "#.#..", "#..#."],
+    "l": [".##..", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."],
+    "t": [".#...", ".#...", "###..", ".#...", ".#...", ".#..#", "..##."],
+}
+SHORT = {  # Lowercase letters of five rows, from row 2.
+    "a": [".###.", "....#", ".####", "#...#", ".####"],
+    "c": [".###.", "#...#", "#....", "#...#", ".###."],
+    "e": [".###.", "#...#", "#####", "#....", ".###."],
+    "m": ["##.#.", "#.#.#", "#.#.#", "#.#.#", "#.#.#"],
+    "n": ["#.##.", "##..#", "#...#", "#...#", "#...#"],
+    "o": [".###.", "#...#", "#...#", "#...#", ".###."],
+    "r": ["#.##.", "##..#", "#....", "#....", "#...."],
+    "s": [".####", "#....", ".###.", "....#", "####."],
+    "u": ["#...#", "#...#", "#...#", "#..##", ".##.#"],
+    "v": ["#...#", "#...#", "#...#", ".#.#.", "..#.."],
+    "w": ["#...#", "#...#", "#.#.#", "#.#.#", ".#.#."],
+    "x": ["#...#", ".#.#.", "..#..", ".#.#.", "#...#"],
+    "z": ["#####", "...#.", "..#..", ".#...", "#####"],
+}
+TAILED = {  # Lowercase letters with a tail: seven rows, from row 2.
+    "g": [".####", "#...#", "#...#", "#...#", ".####", "....#", ".###."],
+    "p": ["####.", "#...#", "#...#", "#...#", "####.", "#....", "#...."],
+    "q": [".####", "#...#", "#...#", "#...#", ".####", "....#", "....#"],
+    "y": ["#...#", "#...#", "#...#", ".####", "....#", "#...#", ".###."],
+}
+OTHER = {  # (first row, rows)
+    "j": (0, ["...#.", ".....", "..##.", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."]),
+    ".": (6, ["..#.."]),
+    ",": (6, ["..#..", ".#..."]),
+    "!": (0, ["..#..", "..#..", "..#..", "..#..", "..#..", ".....", "..#.."]),
+    "?": (0, [".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#.."]),
+    "'": (0, ["..#..", "..#..", ".#..."]),
+    '"': (0, [".#.#.", ".#.#.", ".#.#."]),
+    "-": (3, [".###."]),
+    ":": (2, ["..#..", ".....", ".....", "..#.."]),
+    ";": (2, ["..#..", ".....", ".....", "..#..", ".#..."]),
+    "/": (0, ["....#", "....#", "...#.", "..#..", ".#...", "#....", "#...."]),
+    "(": (0, ["...#.", "..#..", ".#...", ".#...", ".#...", "..#..", "...#."]),
+    ")": (0, [".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..."]),
+    "%": (0, ["##..#", "##..#", "...#.", "..#..", ".#...", "#..##", "#..##"]),
+    "+": (1, ["..#..", "..#..", "#####", "..#..", "..#.."]),
+    "=": (2, ["#####", ".....", "#####"]),
+    "_": (7, ["#####"]),
+    "*": (1, ["#.#.#", ".###.", "#####", ".###.", "#.#.#"]),
+    "#": (0, [".#.#.", "#####", ".#.#.", ".#.#.", "#####", ".#.#."]),
+}
+
+
+def pixel_boxes(first_row: int, rows: list) -> list:
+    """Rectangles that cover the '#' cells: runs of cells joined, then equal runs stacked."""
+    open_boxes = {}  # (first column, end column) -> first row of the stack
+    boxes = []
+
+    def close(span: tuple, start: int, end: int) -> None:
+        boxes.append((span[0] * CELL, CAP_TOP - end * CELL, span[1] * CELL,
+                      CAP_TOP - start * CELL))
+
+    for row_index, row in enumerate(rows + [""], first_row):
+        spans = set()
+        column = 0
+        while column < len(row):
+            if row[column] == "#":
+                end = column
+                while end < len(row) and row[end] == "#":
+                    end += 1
+                spans.add((column, end))
+                column = end
+            else:
+                column += 1
+        for span in list(open_boxes):
+            if span not in spans:
+                close(span, open_boxes.pop(span), row_index)
+        for span in spans:
+            open_boxes.setdefault(span, row_index)
+    return boxes
+
+
+def pixel_font() -> bytes:
+    shapes = {" ": (SPACE_ADVANCE, None)}
+    glyphs = {char: (0, rows) for char, rows in TALL.items()}
+    glyphs.update({char: (2, rows) for char, rows in SHORT.items()})
+    glyphs.update({char: (2, rows) for char, rows in TAILED.items()})
+    glyphs.update(OTHER)
+    for char, (first_row, rows) in glyphs.items():
+        shapes[char] = (GLYPH_ADVANCE, pixel_boxes(first_row, rows))
+    return tf.build_font(shapes)
+
+
+def files() -> dict:
+    return {**images(), "audio/bgm/theme.wav": theme(), "fonts/default.ttf": pixel_font()}
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print("usage: template_assets.py OUT_DIR", file=sys.stderr)
+        return 2
+    out = Path(sys.argv[1])
+    for name, content in files().items():
+        path = out / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

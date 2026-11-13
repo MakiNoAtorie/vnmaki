@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 
+#include "cli/new_command.hpp"
 #include "cli/run_command.hpp"
 #include "cli/window_command.hpp"
 #include "engine/core/no_crt_dialogs.hpp"
@@ -33,6 +34,10 @@ int main(int argc, char* argv[]) {
     return vnmaki::cli::run_command(std::span{args}.subspan(1), std::cout, std::cerr);
   }
 
+  if (!args.empty() && args.front() == "new") {
+    return vnmaki::cli::new_command(std::span{args}.subspan(1), std::cout, std::cerr);
+  }
+
   if (!args.empty() && args.front() == "window") {
     return vnmaki::cli::window_command(std::span{args}.subspan(1), std::cerr);
   }
@@ -40,6 +45,7 @@ int main(int argc, char* argv[]) {
   if (!args.empty()) {
     std::cerr << "vnmaki: unknown option '" << args.front() << "'\n";
   }
-  std::cerr << usage << vnmaki::cli::kRunUsage << vnmaki::cli::kWindowUsage;
+  std::cerr << usage << vnmaki::cli::kNewUsage << vnmaki::cli::kRunUsage
+            << vnmaki::cli::kWindowUsage;
   return exit_usage_error;
 }
