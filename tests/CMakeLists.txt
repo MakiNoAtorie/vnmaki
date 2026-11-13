@@ -194,6 +194,16 @@ vnmaki_add_fixture_generator(
   l10n SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/l10n_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
 
+# Asset import (ticket 44): the cache, the audio gain, font subsets, glTF checks, the project
+# importer and the precompiled shader file. The generator writes the inputs and the projects of the
+# `vnmaki import` CLI tests.
+target_sources(vnmaki_unit_tests PRIVATE unit/import_test.cpp)
+vnmaki_add_fixture_generator(
+  import SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/import_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/templates/default/fonts/default.ttf"
+          "${PROJECT_SOURCE_DIR}/templates/default/shaders/sepia.frag.hlsl"
+  TEST_TARGETS vnmaki_unit_tests)
+
 # Video: WebM, AV1 and Opus, the player and its clocks, `movie` and the movie displayable (ticket
 # 25). clip.webm is the one committed binary fixture; its README has the ffmpeg command.
 target_sources(vnmaki_unit_tests PRIVATE unit/video_test.cpp)
