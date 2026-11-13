@@ -6,6 +6,7 @@ This guide is for the person who makes a game. The tools help you to write, test
 |------|----------------|--------|
 | Dev overlay | `F12` in `vnmaki run` | Dev builds |
 | Hot reload | Save a file while `vnmaki run` or `vnmaki debug` runs | Dev builds |
+| Screen editor | The window "Screen editor" of the overlay | Dev builds |
 | Debugger (DAP) | `vnmaki debug` | Dev builds, Windows |
 | Check | `vnmaki check <dir>` | All builds |
 | Story graph | `vnmaki graph <dir>` | All builds |
@@ -23,6 +24,7 @@ Press `F12` in a window to show or hide the overlay. While it is hidden it does 
 | Console | The log (the last 1000 entries). The check boxes Info, Warning and Error filter it, Clear empties it. Lua `print` is info. A dev-mode warning of the runtime, the saves and the persistent store is a warning. A hot reload error is an error. The input line at the bottom is the REPL (see below). |
 | Inspectors | One window with six tabs: Store, Persistent, Scene, Tweens, Audio, Labels. |
 | Story graph | The labels and edges of the scripts (red: not reachable from `start`, yellow: dead end). What the run took is green. Rescan reads the scripts again. |
+| Screen editor | Select a node of a shown screen and change its literal values (see below). |
 | Profiler | A graph of the CPU time of the last 300 frames, the phase times of the last frame, the GPU counters, the texture memory, and the 8 slowest asset loads. |
 
 The REPL runs a line in the script sandbox, as a script does: the same globals and limits, and no `io`, `debug`, `package` or `require`. An expression prints its values. A blocking call (`say`, `menu`, `wait`, ...) is an error. A change to `store` stays until the next rollback or load. `persistent` and `prefs` keep their changes.
@@ -34,6 +36,27 @@ The Inspectors tabs:
 - Tweens: the running tweens.
 - Audio: each playing track (file, volume, position) and each silent channel.
 - Labels: all labels. The Jump button goes to the first blocking call of that label, with the current `store` (the same as the `vnmaki/goto` request of the debugger). If the label has none, the error goes to the console.
+
+## Screen editor
+
+The window "Screen editor" of the overlay changes the literal values of a screen in your script, and saves them to the file. It works in dev builds, with `vnmaki run`.
+
+1. Press `F12`, and switch on "Pick" in the window "Screen editor". Windows of the overlay can cover the screen; drag them away.
+2. Click a node of a screen that shows. The click does not go to the game. The node gets a green outline. The window shows the kind of the node, its rectangle (x, y, width and height in canvas pixels, the result of the layout), and the place of its table in the script (`scripts/ui.lua:12`).
+3. Change a field. A number is a decimal number. A string is any text. A boolean is a check box. Examples: `gap`, `align`, `padding`, `bg`, `size`, and the text of a `text` or `button`.
+4. Press Save. The editor replaces only the bytes of the values that you changed. All other bytes, and all comments, stay as they were. Hot reload then loads the script again and the screen shows the change. Revert puts the old values back. Deselect clears the selection.
+
+What it can change and what it cannot:
+
+- It changes only a number, a string or a boolean that is written in the table of the node, as in `gap = 12`, `align = "center"`, `disabled = false` or `button { "Start" }`. It does not add or remove a field or a node.
+- A field with a computed value (`gap = base + 4`, `size = 10 * scale`, `text { name }`) is shown as read-only with its source text.
+- It maps a node to its table by the order of the nodes that the table writes. This works for a screen written as a table, `screen "name" { ... }` or `screen("name", { ... })`. A node is read-only, and the window says why, when:
+  - the screen is a function, `screen("name", function(args) ... end)`, or two scripts define it, or the engine makes it (the default screens, the menu, the banner of hot reload);
+  - a table above it has an entry that is computed (a call like `rows()`, a name, a `for`), because then the nodes at run time may not be the nodes in the file. The values of that table itself can still change;
+  - the file has more or fewer nodes in the table than the screen shows (you edited the file and it did not load yet).
+- `style = "name"` is a string value. The values inside a style (`styles/*.lua`) are not in the screen table, and the editor does not change them.
+- If the file changed after you picked the node (for example in your editor), Save does nothing and says so. Pick the node again.
+- A string that has the escape `\u{...}` is read-only.
 
 ## Hot reload
 

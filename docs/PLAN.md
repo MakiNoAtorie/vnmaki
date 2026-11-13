@@ -529,11 +529,11 @@ Do not do these tasks in parallel, because they change the same files:
 
 Files: new `engine/tools/screen_editor.*`, `engine/tools/script_scan.*`.
 
-- [ ] An overlay mode: click a node in a screen that shows to select it. Its outline and Yoga rectangle show.
-- [ ] The editor changes only literal number, string and boolean fields that are already in the screen table (`gap`, `align`, `text`, style values).
-- [ ] The scan records the source span of each literal. A save replaces only those bytes. All other bytes and comments stay the same.
-- [ ] After a save, hot reload (task 32) shows the change. A field with a computed value is read-only.
-- [ ] Tests: span rewrite on a generated screen file (byte-exact diff), and a computed field that is read-only.
+- [x] An overlay mode: click a node in a screen that shows to select it. Its outline and Yoga rectangle show.
+- [x] The editor changes only literal number, string and boolean fields that are already in the screen table (`gap`, `align`, `text`, style values).
+- [x] The scan records the source span of each literal. A save replaces only those bytes. All other bytes and comments stay the same.
+- [x] After a save, hot reload (task 32) shows the change. A field with a computed value is read-only.
+- [x] Tests: span rewrite on a generated screen file (byte-exact diff), and a computed field that is read-only.
 
 ### 51: Launcher (SPEC §19)
 
