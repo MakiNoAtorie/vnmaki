@@ -1,7 +1,7 @@
 # 3D scenes (docs/SPEC.md section 12): glTF models, a camera, lights and the displayable that draws
-# them (ticket 46).
-target_sources(vnmaki_engine PRIVATE cgltf_impl.cpp math3d.cpp math3d.hpp model.cpp model.hpp
-                                          scene3d.cpp scene3d.hpp)
+# them (ticket 46), and their skinned and morphed clips (ticket 47).
+target_sources(vnmaki_engine PRIVATE animation.cpp animation.hpp cgltf_impl.cpp math3d.cpp
+                                          math3d.hpp model.cpp model.hpp scene3d.cpp scene3d.hpp)
 
 # cgltf is one header. vcpkg installs it at the top of its include directory.
 find_path(VNMAKI_CGLTF_INCLUDE_DIR cgltf.h REQUIRED)

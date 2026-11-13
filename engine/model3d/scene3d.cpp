@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/model3d/animation.hpp"
 #include "engine/render/builtin_shaders.hpp"
 #include "engine/vfs/vfs.hpp"
 
@@ -145,6 +146,7 @@ std::string ModelLibrary::check(std::string_view path) {
   if (parsed_.contains(path)) {
     return {};
   }
+  failed_.erase(std::string{path});
   try {
     parsed_.emplace(std::string{path}, load_model(*vfs_, path));
   } catch (const ModelError& error) {
@@ -185,6 +187,33 @@ const std::vector<ModelLibrary::GpuMesh>& ModelLibrary::upload(IRenderer& render
   return uploaded_.emplace(std::string{path}, std::move(meshes)).first->second;
 }
 
+const ModelData* ModelLibrary::data(std::string_view path) {
+  if (const ModelData* parsed = find_data(path); parsed != nullptr) {
+    return parsed;
+  }
+  if (failed_.contains(path)) {
+    return nullptr;
+  }
+  try {
+    return &parsed_.emplace(std::string{path}, load_model(*vfs_, path)).first->second;
+  } catch (const ModelError&) {
+    failed_.emplace(path);  // upload() reports the reason
+    return nullptr;
+  }
+}
+
+const ModelData* ModelLibrary::find_data(std::string_view path) const {
+  const auto found = parsed_.find(path);
+  return found == parsed_.end() ? nullptr : &found->second;
+}
+
+void ModelLibrary::release_retired(IRenderer& renderer) {
+  for (const MeshId mesh : retired_) {
+    renderer.destroy_mesh(mesh);
+  }
+  retired_.clear();
+}
+
 const std::vector<ModelLibrary::GpuMesh>* ModelLibrary::find(std::string_view path) const {
   const auto found = uploaded_.find(path);
   return found == uploaded_.end() ? nullptr : &found->second;
@@ -208,6 +237,15 @@ ShaderId ModelLibrary::builtin_shader(IRenderer& renderer, ShadingStyle style) {
   return made;
 }
 
+ModelPose pose_of(const Model3d& model, const ModelData& data) {
+  ModelPose pose = evaluate_pose(data, model.clips);
+  if (!model.lip_morph.empty()) {
+    set_morph_weight(data, pose, model.lip_morph,
+                     static_cast<float>(std::clamp(model.lip_level, 0.0, 1.0)));
+  }
+  return pose;
+}
+
 // --- Scene3dDisplayable ----------------------------------------------------------------------
 
 Scene3dDisplayable::Scene3dDisplayable(Size size, std::shared_ptr<ModelLibrary> library,
@@ -218,13 +256,17 @@ Scene3dDisplayable::Scene3dDisplayable(Size size, std::shared_ptr<ModelLibrary> 
       camera_(default_camera_pose()) {}
 
 Scene3dDisplayable::~Scene3dDisplayable() {
-  if (target_ == TextureId{}) {
-    return;
-  }
   try {
-    retired_->push_back(target_);
+    for (const auto& [tag, instance] : instances_) {
+      for (const MeshId mesh : instance.meshes) {
+        library_->retire(mesh);
+      }
+    }
+    if (target_ != TextureId{}) {
+      retired_->push_back(target_);
+    }
   } catch (...) {  // NOLINT(bugprone-empty-catch)
-    // Out of memory: the target stays on the GPU until the renderer goes.
+    // Out of memory: the target and the meshes stay on the GPU until the renderer goes.
   }
 }
 
@@ -271,7 +313,77 @@ std::optional<std::size_t> Scene3dDisplayable::channel(
   return std::nullopt;
 }
 
+std::string Scene3dDisplayable::play(std::string_view model, std::string_view clip,
+                                     const PlayOptions& options) {
+  const auto found = std::ranges::find(models_, model, &Model3d::tag);
+  if (found == models_.end()) {
+    return "this scene has no model '" + std::string{model} + "'";
+  }
+  if (!(options.fade >= 0 && options.fade <= kMaxFadeSeconds)) {
+    return "option 'fade' must be a number from 0 to " + std::to_string(kMaxFadeSeconds);
+  }
+  if (!(options.speed > 0 && options.speed <= kMaxClipSpeed)) {
+    return "option 'speed' must be a number above 0 and up to " + std::to_string(kMaxClipSpeed);
+  }
+  if (!(options.seek >= 0 && options.seek <= kMaxSeekSeconds)) {
+    return "option 'seek' must be a number from 0 to " + std::to_string(kMaxSeekSeconds);
+  }
+  // A replay does not read the file (see Scene::set_model_3d), so it cannot check the name.
+  if (const ModelData* data = library_->find_data(found->path);
+      data != nullptr && find_clip(*data, clip) == nullptr) {
+    std::string names;
+    for (const ModelClip& known : data->clips) {
+      names += (names.empty() ? "" : ", ") + known.name;
+    }
+    return "model '" + std::string{model} + "' has no clip '" + std::string{clip} + "' (" +
+           (names.empty() ? std::string{"it has no clips"} : "its clips are " + names) + ")";
+  }
+  start_clip(found->clips, std::string{clip}, options);
+  return {};
+}
+
+bool Scene3dDisplayable::clip_busy(std::string_view model) const {
+  return std::ranges::any_of(models_, [&](const Model3d& candidate) {
+    const ModelData* data = library_->find_data(candidate.path);
+    return (model.empty() || candidate.tag == model) && data != nullptr &&
+           clips_busy(candidate.clips, *data);
+  });
+}
+
+void Scene3dDisplayable::finish_model_clips(std::string_view model) {
+  for (Model3d& candidate : models_) {
+    if (model.empty() || candidate.tag == model) {
+      finish_clips(candidate.clips);
+    }
+  }
+}
+
+void Scene3dDisplayable::set_voice_level(const VoiceLevel* levels) {
+  for (Model3d& model : models_) {
+    model.lip_level = levels != nullptr && !model.lip_morph.empty()
+                          ? levels->voice_level(model.lip_voice_tag).value_or(0)
+                          : 0;
+  }
+}
+
+void Scene3dDisplayable::update(double seconds) {
+  for (Model3d& model : models_) {
+    if (model.clips.layers.empty()) {
+      continue;
+    }
+    if (const ModelData* data = library_->data(model.path)) {
+      advance_clips(model.clips, *data, seconds);
+    }
+  }
+}
+
 bool Scene3dDisplayable::remove(std::string_view name) {
+  if (const auto instance = instances_.find(name); instance != instances_.end()) {
+    for (const MeshId mesh : instance->second.meshes) {
+      library_->retire(mesh);
+    }
+    instances_.erase(instance);
+  }
   const std::size_t before = models_.size() + lights_.size();
   std::erase_if(models_, [name](const Model3d& model) { return model.tag == name; });
   std::erase_if(lights_, [name](const Light3d& light) { return light.name == name; });
@@ -285,11 +397,51 @@ void Scene3dDisplayable::prepare(IRenderer& renderer) {
   for (const Model3d& model : models_) {
     static_cast<void>(library_->upload(renderer, model.path));
   }
+  update_instances(renderer);
   for (const ShadingStyle style : {ShadingStyle::kUnlit, ShadingStyle::kToon, ShadingStyle::kPbr}) {
     if (std::ranges::any_of(models_, [style](const Model3d& model) {
           return model.properties.shader == 0 && model.style == style;
         })) {
       static_cast<void>(library_->builtin_shader(renderer, style));
+    }
+  }
+}
+
+// Gives each model whose vertices change with the pose (a skin or a morph target) meshes of its
+// own, and puts the vertices of the pose into them. They go to the GPU on each call.
+void Scene3dDisplayable::update_instances(IRenderer& renderer) {
+  for (auto instance = instances_.begin(); instance != instances_.end();) {
+    const auto model = std::ranges::find(models_, instance->first, &Model3d::tag);
+    if (model != models_.end() && model->path == instance->second.path) {
+      ++instance;
+      continue;
+    }
+    for (const MeshId mesh : instance->second.meshes) {
+      library_->retire(mesh);
+    }
+    instance = instances_.erase(instance);
+  }
+  std::vector<MeshVertex> vertices;
+  for (const Model3d& model : models_) {
+    const ModelData* data = library_->data(model.path);
+    if (data == nullptr || !is_dynamic(*data)) {
+      continue;
+    }
+    const ModelPose pose = pose_of(model, *data);
+    const std::vector<std::vector<Mat4>> skins = skin_matrices(*data, pose);
+    const auto found = instances_.find(model.tag);
+    std::vector<MeshId> created;
+    for (std::size_t i = 0; i < data->meshes.size(); ++i) {
+      const ModelMesh& mesh = data->meshes.at(i);
+      pose_vertices(mesh, pose, skins, vertices);
+      if (found == instances_.end()) {
+        created.push_back(renderer.create_mesh(vertices, mesh.indices));
+      } else {
+        renderer.update_mesh(found->second.meshes.at(i), vertices);
+      }
+    }
+    if (found == instances_.end()) {
+      instances_.emplace(model.tag, Instance{.path = model.path, .meshes = std::move(created)});
     }
   }
 }
@@ -347,7 +499,11 @@ void Scene3dDisplayable::render(IRenderer& renderer) const {
     if (shader == ShaderId{}) {
       continue;
     }
-    for (const ModelLibrary::GpuMesh& mesh : *meshes) {
+    const auto own = instances_.find(model.tag);
+    const bool animated = own != instances_.end() && own->second.path == model.path &&
+                          own->second.meshes.size() == meshes->size();
+    for (std::size_t i = 0; i < meshes->size(); ++i) {
+      const ModelLibrary::GpuMesh& mesh = meshes->at(i);
       globals.base_color = mesh.material.color;
       globals.material = {mesh.material.metallic, mesh.material.roughness, 0, 0};
       std::memcpy(bytes.data(), &globals, sizeof(globals));
@@ -360,7 +516,7 @@ void Scene3dDisplayable::render(IRenderer& renderer) const {
                     std::span{pose.uniforms}.subspan(kPoseChannels).data(), floats * sizeof(float));
         size += model.shader_floats * sizeof(float);
       }
-      renderer.draw_mesh(MeshDraw{.mesh = mesh.mesh,
+      renderer.draw_mesh(MeshDraw{.mesh = animated ? own->second.meshes.at(i) : mesh.mesh,
                                   .view_projection = view_projection,
                                   .model = world,
                                   .texture = mesh.texture,

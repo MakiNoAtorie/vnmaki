@@ -15,10 +15,13 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "engine/audio/voice_level.hpp"
+#include "engine/model3d/animation.hpp"
 #include "engine/model3d/math3d.hpp"
 #include "engine/model3d/model.hpp"
 #include "engine/platform/geometry.hpp"
@@ -85,6 +88,16 @@ struct Model3d {
   /// Set by Scene::prepare: the GPU shader and the floats of its constant buffer.
   ShaderId gpu_shader{};
   std::size_t shader_floats = 0;
+  /// The clips that play, empty for a model that has not played one. State: the snapshot keeps the
+  /// newest clip (see `settled`).
+  ClipPlayer clips{};
+  /// `lip_sync`: the morph target (by name) that follows the level of the voice with
+  /// `lip_voice_tag`, or "" for none. State.
+  std::string lip_morph{};
+  std::string lip_voice_tag{};
+  /// The voice level that the mouth follows now, from Scene::update. Not state: a restore and a
+  /// replay leave the mouth closed.
+  double lip_level = 0;
 };
 
 struct Light3d {
@@ -118,6 +131,16 @@ class ModelLibrary {
   [[nodiscard]] const std::vector<GpuMesh>* find(std::string_view path) const;
   /// The built-in fragment shader of a style, made on first use.
   [[nodiscard]] ShaderId builtin_shader(IRenderer& renderer, ShadingStyle style);
+  /// The parsed file, read on first use, or null if it cannot be read. Use find_data() where the
+  /// caller must not read files.
+  [[nodiscard]] const ModelData* data(std::string_view path);
+  /// The parsed file if check() or data() has read it.
+  [[nodiscard]] const ModelData* find_data(std::string_view path) const;
+  /// A mesh that a scene made for one model (the vertices of a skinned or morphed model change
+  /// with the pose) and no longer needs. release_retired() destroys it, which only the renderer
+  /// can.
+  void retire(MeshId mesh) { retired_.push_back(mesh); }
+  void release_retired(IRenderer& renderer);
   /// The shader builtin_shader() made, or the zero id before that.
   [[nodiscard]] ShaderId made_shader(ShadingStyle style) const {
     return shaders_.at(static_cast<std::size_t>(style));
@@ -127,6 +150,8 @@ class ModelLibrary {
   const Vfs* vfs_;
   std::map<std::string, ModelData, std::less<>> parsed_;
   std::map<std::string, std::vector<GpuMesh>, std::less<>> uploaded_;
+  std::set<std::string, std::less<>> failed_;  // files that data() could not read
+  std::vector<MeshId> retired_;
   std::array<ShaderId, 3> shaders_{};
   TextureId white_{};
 };
@@ -164,13 +189,26 @@ class Scene3dDisplayable final : public Displayable {
   /// Removes a model or a light. Returns false if there is none of that name.
   bool remove(std::string_view name);
 
+  /// Starts the clip `clip` of the model `model` (see PlayOptions). Returns why it cannot: no
+  /// such model, a clip the file does not have (when the file has been read), or an option out of
+  /// range.
+  [[nodiscard]] std::string play(std::string_view model, std::string_view clip,
+                                 const PlayOptions& options);
+  /// True while the model `model` (all models when empty) plays a clip that does not loop.
+  [[nodiscard]] bool clip_busy(std::string_view model) const;
+  /// Puts the clips of the model (all when empty) that do not loop at their end.
+  void finish_model_clips(std::string_view model);
+  /// Sets `Model3d::lip_level` of each model with a `lip_morph` from the voice levels, or to 0.
+  void set_voice_level(const VoiceLevel* levels);
+
   /// Uploads the models and makes the render target. Throws ModelError and RenderError.
   void prepare(IRenderer& renderer);
   /// Draws the models into the target in a pass of its own (with a depth buffer), which begins
   /// and ends there: the caller starts its pass again afterwards.
   void render(IRenderer& renderer) const;
 
-  void update(double /*seconds*/) override {}
+  /// Moves the clips of the models on.
+  void update(double seconds) override;
   /// Draws the picture that render() made, over the virtual screen, like an image.
   void draw(IRenderer& renderer) const override;
   [[nodiscard]] RectF bounds() const override;
@@ -183,7 +221,20 @@ class Scene3dDisplayable final : public Displayable {
   std::vector<Model3d> models_;
   std::vector<Light3d> lights_;
   TextureId target_{};
+  void update_instances(IRenderer& renderer);
+
+  // The meshes of the models whose vertices change with the pose, for each model tag. Each model
+  // has its own, because two models of one file may play different clips.
+  struct Instance {
+    std::string path{};
+    std::vector<MeshId> meshes{};
+  };
+  std::map<std::string, Instance, std::less<>> instances_;
 };
+
+/// The pose of `model`, which has the file `data`: its clips, with the morph target of its lip sync
+/// at the voice level (0 to 1). What the scene turns into vertices.
+[[nodiscard]] ModelPose pose_of(const Model3d& model, const ModelData& data);
 
 /// A new pose with the channel defaults of a model (scale 1), a light or the camera.
 [[nodiscard]] DisplayProperties default_model_pose();
