@@ -23,6 +23,7 @@
 #include "engine/render/renderer.hpp"
 #include "engine/render/shader_compiler.hpp"
 #include "engine/runtime/script_runtime.hpp"
+#include "engine/scene/camera.hpp"
 #include "engine/scene/displayable.hpp"
 #include "engine/scene/frame_animation.hpp"
 #include "engine/scene/layered_sprite.hpp"
@@ -111,10 +112,18 @@ inline constexpr std::string_view kLayerTagPrefix = "@layer.";
 /// a replay (ShowRequest::replaying, restore()) does not start one. It runs on update() and
 /// ends at once with finish_tweens(kTransitionTag).
 ///
+/// The camera (engine/scene/camera.hpp) moves the layers from the background to the overlay: the
+/// UI and transient layers stay. `tween("@camera", { x, y, zoom, rotation })` changes it, so
+/// `wait("@camera")` waits for a move or a shake. `set_parallax` gives a layer a factor for the
+/// camera's pan. `shake` adds a fixed function of time to the pan until its duration has passed;
+/// it is not in the snapshot and a replay does not start it. Layers draw through a CameraRenderer
+/// when the camera moves them, so every displayable follows it.
+///
 /// The snapshot is a map from a part's name to its bytes, so a later feature adds a part without
 /// changing the others: "displayables" (the images), "layered" (the layered sprites),
-/// "animations" (the frame animations), "tweens" (the loops) and "shaders" (the shader and
-/// uniform values of displayables and layers; left out when no shader is set). It keeps the
+/// "animations" (the frame animations), "tweens" (the loops), "shaders" (the shader and
+/// uniform values of displayables and layers; left out when no shader is set) and "camera" (the
+/// camera and the parallax of the layers; left out when they are the default). It keeps the
 /// properties as a replay would leave them: tweens that end are at their end values, loops at the
 /// value they started from, and restore() starts each loop again at time 0.
 class Scene final : public SceneState, public SceneCommands {
@@ -134,6 +143,8 @@ class Scene final : public SceneState, public SceneCommands {
                                            std::span<const std::string> uniforms) override;
   [[nodiscard]] std::string set_shader(const ShaderRequest& request) override;
   [[nodiscard]] std::string transition(const TransitionRequest& request) override;
+  [[nodiscard]] std::string set_parallax(std::string_view layer, double factor) override;
+  [[nodiscard]] std::string shake(const ShakeRequest& request) override;
 
   [[nodiscard]] std::vector<std::byte> capture() const override;
   void restore(std::span<const std::byte> state) override;
@@ -148,6 +159,11 @@ class Scene final : public SceneState, public SceneCommands {
   /// The shader and uniform values of a layer (the other properties mean nothing).
   [[nodiscard]] const DisplayProperties& layer_properties(Layer layer) const {
     return layer_state_.at(static_cast<std::size_t>(layer));
+  }
+  [[nodiscard]] const CameraState& camera() const { return camera_; }
+  /// The shake that runs, or null.
+  [[nodiscard]] const Shake* active_shake() const {
+    return shake_.has_value() ? &*shake_ : nullptr;
   }
 
   /// Advances the tweens and every displayable by `seconds`.
@@ -201,7 +217,7 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] Timeline::Lookup lookup();
   // The properties of a displayable, or of a layer for the tag "@layer.<name>"; null if unknown.
   [[nodiscard]] static DisplayProperties* properties_in(Layers& layers, LayerState& layer_state,
-                                                        std::string_view tag);
+                                                        CameraState& camera, std::string_view tag);
   [[nodiscard]] const DisplayProperties* properties_of(std::string_view tag) const;
   // The index of a uniform of the shader that `tag` has, from its name.
   [[nodiscard]] std::optional<std::size_t> uniform_index(std::string_view tag,
@@ -212,6 +228,8 @@ class Scene final : public SceneState, public SceneCommands {
   // std::invalid_argument.
   void read_shaders(std::span<const std::byte> bytes, Layers& layers,
                     LayerState& layer_state) const;
+  // Reads the "camera" part. Throws std::invalid_argument.
+  [[nodiscard]] static CameraState read_camera(std::span<const std::byte> bytes);
   // The number of the declared shader `name` (DisplayProperties::shader), or 0.
   [[nodiscard]] std::uint32_t shader_id(std::string_view name) const;
   // The shader with this number, or null for 0 and unknown numbers.
@@ -237,6 +255,8 @@ class Scene final : public SceneState, public SceneCommands {
   Size virtual_size_;
   Layers layers_;
   LayerState layer_state_;
+  CameraState camera_;
+  std::optional<Shake> shake_;
   std::vector<GameShader> shaders_;  // number n is shaders_[n - 1]
   std::array<TextureId, kLayerOrder.size()> layer_targets_{};
   std::vector<ShaderId> retired_shaders_;  // GPU shaders of redeclared shaders, to destroy

@@ -204,12 +204,12 @@ Files: new `engine/scene/layered_sprite.*`, `engine/scene/scene.cpp`, runtime.
 
 Files: new `engine/scene/camera.*`, `engine/scene/scene.cpp` (draw), `engine/anim/`, runtime.
 
-- [ ] `camera { x, y, zoom, rotation, duration, ease }` moves the view of the layers from background to overlay. The UI and transient layers do not move.
-- [ ] `layer(name, { parallax = f })`: the pan of that layer is f × the camera pan. The default is 1.
-- [ ] `shake { strength, duration }` uses a fixed noise function of time. It does not use `rand`, so `store` does not change.
-- [ ] `prefs.reduce_motion` stops shake and makes camera moves instant.
-- [ ] `tween("@camera", ...)` and `wait("@camera")` work. The camera is in the snapshot. After replay, the camera is at its end value.
-- [ ] GPU goldens: pan, zoom, rotation, parallax at two depths, and one shake frame at a fixed time.
+- [x] `camera { x, y, zoom, rotation, duration, ease }` moves the view of the layers from background to overlay. The UI and transient layers do not move.
+- [x] `layer(name, { parallax = f })`: the pan of that layer is f × the camera pan. The default is 1.
+- [x] `shake { strength, duration }` uses a fixed noise function of time. It does not use `rand`, so `store` does not change.
+- [x] `prefs.reduce_motion` stops shake and makes camera moves instant.
+- [x] `tween("@camera", ...)` and `wait("@camera")` work. The camera is in the snapshot. After replay, the camera is at its end value.
+- [x] GPU goldens: pan, zoom, rotation, parallax at two depths, and one shake frame at a fixed time.
 
 ### 24: Custom shaders and uniform tweens (SPEC §9, §10)
 

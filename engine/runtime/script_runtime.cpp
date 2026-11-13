@@ -630,6 +630,9 @@ local function tween_node(fname, tag, options, level)
     end
     node.tint = tonumber(tint:sub(2), 16)
   end
+  if tag == "@camera" then
+    engine.camera_options(fname, options, node, level)
+  end
   return node
 end
 
@@ -770,6 +773,7 @@ function layer(name, options)
   end
   options = options_argument("layer", options)
   require_label("layer")
+  engine.layer_parallax(name, options)
   engine.scene_command("layer " .. name .. engine.shader_options("layer", name, true, options))
 end
 )lua" R"lua(
@@ -837,6 +841,71 @@ end_with = function(name)
   if name ~= nil then
     finish_transition(name)
   end
+end
+)lua" R"lua(
+-- Camera (docs/SPEC.md sections 10 and 17). camera { x, y, zoom, rotation, duration, ease } moves
+-- the view of the layers from the background to the overlay: it is a tween of the tag "@camera",
+-- instant without a duration. shake { strength, duration } shakes it. layer(name, { parallax = f })
+-- makes the pan of one layer f times the camera's. The prefs flag reduce_motion (persistent.prefs,
+-- which a game or the default screens may not have) stops shakes and makes camera moves instant.
+function engine.reduce_motion()
+  local prefs = persistent.prefs
+  return type(prefs) == "table" and prefs.reduce_motion ~= nil and prefs.reduce_motion ~= false
+end
+
+-- The options of a tween of "@camera" that other tags do not have. `level` is as for tween_node.
+function engine.camera_options(fname, options, node, level)
+  local zoom = typed(fname, options, "zoom", "number", level + 1)
+  if zoom ~= nil then
+    node.scale_x, node.scale_y = zoom, zoom
+  end
+  if engine.reduce_motion() then
+    node.duration, node.delay, node.loop, node.yoyo = 0, 0, false, false
+    node.instant = true
+  end
+end
+
+-- The `parallax` option of `layer`. Errors reach the script that called `layer`.
+function engine.layer_parallax(name, options)
+  local parallax = options.parallax
+  if parallax == nil then
+    return
+  end
+  if type(parallax) ~= "number" then
+    error(format("bad option 'parallax' to 'layer' (number expected, got %s)", type(parallax)), 3)
+  end
+  local problem = engine.set_parallax(name, parallax)
+  if problem then
+    error(problem, 3)
+  end
+end
+
+function camera(options)
+  if type(options) ~= "table" then
+    bad_argument("camera", 1, "table", options)
+  end
+  require_label("camera")
+  local node = tween_node("camera", "@camera", options, 3)
+  node.duration = node.duration or 0
+  node.instant = node.duration == 0 and (node.delay or 0) == 0
+  start_tween(node, "camera")
+end
+
+function shake(options)
+  if type(options) ~= "table" then
+    bad_argument("shake", 1, "table", options)
+  end
+  require_label("shake")
+  local strength = typed("shake", options, "strength", "number", 2)
+  local duration = typed("shake", options, "duration", "number", 2)
+  if strength == nil then
+    error("shake() needs a strength", 2)
+  end
+  local problem = engine.shake(strength, duration or 0.5, engine.reduce_motion())
+  if problem then
+    error(problem, 2)
+  end
+  engine.scene_command("shake")
 end
 )lua" R"lua(
 -- Layered sprites: layered(name, { order = { group, ... }, <group> = "image" or
@@ -1555,6 +1624,7 @@ std::string read_tween(const sol::table& table, int depth, TweenRequest& request
   request.ease = table.get_or<std::string>("ease", request.ease);
   request.loop = table.get_or("loop", false);
   request.yoyo = table.get_or("yoyo", false);
+  request.instant = table.get_or("instant", false);
   if (const auto children = table.get<sol::optional<sol::table>>("children")) {
     const std::size_t count = children->size();
     request.children.reserve(count);
@@ -2147,6 +2217,25 @@ void ScriptRuntime::Impl::bind_engine() {
       }
     }
     return problem_or_nil(state, options_.scene->transition(request));
+  };
+  // The parallax of a layer is state: it changes during a replay too.
+  engine_["set_parallax"] = [this, problem_or_nil](sol::this_state state, const std::string& layer,
+                                                   double factor) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    return problem_or_nil(state, options_.scene == nullptr
+                                     ? std::string{}
+                                     : options_.scene->set_parallax(layer, factor));
+  };
+  // A replay, or reduced motion (`still`), checks a shake and does not show it.
+  engine_["shake"] = [this, problem_or_nil](sol::this_state state, double strength,
+                                            double duration, bool still) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    return problem_or_nil(
+        state, options_.scene == nullptr
+                   ? std::string{}
+                   : options_.scene->shake({.strength = strength,
+                                            .duration = duration,
+                                            .replaying = replaying_ || still}));
   };
   engine_["wait"] = sol::yielding([this](sol::this_state state, const std::string& tag) {
     yield_at(state, WaitRequest{.tag = tag});

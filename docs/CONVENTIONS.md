@@ -76,7 +76,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - If there is no device, it prints `VNMAKI_SKIP:` and ctest skips the test. `VNMAKI_REQUIRE_GPU=1` stops the skip. Linux CI sets it, because it has lavapipe.
   - Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png`.
   - `tools/generators/render_fixtures.py` makes the golden images with a reference rasterizer.
-  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`, `frame_anim_fixtures.py`, `transition_fixtures.py`.
+  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`, `frame_anim_fixtures.py`, `transition_fixtures.py`, `camera_fixtures.py`.
 
 ## Module contracts
 
@@ -161,7 +161,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Anchor and crop are fractions.
   - Rotation is in degrees, clockwise.
 - `Scene` keeps `std::unique_ptr<Displayable>`. `find(tag)` returns a `Displayable*`. Use `dynamic_cast` to get an `ImageDisplayable`.
-- The snapshot is a map from a part name to bytes: `displayables` (images), `layered`, `animations` and `tweens`. A new feature adds a part. `restore()` ignores a part that it does not know and reads a missing part as empty.
+- The snapshot is a map from a part name to bytes: `displayables` (images), `layered`, `animations`, `tweens`, `shaders` and `camera`. A new feature adds a part. `restore()` ignores a part that it does not know and reads a missing part as empty.
 - The snapshot keeps the properties as a replay leaves them. A tween that ends is at its end value. A loop is at the value where it started.
 - Tweens write through `Scene::find(tag)->properties()`. `Scene::update(seconds)` moves them. `hide` and `scene` end the tweens of the displayables that they remove.
 - `Scene::show` of a tag that is shown does not end its tweens.
@@ -180,6 +180,18 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - While a transition runs, `draw()` draws the layers into `frames_[1]` (live, so tweens go on). Then it draws one quad over the virtual screen with the transition shader into the pass of `target`, and the `ui` and `transient` layers after it. Texture slot 0 is the old frame, slot 1 the new frame and slot 2 the mask image (the new frame if there is none).
   - Without a transition `draw()` is as before: the layers draw into the pass of the caller, with no extra pass or quad.
   - `update(seconds)` moves the clock. `tweening(kTransitionTag)` is true until the duration has passed. The transition is drawn one more time at progress 1 and ends at the next `update()`. `finish_tweens(kTransitionTag)` and `restore()` end it at once. It is not in the snapshot.
+- Camera (`engine/scene/camera.*`, SPEC §10):
+  - The camera moves the layers from `background` to `overlay`. `ui` and `transient` stay. `CameraState` has a pose and a parallax factor for each of those five layers. `Scene::camera()` returns it.
+  - The pose is a `DisplayProperties`, so a tween reaches it with the tag `@camera` (like `@layer.<name>`). `position` is the pan in virtual pixels, `scale.x` is the zoom (above 0; 1 is none) and `rotation` turns the content clockwise, in degrees. Zoom and rotation are about the centre of the screen. A `show` tag cannot be `@camera`.
+  - A positive pan moves the view right and down, so the content moves left and up. The pan of a layer is `parallax * (pan + shake)`. Zoom and rotation do not depend on the layer.
+  - `CameraView` maps a point of a layer to the screen. `Scene::draw_layers` draws a layer that the camera moves through a `CameraRenderer`, an `IRenderer` that passes every call on and moves the corners of each quad. So every displayable follows the camera with no code of its own. A layer with a shader draws into its target with the camera applied, and then the target draws as it is. A transition mixes frames that were drawn with the camera.
+  - Without a move (a default camera, or a shake of nothing) the layers draw into the renderer of the caller, as before.
+  - `SceneCommands::shake(ShakeRequest)` starts a shake: `strength` is a fraction of the virtual height, `duration` is in seconds. The offset is `shake_offset(Shake)`: smooth noise of the time, from a hash of integers (24 points per second), times a factor that falls from 1 to 0. It is a fixed function of the time, never `rand`. The shake clock is `Scene::update`. A new shake replaces the one that runs.
+  - A shake is not in the snapshot. A replay checks the request and starts no shake (`ShakeRequest::replaying`).
+  - `tweening("@camera")` (and `tweening("")`) is true while a camera tween that ends or a shake runs, so `wait("@camera")` waits for both. `finish_tweens("@camera")` ends them: the tweens go to their end values and the shake stops.
+  - `SceneCommands::set_parallax(layer, factor)` sets the factor of a layer (default 1, from -100 to 100). A layer that the camera does not move is an error.
+  - The snapshot part `camera` has the pan, the zoom, the rotation and the parallax of the layers that do not have 1. It is left out when the camera is the default, so a game without a camera has the snapshots that it had before. As for other tweens, a tween that ends is at its end value in the snapshot. A loop on `@camera` is in `tweens`. `restore()` also ends a shake.
+  - The GPU goldens are from `tools/generators/camera_fixtures.py`. It repeats the shake noise in Python. A change to the noise in `camera.cpp` needs the same change there and in `tests/unit/camera_test.cpp`.
 - `SceneCommands` calls return an error string. The prelude raises it at the script line.
 - `SceneCommands` calls also run during replay.
 - `SceneCommands` has `animation`, `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
@@ -233,6 +245,10 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `Transition` is the clock. It has no real clock: the caller gives the seconds to `advance()`. Progress is linear.
   - Script API: `transition(name, options)` and the `with` option of `scene(image, options)`, `show(tag, options)` and `hide(tag, options)`. `with` is a name, or `{ name, option = value, ... }`. `with` starts the transition before the change, so a bad name changes nothing. All the changes of one step (since the last blocking call) use the one transition that the step ends with. A layered sprite cannot have a group named `with`.
   - A transition blocks like `wait`: it is a `WaitRequest` with the tag `kTransitionTag` (`"@transition"`). It is a step also when nothing is shown, so replay counts the same steps. `WaitPresenter::skip()` (a click, skip mode) ends it. `ScriptPosition::wait` marks it, so rollback goes back over it. In a replay the transition is checked and not shown. In skip mode the first tick of a transition can be drawn.
+- Camera (`camera.hpp`, see Scene):
+  - Script API: `camera { x, y, zoom, rotation, duration, ease, delay }` is `tween("@camera", ...)` that is instant when it has no duration. `x` and `y` are fractions of the virtual width and height, as for `show`. `scale` also works for `zoom`. `shake { strength, duration }` has a strength from 0 to 1 (a fraction of the virtual height, required) and a duration above 0 (0.5 s if none). `layer(name, { parallax = f })` sets the factor of a layer, with or without the `shader` option.
+  - `tween("@camera", ...)` allows only `x`, `y`, `zoom` (or `scale`) and `rotation`, and no uniforms. The zoom must be above 0. `wait("@camera")` waits for a move or a shake. `camera` and `shake` do not block. A loop on `@camera` never blocks a wait.
+  - `TweenRequest::instant` is `replaying` for a request that is not a replay: the tweens that end go to their end values at once.
 - `ScriptPosition::wait` marks a wait step. Rollback goes back over wait steps to the previous say, narrate, menu or `call_screen` (a wait is never a rollback step).
 
 ### Dialogue (`engine/dialogue/`)
@@ -363,6 +379,10 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `ScriptRuntimeOptions::screens` (`ScreenCommands`, implemented by `UiHost`) carries out `show_screen` and `hide_screen`.
   - `check_screen` runs on every tree first. Its error string is raised at the script line.
   - The runtime includes no ui headers. It reads the Lua node tables into `ScreenNodeDef`.
+- Reduced motion (SPEC §17): `engine.reduce_motion()` in the prelude is true when `persistent.prefs.reduce_motion` is set (not nil, not false). It is false when `persistent.prefs` is not a table or has no such key, so camera code works before and after the preferences (task 18) put `prefs` in `persistent`. Camera calls read it when they run, so a change takes effect at the next call.
+  - A tween of `@camera` (also `camera`, and each `@camera` item of `sequence` and `parallel`) gets a duration of 0, no delay, no loop and no yoyo. `tween` and `camera` also make it instant. The `wait` step stays, so a replay counts the same steps.
+  - `shake` checks its arguments and starts nothing (`ShakeRequest::replaying`).
+  - Other motion (tweens of displayables, transitions) is not changed by this flag yet.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
 - `wait(tag)`, `wait_all()` and transitions (`transition(...)`, the `with` option) are blocking calls too (`WaitRequest`; a transition has the tag `@transition`). `advance()` ends them. See Anim.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it. It ends a wait at once and needs no input for it.
