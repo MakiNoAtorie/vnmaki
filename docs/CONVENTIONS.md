@@ -58,8 +58,9 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Tests use doctest. Each doctest executable needs `DOCTEST_CONFIG_USE_STD_HEADERS`.
 - Unit tests are in `tests/unit/*_test.cpp`. They run in `vnmaki_unit_tests`. The ctest name of each test is `unit.<name>`.
 - Platform tests are in `tests/platform/` and have their own executable. On Linux, they use `SDL_VIDEO_DRIVER=offscreen`.
-- CLI tests use `vnmaki_add_cli_test(name ARGS ... EXIT n [STDOUT_LINE t | NO_STDOUT] [STDERR_REGEX r])`.
+- CLI tests use `vnmaki_add_cli_test(name ARGS ... EXIT n [STDOUT_LINE t | NO_STDOUT] [STDERR_REGEX r] [EXPECTED_FILES f...])`.
 - To compare output with a file, use `vnmaki_add_cli_stdout_file_test(... STDOUT_FILE f)`.
+- A `vnmaki run` test never touches the user-data directory (AppData). Both helpers add `--data-dir <build>/tests/cli/data/<name>` to every `ARGS` that starts with `run`, and the runner script empties that folder first. So no test shares saves with another. A test that adds `add_test` by hand must do the same (`vnmaki_isolate_run_data`).
 - Do not make test fixtures by hand. A Python 3 script in `tools/generators/` writes them.
   - The script uses only the standard library. Its only argument is `OUT_DIR`.
   - Register it with `vnmaki_add_fixture_generator(<name> SCRIPT ... TEST_TARGETS ...)`.
@@ -177,7 +178,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - A wait is always one step, also when nothing is tweening, so replay counts the same steps as live play. `WaitPresenter` (`wait_presenter.hpp`) ends it:
   - Call `update()` once per update after `Scene::update`. It ends a wait whose tweens have ended.
   - Call `skip()` on a click or in skip mode, before `DialoguePresenter::advance()`. It puts the tweens at their end values and goes on. If it returns true, the input is used.
-- `ScriptPosition::wait` marks a wait step. Rollback (task 13) must go back over wait steps to the previous say or menu. This is not done yet.
+- `ScriptPosition::wait` marks a wait step. Rollback goes back over wait steps to the previous say, narrate, menu or `call_screen` (a wait is never a rollback step).
 
 ### Dialogue (`engine/dialogue/`)
 
@@ -194,7 +195,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `DialoguePresenter::line_serial()` changes when line() shows another line. The presenter also follows a story that moved by itself (a load).
 - `PlaybackIndicator` (`engine/ui/playback_indicator.hpp`) shows the screen `vnmaki:playback` ("SKIP", "SKIP ALL", "AUTO", ...) while a mode is on. Call `sync(skip, automatic)` every frame.
 - The default font of a project is `fonts/default.ttf` in its VFS. The engine has no font.
-- `vnmaki run <dir> [--frames N]` plays in a window. It exits with 0 when the story ends.
+- `vnmaki run <dir> [--frames N] [--data-dir <path>]` plays in a window. It exits with 0 when the story ends. Saves and `persistent.vnpersist` go to `--data-dir`, or else to the user-data directory of the project title. This also applies to `--headless`.
+- Rollback input (`is_rollback_event`, `rollback_input.hpp`): mouse wheel up, Page Up, gamepad left shoulder. The story window checks it after the screens and calls `ScriptRuntime::roll_back()`. It turns skip off. Task 42 will make the keys configurable.
 - `SayRequest` has `color` (0xRRGGBB) and `voice_tag` from `character{}`.
 
 ### UI (`engine/ui/`)
@@ -267,13 +269,24 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
 - `wait(tag)` and `wait_all()` are blocking calls too (`WaitRequest`). `advance()` ends them. See Anim.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it. It ends a wait at once and needs no input for it.
-- `project.toml` has `title` (required), `version`, `resolution`, `languages` and `auto_save` (a list of `"label"` and `"menu"`).
+- `project.toml` has `title` (required), `version`, `resolution`, `languages`, `auto_save` (a list of `"label"` and `"menu"`) and `rollback_depth` (0 to 10000, default 100).
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
   - A slot is an integer from 1. `load` with a number is a slot. With a string or function it is Lua's `load`.
 - `on_load(function(old_version, store) ... end)` registers the migration hook while the scripts load. `run_on_load(snapshot, old_version)` runs it on the store of a snapshot, not on the live `store`.
 - `persistent` is a second Lua table, like `store`, but it is not in any snapshot or save. Rollback and load never change it.
   - `persistent_snapshot()` and `restore_persistent()` give the host the data. Call `restore_persistent` before `load_scripts()`.
   - A replay runs script code again, so code that writes to `persistent` must be idempotent (`persistent.won = true`, not `persistent.n = persistent.n + 1`).
+- Rollback keeps its history in the runtime. `roll_back()` and `rollback_steps()` are the interface.
+  - A step (`RollbackStep`) is a position where the story waited at a say, narrate, menu or `call_screen`. A `wait` is not a step. It holds the label-entry snapshot and input log of the outermost running label, and the number (`ordinal`) of the yield point. So each step stands alone, and the history works across `jump`, `call` and `ret`.
+  - `roll_back()` replays the outermost label from its snapshot, with the labels it called, to that yield point (`begin_replay` with an ordinal). Replay does not report the label entries, and it does not add a step. The observer then hears the request, as for a load.
+  - From a say or menu it goes to the step before. From a wait it goes to the last step. It returns false when there is nothing to go back to, and then it changes nothing.
+  - The history keeps `ScriptRuntimeOptions::rollback_depth` steps back (default 100, `project.toml` key `rollback_depth`, 0 is off). The oldest steps go first.
+  - A rollback drops the later steps at once. There is no roll forward. The player who goes back to a menu and chooses again gets a new branch with no trace of the old one.
+  - `menu { "a", "b", fixed = true }`: after the player answers it, the history is empty. Rollback cannot go back to the menu or before it. `fixed` must be a boolean.
+  - `replay()` (a load) empties the history. The story then starts a new one.
+  - Rollback and `persistent`: rollback never changes it. A replay runs script code again, so the idempotence rule for `persistent` is also true here.
+  - `show_screen` and `hide_screen` are not in snapshots (see UI), so a rollback does not undo them.
+  - The headless runner has `RollbackInput`. It fails the run when there is nothing to go back to.
 - `skip("seen" | "all" | "off" | false)` and `auto(bool)` queue a `PlaybackRequest`. `take_playback_requests()` gives them to the host. They are dropped during a replay.
 - `character { auto_multiplier = n }` goes to `SayRequest::auto_multiplier` (default 1).
 - `drop_callers()` makes the running label the outermost label. A load calls it before `replay()`.
