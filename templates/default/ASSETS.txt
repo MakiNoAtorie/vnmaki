@@ -32,5 +32,7 @@ for example OpenDyslexic (https://opendyslexic.org/), under the same name, and r
 here. The engine loads fonts/dyslexia.ttf when it exists and puts it first in the font chain while
 the player has "Dyslexia-friendly font" on.
 
+translations/ja.po has one translated line (the narration of the label warm) to show the Japanese language, which is written in columns. With this font the line shows as boxes.
+
 The font has no accents or non-Latin letters. For a game in another language, use a font that
 has them, and list it under [fonts.fallback] in project.toml.

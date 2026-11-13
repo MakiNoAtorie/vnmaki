@@ -558,10 +558,10 @@ Files: `engine/text/`, `engine/dialogue/say_box.*`, `tools/generators/text_fixtu
 
 This task is the Phase 7 acceptance demo.
 
-- [ ] A headless test edits the template quick menu `gap` through the editor functions and checks the new node rectangles after reload.
-- [ ] A launcher action test runs New, Check and Build windows on a temporary folder.
-- [ ] A GPU golden of the template say box in vertical Japanese.
-- [ ] Update `docs/tools.md` for the editor and the launcher.
+- [x] A headless test edits the template quick menu `gap` through the editor functions and checks the new node rectangles after reload.
+- [x] A launcher action test runs New, Check and Build windows on a temporary folder.
+- [x] A GPU golden of the template say box in vertical Japanese.
+- [x] Update `docs/tools.md` for the editor and the launcher.
 
 ### Deferred
 

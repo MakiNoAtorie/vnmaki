@@ -55,6 +55,7 @@ What it can change and what it cannot:
   - the screen is a function, `screen("name", function(args) ... end)`, or two scripts define it, or the engine makes it (the default screens, the menu, the banner of hot reload);
   - a table above it has an entry that is computed (a call like `rows()`, a name, a `for`), because then the nodes at run time may not be the nodes in the file. The values of that table itself can still change;
   - the file has more or fewer nodes in the table than the screen shows (you edited the file and it did not load yet).
+- The game of `vnmaki new` has its quick menu in `scripts/ui.lua` as a table, so you can try the editor on it: pick the row of buttons at the top right, change `gap`, and press Save. The engine's own `quick_menu` is a function and stays read-only; a game that deletes `ui.lua` gets that one.
 - `style = "name"` is a string value. The values inside a style (`styles/*.lua`) are not in the screen table, and the editor does not change them.
 - If the file changed after you picked the node (for example in your editor), Save does nothing and says so. Pick the node again.
 - A string that has the escape `\u{...}` is read-only.
@@ -185,7 +186,7 @@ Load it with "Developer: Install Extension from Location..." (or copy the folder
 
 - Type the project folder in the text field, or click a folder of the recent list to put it there.
 - Buttons, each on the folder of the field:
-  - **New** makes a project from the template in that folder (it must not exist, or be empty). Same as `vnmaki new`.
+  - **New** makes a project from the template in that folder (it must not exist, or be empty). Same as `vnmaki new`. The template has English and a sample of Japanese (`ja`, written in columns), and `vnmaki check` finds nothing in it, so New, Check and Build windows work in this order on a new folder.
   - **Run** plays the game in its own window, as a separate `vnmaki run <folder>` process. The launcher stays open, and a crash of the game does not close it. The messages of the game go to the console that started the launcher, not to the log.
   - **Check**, **Extract strings** and **Build windows** do what `vnmaki check`, `vnmaki extract-strings` and `vnmaki build windows` do, and the log shows their output. The build goes to `<folder>/.vnmaki/windows` and uses the release `vnmaki.exe` of `build/release/cli` as the runner (see `docs/CONVENTIONS.md`).
   - **Open folder** shows the folder in Windows Explorer.
