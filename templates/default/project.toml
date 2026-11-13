@@ -1,0 +1,6 @@
+title = "{{title}}"
+version = "0.1.0"
+resolution = [1280, 720]
+languages = ["en"]
+# The story writes the "auto" save slot at each label and each menu.
+auto_save = ["label", "menu"]

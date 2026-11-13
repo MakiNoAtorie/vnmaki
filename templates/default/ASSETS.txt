@@ -1,0 +1,17 @@
+Assets of this project
+=====================
+
+images/, audio/ and fonts/default.ttf were made by the script
+tools/generators/template_assets.py of VNMaki (https://github.com/MakiNoAtorie/vnmaki), from
+rectangles, ellipses and sine waves. No other artwork, music or font file was used.
+
+They are dedicated to the public domain under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).
+You may use, change and sell them with your game, with no credit. Replace them with your own.
+
+  images/bg/classroom.png            backdrop
+  images/eileen/*.png                layers of the sprite "eileen"
+  audio/bgm/theme.wav                music loop
+  fonts/default.ttf                  5 by 7 pixel font, ASCII only
+
+The font has no accents or non-Latin letters. For a game in another language, use a font that
+has them, and list it under [fonts.fallback] in project.toml.
