@@ -1,5 +1,6 @@
 #include "engine/tools/script_scan.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -77,6 +78,7 @@ class Lexer {
 
   std::vector<LuaToken> run() {
     while (pos_ < source_.size()) {
+      token_begin_ = pos_;
       const char c = source_[pos_];
       const std::optional<std::size_t> level = c == '[' ? long_bracket_level() : std::nullopt;
       if (take_newline()) {
@@ -97,8 +99,8 @@ class Lexer {
       } else if (is_digit(c) || (c == '.' && is_digit(peek(1)))) {
         add(LuaTokenKind::kNumber, read_number(), line_);
       } else {
-        add(LuaTokenKind::kSymbol, std::string(1, c), line_);
         ++pos_;
+        add(LuaTokenKind::kSymbol, std::string(1, c), line_);
       }
     }
     return std::move(tokens_);
@@ -110,7 +112,8 @@ class Lexer {
   }
 
   void add(LuaTokenKind kind, std::string text, std::uint32_t line) {
-    tokens_.push_back(LuaToken{.kind = kind, .text = std::move(text), .line = line});
+    tokens_.push_back(LuaToken{
+        .kind = kind, .text = std::move(text), .line = line, .begin = token_begin_, .end = pos_});
   }
 
   // Consumes one line break (LF, CR, CRLF or LFCR) and counts it.
@@ -278,6 +281,7 @@ class Lexer {
 
   std::string_view source_;
   std::size_t pos_ = 0;
+  std::size_t token_begin_ = 0;  // where the token that add() gets starts
   std::uint32_t line_ = 1;
   std::vector<LuaToken> tokens_;
 };
@@ -619,6 +623,176 @@ std::vector<ScanScreen> scan_screen_tokens(std::span<const LuaToken> tokens) {
 std::vector<ScanScreen> scan_screens(std::string_view source) {
   const std::vector<LuaToken> tokens = tokenize_lua(source);
   return scan_screen_tokens(tokens);
+}
+
+namespace {
+
+// The nesting of node tables that the screen scan follows; deeper ones count as computed.
+constexpr std::size_t kMaxNodeDepth = 64;
+
+constexpr std::array<std::string_view, 11> kNodeKinds{"box",    "hbox",   "vbox",  "text",
+                                                      "image",  "button", "toggle", "slider",
+                                                      "bar",    "grid",   "input"};
+
+bool is_node_kind(std::string_view name) {
+  return std::ranges::find(kNodeKinds, name) != kNodeKinds.end();
+}
+
+// The kinds that take a string as a positional item (`node_takes_text` of the Lua prelude).
+bool takes_text(std::string_view kind) {
+  return kind == "text" || kind == "button" || kind == "image" || kind == "toggle" ||
+         kind == "input";
+}
+
+// The value of a field, from the tokens of the range (not empty).
+ScanField make_field(std::span<const LuaToken> tokens, std::string key, const Range& value) {
+  const LuaToken& first = tokens[value.begin];
+  ScanField field{.key = std::move(key),
+                  .begin = first.begin,
+                  .end = tokens[value.end - 1].end,
+                  .line = first.line};
+  const std::size_t count = value.end - value.begin;
+  if (count == 1 && first.kind == LuaTokenKind::kString) {
+    field.kind = ScanValueKind::kString;
+    field.text = first.text;
+  } else if (count == 1 && first.kind == LuaTokenKind::kNumber) {
+    field.kind = ScanValueKind::kNumber;
+    field.text = first.text;
+  } else if (count == 2 && is_symbol(first, '-') &&
+             tokens[value.begin + 1].kind == LuaTokenKind::kNumber) {
+    field.kind = ScanValueKind::kNumber;
+    field.text = "-" + tokens[value.begin + 1].text;
+  } else if (count == 1 && (is_name(first, "true") || is_name(first, "false"))) {
+    field.kind = ScanValueKind::kBoolean;
+    field.text = first.text;
+  }
+  return field;
+}
+
+// The entries of the table that starts at tokens[open] (a "{"), split at the commas and
+// semicolons of its top level. Same ponytail as table_elements: a comma in a `function ... end`
+// splits an entry.
+std::vector<Range> table_entries(std::span<const LuaToken> tokens, std::size_t open) {
+  std::vector<Range> entries;
+  const std::size_t end = matching_end(tokens, open);
+  const std::size_t last = end > open + 1 && is_symbol(tokens[end - 1], '}') ? end - 1 : end;
+  std::size_t nesting = 0;
+  std::size_t begin = open + 1;
+  const auto add = [&](std::size_t stop) {
+    if (begin < stop) {
+      entries.push_back({.begin = begin, .end = stop});
+    }
+  };
+  for (std::size_t i = open + 1; i < last; ++i) {
+    if (tokens[i].kind != LuaTokenKind::kSymbol || tokens[i].text.size() != 1) {
+      continue;
+    }
+    const char c = tokens[i].text.front();
+    if (c == '(' || c == '[' || c == '{') {
+      ++nesting;
+    } else if ((c == ')' || c == ']' || c == '}') && nesting > 0) {
+      --nesting;
+    } else if ((c == ',' || c == ';') && nesting == 0) {
+      add(i);
+      begin = i + 1;
+    }
+  }
+  add(last);
+  return entries;
+}
+
+void add_field(ScanNode& node, ScanField field) {
+  if (!field.key.empty()) {
+    for (ScanField& earlier : node.fields) {
+      if (earlier.key == field.key) {  // the later one wins at run time
+        earlier.kind = ScanValueKind::kComputed;
+        earlier.text.clear();
+      }
+    }
+  }
+  node.fields.push_back(std::move(field));
+}
+
+// The node whose table starts at tokens[open] (a "{").
+ScanNode parse_node_table(std::span<const LuaToken> tokens, std::string kind, std::uint32_t line,
+                          std::size_t open, std::size_t depth) {
+  ScanNode node{.kind = std::move(kind), .line = line};
+  bool has_text = false;
+  for (const Range& entry : table_entries(tokens, open)) {
+    const LuaToken& first = tokens[entry.begin];
+    const bool has_next = entry.end > entry.begin + 1;
+    if (first.kind == LuaTokenKind::kName && entry.end > entry.begin + 2 &&
+        is_symbol(tokens[entry.begin + 1], '=') && !is_symbol(tokens[entry.begin + 2], '=')) {
+      add_field(node, make_field(tokens, first.text, {.begin = entry.begin + 2, .end = entry.end}));
+    } else if (first.kind == LuaTokenKind::kString && !has_next && takes_text(node.kind) &&
+               !has_text) {
+      has_text = true;
+      add_field(node, make_field(tokens, "", entry));
+    } else if (first.kind == LuaTokenKind::kName && is_node_kind(first.text) && has_next &&
+               depth < kMaxNodeDepth && is_symbol(tokens[entry.begin + 1], '{') &&
+               matching_end(tokens, entry.begin + 1) == entry.end) {
+      node.children.push_back(
+          parse_node_table(tokens, first.text, first.line, entry.begin + 1, depth + 1));
+    } else if (first.kind == LuaTokenKind::kName && takes_text(first.text) && has_next &&
+               entry.end == entry.begin + 2 &&
+               tokens[entry.begin + 1].kind == LuaTokenKind::kString) {  // text "Hi"
+      ScanNode child{.kind = first.text, .line = first.line};
+      add_field(child, make_field(tokens, "", {.begin = entry.begin + 1, .end = entry.end}));
+      node.children.push_back(std::move(child));
+    } else {
+      node.dynamic = true;
+    }
+  }
+  return node;
+}
+
+// The root that the prelude's screen_root makes of the table of a screen.
+ScanNode screen_root_node(ScanNode table) {
+  if (!table.dynamic && table.children.size() == 1) {
+    return std::move(table.children.front());
+  }
+  return table;
+}
+
+}  // namespace
+
+std::vector<ScanScreenTree> scan_screen_trees(std::span<const LuaToken> tokens) {
+  std::vector<ScanScreenTree> screens;
+  for (std::size_t i = 0; i + 1 < tokens.size(); ++i) {
+    if (!is_name(tokens[i], "screen") || is_member_use(tokens, i)) {
+      continue;
+    }
+    ScanScreenTree screen{.line = tokens[i].line};
+    std::optional<std::size_t> table;  // the "{" of the table form
+    if (is_symbol(tokens[i + 1], '(')) {
+      const std::vector<Range> ranges = argument_ranges(tokens, i + 1);
+      if (ranges.empty()) {
+        continue;
+      }
+      screen.name = literal(tokens, ranges.front());
+      if (ranges.size() >= 2 && ranges[1].begin < ranges[1].end &&
+          is_symbol(tokens[ranges[1].begin], '{') &&
+          matching_end(tokens, ranges[1].begin) == ranges[1].end) {
+        table = ranges[1].begin;
+      }
+    } else if (tokens[i + 1].kind == LuaTokenKind::kString && i + 2 < tokens.size() &&
+               is_symbol(tokens[i + 2], '{')) {
+      screen.name = tokens[i + 1].text;
+      table = i + 2;
+    } else {
+      continue;
+    }
+    if (screen.name && table) {
+      screen.root = screen_root_node(parse_node_table(tokens, "box", screen.line, *table, 0));
+    }
+    screens.push_back(std::move(screen));
+  }
+  return screens;
+}
+
+std::vector<ScanScreenTree> scan_screen_trees(std::string_view source) {
+  const std::vector<LuaToken> tokens = tokenize_lua(source);
+  return scan_screen_trees(tokens);
 }
 
 }  // namespace vnmaki
