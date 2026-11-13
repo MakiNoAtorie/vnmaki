@@ -11,7 +11,6 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
-#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
