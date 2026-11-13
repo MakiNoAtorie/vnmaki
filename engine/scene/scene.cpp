@@ -811,6 +811,50 @@ bool Scene::tweening(std::string_view tag) const {
 }
 
 std::string Scene::declare_shader(std::string_view name, std::span<const std::string> uniforms) {
+  return declare_shader_impl(name, uniforms, false);
+}
+
+std::string Scene::recompile_shader(std::string_view name) {
+  const std::uint32_t existing = shader_id(name);
+  if (existing == 0) {
+    return {};
+  }
+  const std::vector<std::string> uniforms = shaders_.at(existing - 1).uniforms;
+  return declare_shader_impl(name, uniforms, true);
+}
+
+std::string Scene::reload_image(const std::string& path, JobSystem& jobs) {
+  const auto found = textures_.find(path);
+  if (found == textures_.end() || renderer_ == nullptr) {
+    return {};  // never drawn: prepare() reads the file when it is needed
+  }
+  Image decoded;
+  try {
+    decoded = load_image(*vfs_, jobs, path).get();
+  } catch (const std::exception& error) {
+    return path + ": " + error.what();
+  }
+  retired_textures_->push_back(found->second.id);  // destroyed by the next prepare()
+  found->second = {.id = renderer_->create_texture(decoded, TextureFilter::kLinear),
+                   .size = decoded.size};
+  for (std::vector<Entry>& shown : layers_) {
+    for (Entry& entry : shown) {
+      Displayable* displayable = entry.displayable.get();
+      if (auto* image = dynamic_cast<ImageDisplayable*>(displayable);
+          image != nullptr && image->path() == path) {
+        image->set_texture(found->second.id, found->second.size);
+      } else if (auto* sprite = dynamic_cast<LayeredSprite*>(displayable)) {
+        sprite->set_texture(path, found->second.id, found->second.size);
+      } else if (auto* animation = dynamic_cast<FrameAnimation*>(displayable)) {
+        animation->set_texture(path, found->second.id, found->second.size);
+      }
+    }
+  }
+  return {};
+}
+
+std::string Scene::declare_shader_impl(std::string_view name,
+                                       std::span<const std::string> uniforms, bool force) {
   const std::string label = quoted("shader '", name, "'");
   if (uniforms.size() > kMaxUniforms) {
     return label + " declares more than " + std::to_string(kMaxUniforms) + " uniforms";
@@ -822,7 +866,7 @@ std::string Scene::declare_shader(std::string_view name, std::span<const std::st
   }
   GameShader shader{.name = std::string{name}, .uniforms = {uniforms.begin(), uniforms.end()}};
   const std::uint32_t existing = shader_id(name);
-  if (existing != 0 && shaders_.at(existing - 1).uniforms == shader.uniforms) {
+  if (!force && existing != 0 && shaders_.at(existing - 1).uniforms == shader.uniforms) {
     return {};
   }
 

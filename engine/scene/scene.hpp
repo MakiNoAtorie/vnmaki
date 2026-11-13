@@ -156,6 +156,15 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] bool tweening(std::string_view tag) const override;
   [[nodiscard]] std::string declare_shader(std::string_view name,
                                            std::span<const std::string> uniforms) override;
+  /// Dev tools (hot reload): compiles the declared shader `name` again from its file. Returns the
+  /// compile error, leaving the old shader in use, or an empty string; an undeclared name does
+  /// nothing.
+  [[nodiscard]] std::string recompile_shader(std::string_view name);
+  /// Dev tools (hot reload): reads the image file `path` again and puts its texture in place of
+  /// the old one in every displayable that shows it. Returns why it cannot decode the file (the
+  /// old texture stays), or an empty string. Does nothing for a file that was never drawn, and
+  /// before the first prepare().
+  [[nodiscard]] std::string reload_image(const std::string& path, JobSystem& jobs);
   [[nodiscard]] std::string set_shader(const ShaderRequest& request) override;
   [[nodiscard]] std::string transition(const TransitionRequest& request) override;
   [[nodiscard]] std::string set_parallax(std::string_view layer, double factor) override;
@@ -252,6 +261,9 @@ class Scene final : public SceneState, public SceneCommands {
                     LayerState& layer_state) const;
   // Reads the "camera" part. Throws std::invalid_argument.
   [[nodiscard]] static CameraState read_camera(std::span<const std::byte> bytes);
+  // declare_shader(); `force` compiles a shader that is declared with the same uniforms again.
+  [[nodiscard]] std::string declare_shader_impl(std::string_view name,
+                                                std::span<const std::string> uniforms, bool force);
   // The number of the declared shader `name` (DisplayProperties::shader), or 0.
   [[nodiscard]] std::uint32_t shader_id(std::string_view name) const;
   // The shader with this number, or null for 0 and unknown numbers.
