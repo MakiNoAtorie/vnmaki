@@ -4,10 +4,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <algorithm>
+#include <array>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -119,6 +125,34 @@ void decode_stb(std::span<const std::byte> encoded, Image& image) {
   image.pixels.assign(source.begin(), source.end());
 }
 
+void premultiply_image(Image& image) {
+  for (std::size_t offset = 0; offset < image.pixels.size(); offset += kChannels) {
+    const std::uint8_t alpha = image.pixels[offset + 3];
+    for (std::size_t channel = 0; channel < 3; ++channel) {
+      image.pixels[offset + channel] = premultiply(image.pixels[offset + channel], alpha);
+    }
+  }
+}
+
+struct FormatTable {
+  std::mutex lock;
+  std::map<std::string, ImageFormatDecoder, std::less<>> decoders;
+};
+
+FormatTable& formats() {
+  static FormatTable table;
+  return table;
+}
+
+std::string extension_of(std::string_view path) {
+  const std::size_t dot = path.rfind('.');
+  const std::size_t slash = path.rfind('/');
+  if (dot == std::string_view::npos || (slash != std::string_view::npos && dot < slash)) {
+    return {};
+  }
+  return std::string{path.substr(dot)};
+}
+
 }  // namespace
 
 Image decode_image(std::span<const std::byte> encoded) {
@@ -131,13 +165,42 @@ Image decode_image(std::span<const std::byte> encoded) {
   } else {
     decode_stb(encoded, image);
   }
-  for (std::size_t offset = 0; offset < image.pixels.size(); offset += kChannels) {
-    const std::uint8_t alpha = image.pixels[offset + 3];
-    for (std::size_t channel = 0; channel < 3; ++channel) {
-      image.pixels[offset + channel] = premultiply(image.pixels[offset + channel], alpha);
-    }
-  }
+  premultiply_image(image);
   return image;
+}
+
+void register_image_format(std::string extension, ImageFormatDecoder decoder) {
+  constexpr std::array<std::string_view, 4> kBuiltIn{".png", ".jpg", ".jpeg", ".webp"};
+  const bool well_formed =
+      extension.size() > 1 && extension.front() == '.' &&
+      extension.find_first_of("/\\.", 1) == std::string::npos &&
+      std::ranges::none_of(extension, [](char c) { return c >= 'A' && c <= 'Z'; });
+  if (!well_formed || std::ranges::find(kBuiltIn, extension) != kBuiltIn.end() || !decoder) {
+    throw std::invalid_argument{"image format '" + extension +
+                                "': needs a lower case extension with a dot, not a built-in one"};
+  }
+  FormatTable& table = formats();
+  const std::scoped_lock guard{table.lock};
+  if (!table.decoders.emplace(std::move(extension), std::move(decoder)).second) {
+    throw std::invalid_argument{"image format is already registered"};
+  }
+}
+
+void clear_image_formats() {
+  FormatTable& table = formats();
+  const std::scoped_lock guard{table.lock};
+  table.decoders.clear();
+}
+
+std::vector<std::string> image_format_extensions() {
+  FormatTable& table = formats();
+  const std::scoped_lock guard{table.lock};
+  std::vector<std::string> names;
+  names.reserve(table.decoders.size());
+  for (const auto& entry : table.decoders) {
+    names.push_back(entry.first);
+  }
+  return names;
 }
 
 JobHandle<Image> load_image(const Vfs& vfs, JobSystem& jobs, std::string path) {
@@ -147,8 +210,28 @@ JobHandle<Image> load_image(const Vfs& vfs, JobSystem& jobs, std::string path) {
     if (!encoded) {
       throw ImageError{"cannot read image '" + path + "'"};
     }
+    ImageFormatDecoder decoder;
+    {
+      FormatTable& table = formats();
+      const std::scoped_lock guard{table.lock};
+      const auto found = table.decoders.find(extension_of(path));
+      if (found != table.decoders.end()) {
+        decoder = found->second;
+      }
+    }
     try {
-      return decode_image(*encoded);
+      if (!decoder) {
+        return decode_image(*encoded);
+      }
+      Image image = decoder(*encoded);
+      check_size(image.size.width, image.size.height);
+      const auto expected = static_cast<std::size_t>(image.size.width) *
+                            static_cast<std::size_t>(image.size.height) * kChannels;
+      if (image.size.width <= 0 || image.size.height <= 0 || image.pixels.size() != expected) {
+        throw ImageError{"the decoder returned a bad image"};
+      }
+      premultiply_image(image);
+      return image;
     } catch (const ImageError& error) {
       throw ImageError{"cannot decode image '" + path + "': " + error.what()};
     }

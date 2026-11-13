@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -42,6 +43,20 @@ class ImageError : public std::runtime_error {
 /// Decodes a whole PNG, JPEG or WebP file (lossless or lossy, no animation). Throws ImageError if
 /// the data is not a complete image of one of these kinds or the image is over the size limits. Safe to call from any thread.
 [[nodiscard]] Image decode_image(std::span<const std::byte> encoded);
+
+/// A decoder of a file format that is not built in (a plugin's: engine/plugin/plugin.hpp). It
+/// returns the image with STRAIGHT alpha, and throws ImageError if the data is bad.
+using ImageFormatDecoder = std::function<Image(std::span<const std::byte>)>;
+
+/// Makes `load_image` decode files with `extension` (lower case, with the dot: ".ppm") through
+/// `decoder`, and `resolve_image` (engine/scene/scene.hpp) find them after the built-in ones. The
+/// table is process-wide and has a lock, because jobs read it; register at start-up. Throws
+/// std::invalid_argument for a bad extension, a built-in one or one that is registered.
+void register_image_format(std::string extension, ImageFormatDecoder decoder);
+/// Removes every registered format (tests).
+void clear_image_formats();
+/// The registered extensions, sorted.
+[[nodiscard]] std::vector<std::string> image_format_extensions();
 
 /// Reads the image at virtual path `path` through `vfs` and decodes it, both on a job of `jobs`.
 /// The handle yields the image, or rethrows ImageError if the file is missing or cannot be
