@@ -31,6 +31,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - dav1d (AV1) and libwebm (WebM, its `mkvparser`) are vcpkg dependencies. Neither has a CMake config that the engine uses, so `engine/video/CMakeLists.txt` finds both with `find_path` and `find_library` (libwebm's headers are in `include/webm`).
   - dav1d 1.5.4 does not build with MSVC 14.5 (Visual Studio 2026): its `stdatomic.h` shim uses `__has_include_next` in a non-clang build. `vcpkg-configuration.json` adds the overlay port `tools/vcpkg-overlay/dav1d`, which is the vcpkg port with one patch for this. Remove the overlay when the vcpkg baseline has a dav1d that builds.
   - Dear ImGui (`imgui`, feature `sdlgpu3-binding`) is a vcpkg dependency of the dev tools. `engine/tools/CMakeLists.txt` finds it with `find_package(imgui CONFIG REQUIRED)` (target `imgui::imgui`). `tools/dev/bootstrap-deps.sh` does not build it yet, so a `system-*` preset needs an installed ImGui with CMake config files, or `-DVNMAKI_DEV_TOOLS=OFF`.
+  - efsw (file watching for hot reload) is a vcpkg dependency of the dev tools. `engine/tools/CMakeLists.txt` finds it with `find_package(efsw CONFIG REQUIRED)` (target `efsw::efsw`, a DLL on Windows). Only `engine/tools/file_watcher.cpp` includes it. A release build does not link it. `tools/dev/bootstrap-deps.sh` does not build it yet, so a `system-*` preset needs an installed efsw with CMake config files, or `-DVNMAKI_DEV_TOOLS=OFF`.
   - zstd is a vcpkg dependency. `engine/saves/CMakeLists.txt` finds `zstd::libzstd` (vcpkg) or the plain library (Debian: `libzstd-dev`).
 
 ## Code
@@ -64,7 +65,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Tests use doctest. Each doctest executable needs `DOCTEST_CONFIG_USE_STD_HEADERS`.
 - Every `main` calls `vnmaki::disable_crt_dialogs()` (`engine/core/no_crt_dialogs.hpp`) first. MSVC debug builds otherwise open a modal dialog on `abort()` or an assert, which blocks the run on the desktop. This also applies to throwaway programs. Run them with a timeout.
 - Unit tests are in `tests/unit/*_test.cpp`. They run in `vnmaki_unit_tests`. The ctest name of each test is `unit.<name>`.
-- Platform tests are in `tests/platform/` and have their own executable. On Linux, they use `SDL_VIDEO_DRIVER=offscreen`.
+- Platform tests are in `tests/platform/` and have their own executable. On Linux, they use `SDL_VIDEO_DRIVER=offscreen`. `file_watcher_test.cpp` (efsw on a real folder, Windows only) writes real files and polls with a 10 second timeout, so a watcher that reports nothing fails the test and does not hang it.
 - CLI tests use `vnmaki_add_cli_test(name ARGS ... EXIT n [STDOUT_LINE t | NO_STDOUT] [STDERR_REGEX r] [EXPECTED_FILES f...])`.
 - To compare output with a file, use `vnmaki_add_cli_stdout_file_test(... STDOUT_FILE f)`.
 - A `vnmaki run` test never touches the user-data directory (AppData). Both helpers add `--data-dir <build>/tests/cli/data/<name>` to every `ARGS` that starts with `run`, and the runner script empties that folder first. So no test shares saves with another. A test that adds `add_test` by hand must do the same (`vnmaki_isolate_run_data`).
@@ -218,6 +219,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - A movie that does not loop is what `wait(tag)` waits for, as for a frame animation, and `finish_tweens` ends it. A movie never blocks a wait when it loops.
   - The snapshot part `movies` has the layer, the index in the layer (movies are put back last, so the `layered` index does not count them), the tag, the path, the loop flag and the properties. It has no time.
   - A movie texture is made again for each new picture. A displayable that goes away gives its texture to `Scene::prepare` to destroy.
+- Hot reload (dev tools): `Scene::reload_image(path, jobs)` decodes the file again and puts the new texture in every displayable that shows it (`textures_` keeps one texture for each path). The old texture goes to `retired_textures_` and is destroyed by the next `prepare()`. A file that cannot be decoded returns an error and the old texture stays. `Scene::recompile_shader(name)` compiles a declared shader again from its file (`declare_shader_impl(..., force)`); a compile error returns the message and the old shader stays. Both do nothing for an image that was never drawn or a shader that is not declared.
 - `place_corners(properties, size, part)` and `bounding_box(corners)` (`displayable.hpp`) place a box with the properties. Use them in a new displayable.
 
 ### Layered sprites (`engine/scene/layered_sprite.*`)
@@ -476,6 +478,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `skip("seen" | "all" | "off" | false)` and `auto(bool)` queue a `PlaybackRequest`. `take_playback_requests()` gives them to the host. They are dropped during a replay.
 - `character { auto_multiplier = n }` goes to `SayRequest::auto_multiplier` (default 1).
 - `drop_callers()` makes the running label the outermost label. A load calls it before `replay()`.
+- `reload_scripts()` (dev tools, hot reload) loads all scripts again and replays to where the story waits.
+  - The new scripts run in a fresh `Impl` (a new Lua VM). `persistent` is copied into it before `load_scripts()`. A script error (also a failing `shader(...)` call) returns the error (`script:line: message`). The old `Impl`, the story and the scene stay. The runtime swaps `impl_` only when the replay worked, so a pointer from `request()` or `label_snapshot()` is not valid after it.
+  - The replay is the one of `roll_back()`: the outermost label (with its input log and `stops` count) to the same yield point, so a `call` stack comes back. The observer hears the request it stops at (a text change shows at once). A replay does not report label entries.
+  - Label gone: the story goes to `start`, with the store of a new game and an empty scene. If `start` is also gone, the reload fails and the scene is put back.
+  - A replay that cannot reach the yield point (the label is shorter, a menu is new, the code fails) is tried again to the last yield point that it reached (`clamp_replay_`, set in `fail()`). If that fails too, it goes to `start`.
+  - The rollback history stays, except the entry for the position that the replay pushes again, so the number of steps does not grow. Queued save and playback requests stay. After a failed state the history is empty.
+  - Do not call it from a script, an observer or during a replay.
 
 ### Saves (`engine/saves/`)
 
@@ -568,4 +577,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - A property edit is live. It is not in the snapshot of the label, so a rollback or a load brings back the old value (the panel says this). A tween that writes the property also overwrites it.
   - `inspect_tweens` lists the running tweens from `Timeline::active()` (`Scene::timeline()`). `inspect_audio` lists a row for each playing track (file, channel volume, position in seconds) and for each silent channel. `inspect_labels` lists `ScriptRuntime::label_names()` and marks the label that the story waits in.
   - `jump_to_label(runtime, name)` is the "Jump" button. It calls `drop_callers()`, then `replay()` of a snapshot of `name` with the current `store` and the scene bytes of the running label's entry, no inputs, to step 1. The story is then at the first blocking call of the label. If the label has none, it returns the error and replays the story back to where it was (the callers are then gone, as after a load).
-- Tests: `tests/unit/repl_test.cpp` (REPL and log), `tests/unit/inspect_test.cpp` (the row functions, on the template in `templates/default`) and `tests/render/overlay_render_test.cpp` (a headless GPU frame, F12, input, a click on each inspector tab). All are only built with the tools.
+- Hot reload (`file_watcher.*`, `hot_reload.*`). A change to a project file reaches the running game.
+  - `FileWatcher(root)` watches the project folder (recursively) with efsw. The efsw thread only calls `notify(path)` (path from the root, `/` separators). `poll()` runs on the main thread and returns the paths as one batch (sorted, each once) when no event came for `kWatchBatchWindow` (100 ms). `FileWatcher()` has no operating system watch, so a test injects events with `notify(path, time)` and `poll(time)`.
+  - `HotReload::apply(batch)` runs between frames (the `update` hook in `story_window.cpp`):
+    - `shaders/<name>.frag.hlsl` calls `Scene::recompile_shader`; an image (`.png`, `.jpg`, `.jpeg`, `.webp`) calls `Scene::reload_image`; any `.lua` file calls `ScriptRuntime::reload_scripts()` once, last (see Runtime). Other files do nothing.
+    - The default screens and styles reload with the scripts, because `reload_scripts()` loads them as `load_scripts()` does. The host's own screen (`quick_menu`) is opened again through `set_on_scripts_reloaded`.
+    - `persistent` does not change and no rollback step is added (see Runtime).
+  - An error is logged as an error entry (with the `script:line` that Lua gives, or the shader file and line) and shows a red banner: the screen `vnmaki:hot_reload` of the `UiHost`, so the banner also shows when the overlay is hidden. It names the first error and counts the others. A file that works again clears its error.
+  - `run_story_window(vfs, project_dir, ...)` gets the folder to watch. If efsw cannot watch it, hot reload is off and a warning goes to the log.
+  - A game shader that a script declares again with other uniforms compiles while the scripts load. If a later script then fails, the scene keeps the new shader (the shader table is not part of the rollback of a failed reload).
+- Tests: `tests/unit/repl_test.cpp` (REPL and log), `tests/unit/inspect_test.cpp` (the row functions, on the template in `templates/default`), `tests/unit/hot_reload_test.cpp` (injected batches and edits of a temporary project, with a counting renderer for the texture and shader checks), `tests/platform/file_watcher_test.cpp` (real writes, Windows) and `tests/render/overlay_render_test.cpp` (a headless GPU frame, F12, input, a click on each inspector tab). All are only built with the tools.

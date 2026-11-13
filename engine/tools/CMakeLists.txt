@@ -8,12 +8,16 @@ target_sources(
           story_graph.cpp
           story_graph.hpp)
 
-# The overlay, log console and Lua REPL are added only when VNMAKI_DEV_TOOLS is ON, so a release
+# The overlay, log console, Lua REPL, inspectors and hot reload are added only when VNMAKI_DEV_TOOLS is ON, so a release
 # build has no overlay code and links no ImGui.
 if(VNMAKI_DEV_TOOLS)
   target_sources(
     vnmaki_engine
-    PRIVATE imgui_backend.cpp
+    PRIVATE file_watcher.cpp
+            file_watcher.hpp
+            hot_reload.cpp
+            hot_reload.hpp
+            imgui_backend.cpp
             imgui_backend.hpp
             inspect.hpp
             inspect_audio.cpp
@@ -31,5 +35,6 @@ if(VNMAKI_DEV_TOOLS)
   # (lint.no_sdl_outside_platform). The ImGui input comes from InputEvents, not from SDL events.
   find_package(imgui CONFIG REQUIRED)
   find_package(SDL3 CONFIG REQUIRED COMPONENTS SDL3)
-  target_link_libraries(vnmaki_engine PRIVATE imgui::imgui SDL3::SDL3)
+  find_package(efsw CONFIG REQUIRED)
+  target_link_libraries(vnmaki_engine PRIVATE imgui::imgui SDL3::SDL3 efsw::efsw)
 endif()

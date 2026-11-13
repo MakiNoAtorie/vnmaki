@@ -315,12 +315,12 @@ Files: new `engine/tools/inspect_*.cpp`, `engine/tools/overlay.cpp`.
 
 Files: new `engine/tools/file_watcher.*`, `engine/tools/hot_reload.*`, `engine/runtime/script_runtime.*`, `engine/scene/`, `vcpkg.json`.
 
-- [ ] efsw (vcpkg) watches the project folder. Events within 100 ms become one batch. A unit test can inject a batch with no efsw.
-- [ ] A changed `.lua` file reloads all scripts (labels, screens, styles). Then the engine replays to the current label and step. If the label is gone, it goes to `start`. If the step is past the label end, it stops at the last step.
-- [ ] A script error keeps the old scripts. The error and its line go to the log, and a red banner shows.
-- [ ] A changed image replaces its texture. A changed game shader compiles again (task 24). A compile error keeps the old shader.
-- [ ] Hot reload does not change `persistent` and does not make a rollback step.
-- [ ] Tests: unit tests with injected batches (say text changes at the same step, label removed, syntax error). A Windows platform test with a real file write and a timeout.
+- [x] efsw (vcpkg) watches the project folder. Events within 100 ms become one batch. A unit test can inject a batch with no efsw.
+- [x] A changed `.lua` file reloads all scripts (labels, screens, styles). Then the engine replays to the current label and step. If the label is gone, it goes to `start`. If the step is past the label end, it stops at the last step.
+- [x] A script error keeps the old scripts. The error and its line go to the log, and a red banner shows.
+- [x] A changed image replaces its texture. A changed game shader compiles again (task 24). A compile error keeps the old shader.
+- [x] Hot reload does not change `persistent` and does not make a rollback step.
+- [x] Tests: unit tests with injected batches (say text changes at the same step, label removed, syntax error). A Windows platform test with a real file write and a timeout.
 
 ### 33: Profiler (SPEC §18, §5)
 
