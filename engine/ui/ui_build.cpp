@@ -34,6 +34,7 @@ constexpr float kSliderHeight = 24;
 const Color kTrackColor = rgba8(40, 44, 72);
 const Color kFillColor = rgba8(150, 170, 255);
 constexpr double kMaxGridColumns = 64;
+constexpr double kMaxInputLength = 4096;
 
 // The look of the choice menu, as fractions of the canvas.
 constexpr int kMenuWidthDivisor = 2;  // button width: width / 2
@@ -79,6 +80,9 @@ std::optional<NodeKind> kind_from_name(std::string_view name) {
   if (name == "bar") {
     return NodeKind::kBar;
   }
+  if (name == "input") {
+    return NodeKind::kInput;
+  }
   if (name == "grid") {
     return NodeKind::kVbox;  // build() makes the rows
   }
@@ -112,8 +116,8 @@ float read_offset(const ScreenNodeDef& def, const std::string& name, const Scree
   return static_cast<float>(*number);
 }
 
-std::string read_string(const ScreenNodeDef& def, const std::string& name,
-                        const ScreenValue& value, std::string_view expected) {
+std::string read_string(const ScreenNodeDef& def, const std::string& name, const ScreenValue& value,
+                        std::string_view expected) {
   const auto* text = std::get_if<std::string>(&value);
   if (text == nullptr) {
     bad_option(def, name, expected);
@@ -208,15 +212,23 @@ bool read_flag(const ScreenNodeDef& def, const std::string& name, const ScreenVa
   return *flag;
 }
 
-// The options only toggles, sliders, bars and grids have. Returns whether `name` was one.
+// The options only toggles, sliders, bars, inputs and grids have. Returns whether `name` was one.
 bool apply_widget_option(const ScreenNodeDef& def, UiNode& node, const std::string& name,
                          const ScreenValue& value, Pending& pending) {
   const bool is_range = node.kind == NodeKind::kSlider || node.kind == NodeKind::kBar;
-  const bool is_bound = is_range || node.kind == NodeKind::kToggle;
+  const bool is_bound = is_range || node.kind == NodeKind::kToggle || node.kind == NodeKind::kInput;
   if (is_bound && name == "bind_table") {
     pending.bind_table = read_string(def, name, value, "a string");
   } else if (is_bound && name == "bind_key") {
     pending.bind_key = read_string(def, name, value, "a string");
+  } else if (node.kind == NodeKind::kInput && name == "placeholder") {
+    node.placeholder = read_string(def, name, value, "a string");
+  } else if (node.kind == NodeKind::kInput && name == "max_length") {
+    const double length = read_number(def, name, value);
+    if (length < 1 || length > kMaxInputLength || length != std::floor(length)) {
+      bad_option(def, name, "a whole number from 1 to 4096");
+    }
+    node.max_length = static_cast<std::size_t>(length);
   } else if (node.kind == NodeKind::kToggle && name == "checked") {
     node.checked = read_flag(def, name, value);
   } else if (is_range && name == "min") {
@@ -246,8 +258,8 @@ void apply_option(const ScreenNodeDef& def, UiNode& node, const std::string& nam
                   const ScreenValue& value, Pending& pending) {
   UiStyle& style = node.style;
   const bool is_button = node.kind == NodeKind::kButton;
-  const bool takes_focus_style =
-      is_button || node.kind == NodeKind::kToggle || node.kind == NodeKind::kSlider;
+  const bool takes_focus_style = is_button || node.kind == NodeKind::kToggle ||
+                                 node.kind == NodeKind::kSlider || node.kind == NodeKind::kInput;
   if (apply_widget_option(def, node, name, value, pending)) {
     return;
   }
@@ -279,6 +291,18 @@ void apply_option(const ScreenNodeDef& def, UiNode& node, const std::string& nam
     style.color = read_color(def, name, value);
   } else if (name == "fill") {
     style.fill = read_color(def, name, value);
+  } else if (name == "font") {
+    style.font = read_string(def, name, value, "a string");
+  } else if (name == "border_width") {
+    style.border_width = read_length(def, name, value);
+  } else if (name == "border_color") {
+    style.border_color = read_color(def, name, value);
+  } else if (name == "hover_bg") {
+    style.hover_background = read_color(def, name, value);
+  } else if (name == "hover_color") {
+    style.hover_color = read_color(def, name, value);
+  } else if (name == "hover_border") {
+    style.hover_border_color = read_color(def, name, value);
   } else if (name == "size") {
     const std::optional<double> size = as_number(value);
     if (!size || !(*size > 0) || *size > kMaxTextSize) {
@@ -295,10 +319,14 @@ void apply_option(const ScreenNodeDef& def, UiNode& node, const std::string& nam
     node.cancel = value;
   } else if (name == "modal") {
     node.modal = read_flag(def, name, value);
-  } else if (is_button && name == "returns") {
+  } else if ((is_button || node.kind == NodeKind::kInput) && name == "returns") {
     node.returns = value;
   } else if (takes_focus_style && name == "focus_bg") {
     style.focus_background = read_color(def, name, value);
+  } else if (takes_focus_style && name == "focus_color") {
+    style.focus_color = read_color(def, name, value);
+  } else if (takes_focus_style && name == "focus_border") {
+    style.focus_border_color = read_color(def, name, value);
   } else if (takes_focus_style && name == "disabled") {
     node.state.disabled = read_flag(def, name, value);
   } else {
@@ -333,7 +361,7 @@ UiNode build(const ScreenNodeDef& def) {
   UiNode node = make_node(*kind);
   node.text = def.text;
   node.label = def.text;
-  if (*kind == NodeKind::kButton || *kind == NodeKind::kToggle) {
+  if (*kind == NodeKind::kButton || *kind == NodeKind::kToggle || *kind == NodeKind::kInput) {
     node.style.background = kButtonColor;
     node.style.focus_background = kButtonFocusColor;
     node.style.padding = kButtonPadding;
@@ -360,6 +388,9 @@ UiNode build(const ScreenNodeDef& def) {
   }
   if ((*kind == NodeKind::kSlider || *kind == NodeKind::kBar) && !(node.min < node.max)) {
     throw UiBuildError(describe(def) + ": 'min' must be below 'max'");
+  }
+  if (*kind == NodeKind::kInput && node.label.empty()) {
+    node.label = node.placeholder;
   }
   if (def.kind == "grid" && pending.columns == 0) {
     throw UiBuildError(describe(def) + ": a grid needs the option columns");

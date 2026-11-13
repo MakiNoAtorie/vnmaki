@@ -113,7 +113,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `MainLoop` runs a fixed timestep: events, updates, then `draw(alpha)`. You can inject the clock.
 - Pointer positions are in window pixels. Convert them with `window_to_virtual(compute_viewport(...), pos)`.
 - Clicks in the letterbox bars are outside the virtual area.
-- Text input is off when no text field has the focus.
+- Text input is off when no text field has the focus. `UiHost::set_platform(&platform)` does this for the `input` node (see UI).
 - `set_fullscreen(bool)` and `set_window_opacity(float)` apply the player's preferences. `HeadlessPlatform` only records them (`fullscreen()`, `window_opacity()`).
 - `user_data_directory(organization, application)` (`sdl_platform.hpp`) is SDL's per-user preference path. Saves go there.
 - Only one `SdlPlatform` can exist. Other SDL users call `SDL_InitSubSystem` and `SDL_QuitSubSystem`. They do not call `SDL_Quit`.
@@ -310,7 +310,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 
 ### UI (`engine/ui/`)
 
-- A screen is a `UiNode` tree with a name. Kinds: `box`, `hbox`, `vbox`, `text`, `image`, `button`, `toggle`, `slider`, `bar`. The Lua constructors have the same names, and `grid { columns = n, ... }` (`build_ui_tree` makes it a `vbox` of `hbox` rows; give the cells one width).
+- A screen is a `UiNode` tree with a name. Kinds: `box`, `hbox`, `vbox`, `text`, `image`, `button`, `toggle`, `slider`, `bar`, `input`. The Lua constructors have the same names, and `grid { columns = n, ... }` (`build_ui_tree` makes it a `vbox` of `hbox` rows; give the cells one width).
 - Lua: `screen "name" { nodes }`, or `screen("name", function(args) return nodes end)`. A table of several nodes is wrapped in a `box`. `show_screen`, `hide_screen` and `call_screen` take the screen name and an `args` table for the function form.
 - `build_ui_tree` documents the options (`width`, `padding`, `bg`, `returns`, ...). An unknown option is an error that names the node.
 - A text or button string is the first string in the table: `button { "Save", returns = "save" }`. A button hands `returns` to its screen when activated.
@@ -319,6 +319,18 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `UiHost::set_bindings(&runtime)` connects them. `UiHost` reads each bound node's datum (`ScriptRuntime::binding`) every time it lays out, draws or handles an event. It writes the datum (`set_binding`) when the player flips the toggle or moves the slider. Without it the node keeps its own value.
   - A toggle follows a boolean. A slider or bar follows a number between its `min` and `max` (default 0 and 1). A `step` snaps a slider. A click or a drag on a slider sets it. Left and Right (also the d-pad) move it by `step` (a twentieth of the range if unset).
   - A write to `store` is not in the input log, so a rollback or a load takes it back. `persistent` and `prefs` are not rolled back.
+- Styles (SPEC §15): `style(name, { font, size, color, background, padding, gap, margin, width, height, grow, align, justify, fill, border = { width, color }, focus = { background, color, border }, hover = { ... }, extends = "other" })` declares a named style. A node takes `style = "name"`.
+  - Merge order, lowest first: the built-in look of the node kind (`build_ui_tree`), the styles in the `extends` chain (base first), the style, the node's own options.
+  - The prelude does the merge when the node is made. `style` is not an option that reaches C++. A style is flat node options (`background` is `bg`, `border = {...}` is `border_width` and `border_color`, `focus = {...}` is `focus_bg`, `focus_color` and `focus_border`, `hover` is `hover_*`). A style option that does not fit the kind is left out: only a button, toggle, slider or input gets `focus_*`. So one style can serve a text node and a button.
+  - An unknown style, an `extends` loop (more than 16 levels), an unknown style option and a style that is not a string are errors at the script line. Styles are looked up when a screen is built, so a style may be declared after the screen that uses it.
+  - A focused node uses `focus_*`, a hovered one `hover_*`, else the base. A hovered node that has no `hover_*` uses `focus_*` (pointer hover also moves the focus). `UiStyle` has the fields (`focus_background`, `hover_background`, `focus_color`, `border_width`, `font`, ...). `font` is a family of the `FontSet`.
+  - `theme("name")` makes the style table of the engine's default screens, then runs `styles/<name>.lua` (a script that calls `style`). It replaces the game's own styles that were declared before. It is not in a snapshot and `show_screen` is not undone by a rollback, so call it before the story starts, or in the label that changes the look. A screen that is already shown keeps its look until it is built again. A missing or bad file is an error at the script line.
+  - The styles that `engine/runtime/default_screens.cpp` declares are the defaults of every theme (the prelude knows them by the chunk name `=engine/screens.lua`). The default screens use only named styles for their look. Position options that depend on the arguments (`x`, `y` and widths of the say box) stay on the node. A game or theme restyles a default screen by declaring a style of the same name again (it replaces the whole style, `extends` can reuse the old one only under another name).
+- `input { bind = bind(store, "name"), placeholder = "Name", max_length = 20 }` edits a string datum. The string in the table is the start text of an unbound input. `max_length` counts characters (default 256, at most 4096). `returns` is what Enter gives the screen. An input is focusable, has the role `kTextInput` and `UiNode::label` defaults to the placeholder.
+  - It has the keys when it is the focused node of the keyboard screen (`UiHost::wants_text_input()`). A modal screen focuses its first focusable node, so an input there has them at once. On a screen that is not modal, a click on an input gives the screen the keys (like Tab), and Esc takes them back. Moving the pointer over other nodes does not take the focus from an input; a click does.
+  - `UiHost` calls `Platform::set_text_input(true)` when an input has the keys and `false` when it loses them (focus moves, a screen is hidden, Esc). It does this after each event, `show` and `hide`. The story window gives it the platform (`ui.set_platform`).
+  - While an input has the keys, `TextInputEvent` adds its text at the end (whole characters, no control characters, up to `max_length`), Backspace removes the last character, and the other keys are consumed and do nothing, except Tab, the arrows and Esc (focus and cancel work as before) and Enter. So the story keys (A, S, L, Space) do not fire. The story window does not give events to the backlog while `wants_text_input()` is true. There is no caret movement, selection or paste: the caret is always at the end.
+  - A bound input follows the datum (`ScriptRuntime::binding`), a string; any other value reads as empty. A change re-lays the screen out, because an input without a `width` has the size of its text.
 - A screen root can have `modal = true` (`show_screen` then shows it modal) and `cancel = value`. Esc or the gamepad's east button give the screen that value, like a button's `returns`.
 - Tab or the gamepad's west button give the keyboard to the top non-modal screen that has a focusable node (`UiHost`). It keeps the keys until the player presses Esc or the east button.
 - Yoga does the layout (`layout_tree`). Only `ui_layout.cpp` includes it, and it is linked PRIVATE.
@@ -342,7 +354,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 ### Default screens and preferences
 
 - `engine/runtime/default_screens.cpp` is a Lua chunk. `load_scripts()` runs it before the game's scripts, so a game replaces a screen by defining `screen "name"` again.
-  - The screens: `title`, `say`, `choice`, `confirm`, `save`, `load`, `preferences`, `quick_menu`, and the placeholders `nvl` and `gallery`.
+  - The screens: `title`, `say`, `choice`, `confirm`, `save`, `load`, `preferences`, `quick_menu`, and the placeholders `nvl` and `gallery`. They take their look from named styles that the same chunk declares first (`title_screen`, `say_box`, `panel`, `back_button`, `slot_cell`, `quick_button`, ...; see the top of the file). The placeholders still have their look inline.
   - The backlog is the C++ `BacklogScreen` (`vnmaki:backlog`).
 - Screens size themselves by the read-only global `canvas` (`canvas.width`, `canvas.height`). `ScriptRuntimeOptions::canvas_width` and `canvas_height` set it (default 1920 by 1080). Write a screen as a function: `screen("x", function(args) ... end)`.
 - `ScriptRuntime::build_screen(name, args, tree)` runs the screen function for the engine. `args` is a `ScreenNodeDef`: its `props` are the named fields of the Lua table, and its `children` are the list (each a table of the same form). The arguments:
@@ -421,6 +433,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
   - A slot is an integer from 1. `load` with a number is a slot. With a string or function it is Lua's `load`.
 - `on_load(function(old_version, store) ... end)` registers the migration hook while the scripts load. `run_on_load(snapshot, old_version)` runs it on the store of a snapshot, not on the live `store`.
+- `style`, `theme`, `input` and the style merge of the node constructors are in the prelude, in a literal of their own before the screens literal. `engine.load_theme(name)` reads `styles/<name>.lua` through the VFS and returns the compiled chunk (or the reason).
 - `bind`, `prefs`, `canvas`, `toggle`, `slider`, `bar` and `grid` are in the prelude (the part after `local persistent` is its own raw literal; MSVC limits one literal to 16380 bytes). `ScriptRuntime::binding(table, key)` and `set_binding(table, key, value)` read and write a bound datum for the UI.
 - `persistent` is a second Lua table, like `store`, but it is not in any snapshot or save. Rollback and load never change it.
   - `persistent_snapshot()` and `restore_persistent()` give the host the data. Call `restore_persistent` before `load_scripts()`.

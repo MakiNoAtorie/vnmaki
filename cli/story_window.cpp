@@ -126,6 +126,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     runtime.load_scripts();
 
     SdlPlatform platform{WindowConfig{.title = config.title, .size = kDefaultWindowSize}};
+    ui.set_platform(&platform);  // text input is on only while an `input` node has the keys
     const std::unique_ptr<SdlGpuRenderer> renderer = SdlGpuRenderer::create_for_window(platform);
     JobSystem jobs;
     const TextureId canvas = renderer->create_render_target(virtual_size, TextureFilter::kLinear);
@@ -216,7 +217,8 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     };
     MainLoopHooks hooks;
     hooks.on_event = [&](const InputEvent& event) {
-      if (backlog_screen.handle_event(event, viewport())) {  // L opens it, Esc or L closes it
+      // L opens the backlog, and L or Esc close it, unless the player types into an input.
+      if (!ui.wants_text_input() && backlog_screen.handle_event(event, viewport())) {
         return;
       }
       if (screens.handle_event(event, viewport())) {

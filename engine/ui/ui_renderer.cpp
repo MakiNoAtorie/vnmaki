@@ -20,11 +20,36 @@ namespace {
 constexpr std::size_t kMaxCachedLayouts = 256;
 constexpr float kMinWrapWidth = 1;
 const Color kHollowMark = rgba8(16, 18, 36);  // the inside of an unchecked toggle's mark
+constexpr float kPlaceholderAlpha = 0.5F;     // an input's placeholder is this opaque
+constexpr float kCaretWidthEm = 0.08F;        // an input's caret, as a share of the text size
 
 bool shows_text(const UiNode& node) {
   return (node.kind == NodeKind::kText || node.kind == NodeKind::kButton ||
-          node.kind == NodeKind::kToggle) &&
-         !node.text.empty();
+          node.kind == NodeKind::kToggle || node.kind == NodeKind::kInput) &&
+         !display_text(node).empty();
+}
+
+// The value of a state-dependent field: `focus` while the node is focused (or hovered and has no
+// `hover`), `hover` while it is hovered, else `base`. Only a node that can take the focus changes.
+std::optional<Color> by_state(const UiNode& node, const std::optional<Color>& base,
+                              const std::optional<Color>& hover,
+                              const std::optional<Color>& focus) {
+  const bool focused = node.state.focused;
+  const bool hovered = node.state.hovered;
+  if (!is_focusable(node)) {
+    return base;
+  }
+  if (focused && focus) {
+    return focus;
+  }
+  if (hovered && hover) {
+    return hover;
+  }
+  return (focused || hovered) && focus ? focus : base;
+}
+
+std::optional<Color> text_color(const UiNode& node) {
+  return by_state(node, node.style.color, node.style.hover_color, node.style.focus_color);
 }
 
 float content_width(const UiNode& node) {
@@ -67,7 +92,8 @@ UiRenderer::~UiRenderer() {
 }
 
 const TextLayout& UiRenderer::layout(const UiNode& node, float wrap_width) {
-  auto key = std::make_tuple(node.text, node.markup, node.style.text_size, wrap_width);
+  auto key = std::make_tuple(display_text(node), node.markup, node.style.text_size, wrap_width,
+                             node.style.font);
   const auto found = layouts_.find(key);
   if (found != layouts_.end()) {
     return found->second;
@@ -77,9 +103,16 @@ const TextLayout& UiRenderer::layout(const UiNode& node, float wrap_width) {
   }
   StyledText styled;
   try {
-    styled = node.markup ? parse_markup(node.text) : plain_text(node.text);
+    styled = node.markup ? parse_markup(node.text) : plain_text(display_text(node));
   } catch (const MarkupError&) {
     styled = plain_text(node.text);
+  }
+  if (!node.style.font.empty()) {
+    for (StyledRun& run : styled.runs) {
+      if (run.style.font.empty()) {
+        run.style.font = node.style.font;
+      }
+    }
   }
   TextLayout laid_out = layout_text(fonts_, styled, node.style.text_size, wrap_width);
   return layouts_.emplace(std::move(key), std::move(laid_out)).first->second;
@@ -87,7 +120,7 @@ const TextLayout& UiRenderer::layout(const UiNode& node, float wrap_width) {
 
 TextMeasure UiRenderer::text_measure() {
   return [this](const UiNode& node, float max_width) {
-    if (node.text.empty()) {
+    if (display_text(node).empty()) {
       return MeasuredSize{};
     }
     const TextLayout& text = layout(node, std::max(max_width, kMinWrapWidth));
@@ -167,7 +200,11 @@ void UiRenderer::draw_text(const UiNode& node, float scale, PointF origin) {
   const PointF at{.x = origin.x + ((node.rect.x + node.style.padding + indent) * scale),
                   .y = origin.y + ((node.rect.y + node.style.padding) * scale)};
   const std::size_t visible = node.visible_glyphs.value_or(text.glyph_count);
-  const std::vector<Quad> quads = text_quads(text, entry.atlas, at, visible, node.style.color);
+  Color tint = *text_color(node);
+  if (node.kind == NodeKind::kInput && node.text.empty()) {
+    tint.a *= kPlaceholderAlpha;
+  }
+  const std::vector<Quad> quads = text_quads(text, entry.atlas, at, visible, tint);
   if (!quads.empty()) {
     renderer_->draw(quads, {.texture = *entry.texture});
   }
@@ -193,19 +230,54 @@ void UiRenderer::draw_toggle_mark(const UiNode& node, float scale, PointF origin
   }
 }
 
+// A frame of `width` pixels inside `rect`.
+void UiRenderer::draw_border(const UiNode& node, RectF rect, float width) {
+  const Color color = by_state(node, node.style.border_color, node.style.hover_border_color,
+                               node.style.focus_border_color)
+                          .value_or(node.style.color);
+  const float side = std::min(width, std::min(rect.width, rect.height) / 2);
+  draw_fill({.x = rect.x, .y = rect.y, .width = rect.width, .height = side}, color);
+  draw_fill({.x = rect.x, .y = rect.y + rect.height - side, .width = rect.width, .height = side},
+            color);
+  draw_fill({.x = rect.x, .y = rect.y + side, .width = side, .height = rect.height - (2 * side)},
+            color);
+  draw_fill({.x = rect.x + rect.width - side,
+             .y = rect.y + side,
+             .width = side,
+             .height = rect.height - (2 * side)},
+            color);
+}
+
+// The bar after the last character of a focused input (the text always grows at its end).
+void UiRenderer::draw_caret(const UiNode& node, float scale, PointF origin) {
+  const TextLayout& text = layout(node, content_width(node));
+  float x = 0;
+  float top = 0;
+  float height = node.style.text_size;
+  if (!node.text.empty() && !text.lines.empty()) {
+    x = text.lines.back().width;
+    top = text.lines.back().top;
+    height = text.lines.back().height;
+  }
+  draw_fill({.x = origin.x + ((node.rect.x + node.style.padding + x) * scale),
+             .y = origin.y + ((node.rect.y + node.style.padding + top) * scale),
+             .width = std::max(node.style.text_size * kCaretWidthEm * scale, 1.0F),
+             .height = height * scale},
+            *text_color(node));
+}
+
 void UiRenderer::draw_node(const UiNode& node, float scale, PointF origin) {
   const RectF rect{.x = origin.x + (node.rect.x * scale),
                    .y = origin.y + (node.rect.y * scale),
                    .width = node.rect.width * scale,
                    .height = node.rect.height * scale};
-  std::optional<Color> fill = node.style.background;
-  const bool highlighted = node.state.focused || node.state.hovered;
-  if (node.kind != NodeKind::kBox && highlighted && node.style.focus_background &&
-      is_focusable(node)) {
-    fill = node.style.focus_background;
-  }
+  const std::optional<Color> fill = by_state(
+      node, node.style.background, node.style.hover_background, node.style.focus_background);
   if (fill) {
     draw_fill(rect, *fill);
+  }
+  if (node.style.border_width > 0) {
+    draw_border(node, rect, node.style.border_width * scale);
   }
   if (node.kind == NodeKind::kToggle) {
     draw_toggle_mark(node, scale, origin);
@@ -217,7 +289,11 @@ void UiRenderer::draw_node(const UiNode& node, float scale, PointF origin) {
   }
   if (shows_text(node)) {
     draw_text(node, scale, origin);
-  } else if (node.kind == NodeKind::kImage) {
+  }
+  if (node.kind == NodeKind::kInput && node.state.focused) {
+    draw_caret(node, scale, origin);
+  }
+  if (node.kind == NodeKind::kImage) {
     if (const std::optional<TextureId> texture = image_texture(node.text)) {
       renderer_->draw(std::vector<Quad>{quad_from_rect(rect, kWholeTexture, node.style.color)},
                       {.texture = *texture});

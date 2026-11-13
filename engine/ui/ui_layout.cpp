@@ -37,6 +37,8 @@ YGSize measure_node(YGNodeConstRef yoga, float width, YGMeasureMode width_mode, 
   MeasuredSize size = (*context->measure)(*context->node, max_width);
   if (context->node->kind == NodeKind::kToggle) {
     size.width += context->node->style.text_size * kToggleMarkEm;
+  } else if (context->node->kind == NodeKind::kInput) {
+    size.height = std::max(size.height, context->node->style.text_size);  // an empty input
   }
   const auto fit = [](float natural, float limit, YGMeasureMode mode) {
     if (mode == YGMeasureModeExactly) {
@@ -81,8 +83,8 @@ YGNodeRef build(const UiNode& node, std::deque<MeasureContext>& contexts,
                 const TextMeasure& measure) {
   YGNodeRef yoga = YGNodeNew();
   const UiStyle& style = node.style;
-  YGNodeStyleSetFlexDirection(yoga, node.kind == NodeKind::kHbox ? YGFlexDirectionRow
-                                                                  : YGFlexDirectionColumn);
+  YGNodeStyleSetFlexDirection(
+      yoga, node.kind == NodeKind::kHbox ? YGFlexDirectionRow : YGFlexDirectionColumn);
   if (style.width) {
     YGNodeStyleSetWidth(yoga, *style.width);
   }
@@ -101,7 +103,7 @@ YGNodeRef build(const UiNode& node, std::deque<MeasureContext>& contexts,
     YGNodeStyleSetPosition(yoga, YGEdgeTop, style.position->y);
   }
   const bool shows_text = node.kind == NodeKind::kText || node.kind == NodeKind::kButton ||
-                          node.kind == NodeKind::kToggle;
+                          node.kind == NodeKind::kToggle || node.kind == NodeKind::kInput;
   if (shows_text && node.children.empty()) {
     contexts.push_back({.node = &node, .measure = &measure});
     YGNodeSetContext(yoga, &contexts.back());
@@ -130,7 +132,7 @@ void collect(UiNode& node, YGNodeRef yoga, PointF parent_origin) {
 
 MeasuredSize estimate_text_size(const UiNode& node, float /*max_width*/) {
   std::size_t characters = 0;
-  for (const char c : node.text) {
+  for (const char c : display_text(node)) {
     if ((static_cast<unsigned char>(c) & kUtf8ContinuationMask) != kUtf8Continuation) {
       ++characters;
     }
