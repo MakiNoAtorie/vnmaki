@@ -37,6 +37,7 @@ using render_detail::SpriteVertex;
 /// split into several draw calls.
 constexpr std::uint32_t kMaxQuadsPerDraw = 65536 / kVerticesPerQuad;
 constexpr SDL_GPUTextureFormat kTextureFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+constexpr SDL_GPUTextureFormat kDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
 constexpr std::uint32_t kBytesPerPixel = 4;
 /// Vertex buffers grow to at least this many bytes.
 constexpr std::uint32_t kMinVertexBufferBytes = 64 * 1024;
@@ -181,7 +182,13 @@ struct SdlGpuRenderer::Impl {
     GpuPtr<SDL_GPUShader> shader;
     bool takes_uniforms = false;
   };
-  using PipelineKey = std::tuple<std::uint32_t, BlendMode, SDL_GPUTextureFormat>;
+  struct Mesh {
+    GpuPtr<SDL_GPUBuffer> vertices;
+    GpuPtr<SDL_GPUBuffer> indices;
+    std::uint32_t index_count = 0;
+  };
+  // The shader, the blend mode, the colour format and whether it is the mesh pipeline.
+  using PipelineKey = std::tuple<std::uint32_t, BlendMode, SDL_GPUTextureFormat, bool>;
 
   // Declaration order is destruction order reversed: SDL goes last, the device next to last.
   std::unique_ptr<VideoSubsystem> video;
@@ -191,6 +198,7 @@ struct SdlGpuRenderer::Impl {
 
   GpuPtr<SDL_GPUShader> sprite_vertex;
   GpuPtr<SDL_GPUShader> sprite_fragment;
+  GpuPtr<SDL_GPUShader> mesh_vertex;
   GpuPtr<SDL_GPUSampler> linear_sampler;
   GpuPtr<SDL_GPUSampler> nearest_sampler;
   GpuPtr<SDL_GPUBuffer> index_buffer;
@@ -205,12 +213,17 @@ struct SdlGpuRenderer::Impl {
   std::unordered_map<std::uint32_t, Shader> custom_shaders;
   std::uint32_t next_shader = 1;
   std::map<PipelineKey, GpuPtr<SDL_GPUGraphicsPipeline>> pipelines;
+  std::unordered_map<std::uint32_t, Mesh> meshes;
+  std::uint32_t next_mesh = 1;
+  // One depth buffer for each size that a depth pass drew into. Each pass clears it.
+  std::map<std::pair<int, int>, GpuPtr<SDL_GPUTexture>> depth_buffers;
 
   GpuOverlay overlay;
   bool in_frame = false;
   FrameRecorder recorder;
   std::vector<TextureId> textures_to_destroy;
   std::vector<ShaderId> shaders_to_destroy;
+  std::vector<MeshId> meshes_to_destroy;
 
   explicit Impl(const RendererConfig& config, std::unique_ptr<VideoSubsystem> video_subsystem,
                 SDL_Window* sdl_window);
@@ -233,7 +246,12 @@ struct SdlGpuRenderer::Impl {
   [[nodiscard]] TextureId add_texture(Size size, TextureFilter filter, bool render_target);
   void track_memory(Size size, bool render_target, int direction);
   [[nodiscard]] SDL_GPUGraphicsPipeline* pipeline(ShaderId shader, BlendMode blend,
-                                                  SDL_GPUTextureFormat format);
+                                                  SDL_GPUTextureFormat format, bool mesh = false);
+  [[nodiscard]] SDL_GPUTexture* depth_buffer(Size size);
+  [[nodiscard]] const Mesh& mesh(MeshId id) const;
+  void record_mesh(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                   const render_detail::MeshRecord& record,
+                   std::span<const std::byte> uniform_bytes, std::uint32_t& draw_calls);
   void upload_vertices(SDL_GPUCommandBuffer* commands);
   /// Records the frame's passes into `commands`; returns the number of draw calls.
   std::uint32_t record_passes(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* swapchain,
@@ -276,6 +294,7 @@ SdlGpuRenderer::Impl::Impl(const RendererConfig& config,
 
   sprite_vertex = make_shader(shaders::sprite_vert(), SDL_GPU_SHADERSTAGE_VERTEX);
   sprite_fragment = make_shader(shaders::sprite_frag(), SDL_GPU_SHADERSTAGE_FRAGMENT);
+  mesh_vertex = make_shader(shaders::mesh_vert(), SDL_GPU_SHADERSTAGE_VERTEX);
   linear_sampler = make_sampler(SDL_GPU_FILTER_LINEAR);
   nearest_sampler = make_sampler(SDL_GPU_FILTER_NEAREST);
   upload_index_buffer();
@@ -431,8 +450,8 @@ TextureId SdlGpuRenderer::Impl::add_texture(Size size, TextureFilter filter, boo
 }
 
 SDL_GPUGraphicsPipeline* SdlGpuRenderer::Impl::pipeline(ShaderId shader, BlendMode blend,
-                                                        SDL_GPUTextureFormat format) {
-  const PipelineKey key{shader.value, blend, format};
+                                                        SDL_GPUTextureFormat format, bool mesh) {
+  const PipelineKey key{shader.value, blend, format, mesh};
   if (const auto found = pipelines.find(key); found != pipelines.end()) {
     return found->second.get();
   }
@@ -441,10 +460,10 @@ SDL_GPUGraphicsPipeline* SdlGpuRenderer::Impl::pipeline(ShaderId shader, BlendMo
 
   const SDL_GPUVertexBufferDescription vertex_buffer_description{
       .slot = 0,
-      .pitch = sizeof(SpriteVertex),
+      .pitch = mesh ? sizeof(MeshVertex) : sizeof(SpriteVertex),
       .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
       .instance_step_rate = 0};
-  const std::array<SDL_GPUVertexAttribute, 3> attributes{{
+  const std::array<SDL_GPUVertexAttribute, 3> sprite_attributes{{
       {.location = 0,
        .buffer_slot = 0,
        .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
@@ -458,12 +477,27 @@ SDL_GPUGraphicsPipeline* SdlGpuRenderer::Impl::pipeline(ShaderId shader, BlendMo
        .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
        .offset = offsetof(SpriteVertex, r)},
   }};
+  const std::array<SDL_GPUVertexAttribute, 3> mesh_attributes{{
+      {.location = 0,
+       .buffer_slot = 0,
+       .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+       .offset = offsetof(MeshVertex, position)},
+      {.location = 1,
+       .buffer_slot = 0,
+       .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3,
+       .offset = offsetof(MeshVertex, normal)},
+      {.location = 2,
+       .buffer_slot = 0,
+       .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
+       .offset = offsetof(MeshVertex, uv)},
+  }};
+  const auto& attributes = mesh ? mesh_attributes : sprite_attributes;
   SDL_GPUColorTargetDescription color_target{};
   color_target.format = format;
   color_target.blend_state = blend_state(blend);
 
   SDL_GPUGraphicsPipelineCreateInfo info{};
-  info.vertex_shader = sprite_vertex.get();
+  info.vertex_shader = mesh ? mesh_vertex.get() : sprite_vertex.get();
   info.fragment_shader = fragment;
   info.vertex_input_state.vertex_buffer_descriptions = &vertex_buffer_description;
   info.vertex_input_state.num_vertex_buffers = 1;
@@ -473,6 +507,13 @@ SDL_GPUGraphicsPipeline* SdlGpuRenderer::Impl::pipeline(ShaderId shader, BlendMo
   info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
   info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
   info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+  if (mesh) {
+    info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+    info.depth_stencil_state.enable_depth_test = true;
+    info.depth_stencil_state.enable_depth_write = true;
+    info.target_info.depth_stencil_format = kDepthFormat;
+    info.target_info.has_depth_stencil_target = true;
+  }
   info.target_info.color_target_descriptions = &color_target;
   info.target_info.num_color_targets = 1;
   GpuPtr<SDL_GPUGraphicsPipeline> created{SDL_CreateGPUGraphicsPipeline(device.get(), &info),
@@ -481,6 +522,70 @@ SDL_GPUGraphicsPipeline* SdlGpuRenderer::Impl::pipeline(ShaderId shader, BlendMo
     throw_sdl_error("cannot create a graphics pipeline");
   }
   return pipelines.emplace(key, std::move(created)).first->second.get();
+}
+
+SDL_GPUTexture* SdlGpuRenderer::Impl::depth_buffer(Size size) {
+  const std::pair<int, int> key{size.width, size.height};
+  if (const auto found = depth_buffers.find(key); found != depth_buffers.end()) {
+    return found->second.get();
+  }
+  SDL_GPUTextureCreateInfo info{};
+  info.type = SDL_GPU_TEXTURETYPE_2D;
+  info.format = kDepthFormat;
+  info.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+  info.width = static_cast<std::uint32_t>(size.width);
+  info.height = static_cast<std::uint32_t>(size.height);
+  info.layer_count_or_depth = 1;
+  info.num_levels = 1;
+  info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+  GpuPtr<SDL_GPUTexture> created{SDL_CreateGPUTexture(device.get(), &info), releaser()};
+  if (!created) {
+    throw_sdl_error("cannot create a depth buffer");
+  }
+  return depth_buffers.emplace(key, std::move(created)).first->second.get();
+}
+
+const SdlGpuRenderer::Impl::Mesh& SdlGpuRenderer::Impl::mesh(MeshId id) const {
+  const auto found = meshes.find(id.value);
+  if (found == meshes.end()) {
+    throw RenderError{"unknown mesh id " + std::to_string(id.value)};
+  }
+  return found->second;
+}
+
+void SdlGpuRenderer::Impl::record_mesh(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                                       const render_detail::MeshRecord& record,
+                                       std::span<const std::byte> uniform_bytes,
+                                       std::uint32_t& draw_calls) {
+  const MeshDraw& draw = record.draw;
+  const Mesh& source = mesh(draw.mesh);
+  SDL_BindGPUGraphicsPipeline(pass, pipeline(draw.shader, BlendMode::kAlpha, kTextureFormat, true));
+  std::array<SDL_GPUTextureSamplerBinding, kMaxShaderTextures> bindings{};
+  const Texture& base = texture(draw.texture);
+  for (SDL_GPUTextureSamplerBinding& binding : bindings) {
+    binding = SDL_GPUTextureSamplerBinding{.texture = base.texture.get(),
+                                           .sampler = base.filter == TextureFilter::kNearest
+                                                          ? nearest_sampler.get()
+                                                          : linear_sampler.get()};
+  }
+  SDL_BindGPUFragmentSamplers(pass, 0, bindings.data(), kMaxShaderTextures);
+  std::array<float, 2 * std::tuple_size_v<Mat4>> matrices{};
+  std::ranges::copy(draw.view_projection, matrices.begin());
+  std::ranges::copy(draw.model, matrices.begin() + std::tuple_size_v<Mat4>);
+  SDL_PushGPUVertexUniformData(commands, 0, matrices.data(),
+                               static_cast<std::uint32_t>(sizeof(matrices)));
+  if (record.uniform_size != 0) {
+    const std::span<const std::byte> uniforms =
+        uniform_bytes.subspan(record.uniform_offset, record.uniform_size);
+    SDL_PushGPUFragmentUniformData(commands, 0, uniforms.data(),
+                                   static_cast<std::uint32_t>(uniforms.size()));
+  }
+  const SDL_GPUBufferBinding vertex_binding{.buffer = source.vertices.get(), .offset = 0};
+  SDL_BindGPUVertexBuffers(pass, 0, &vertex_binding, 1);
+  const SDL_GPUBufferBinding index_binding{.buffer = source.indices.get(), .offset = 0};
+  SDL_BindGPUIndexBuffer(pass, &index_binding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+  SDL_DrawGPUIndexedPrimitives(pass, source.index_count, 1, 0, 0, 0);
+  ++draw_calls;
 }
 
 void SdlGpuRenderer::Impl::upload_vertices(SDL_GPUCommandBuffer* commands) {
@@ -551,9 +656,23 @@ std::uint32_t SdlGpuRenderer::Impl::record_passes(SDL_GPUCommandBuffer* commands
     if (recorded.pass.clear) {
       color_target.clear_color = premultiplied(*recorded.pass.clear);
     }
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color_target, 1, nullptr);
+    SDL_GPUDepthStencilTargetInfo depth_target{};
+    if (recorded.pass.depth) {
+      depth_target.texture = depth_buffer(target_size);
+      depth_target.clear_depth = 1.0F;
+      depth_target.load_op = SDL_GPU_LOADOP_CLEAR;
+      depth_target.store_op = SDL_GPU_STOREOP_DONT_CARE;
+      depth_target.stencil_load_op = SDL_GPU_LOADOP_DONT_CARE;
+      depth_target.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+    }
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color_target, 1,
+                                                     recorded.pass.depth ? &depth_target : nullptr);
     if (pass == nullptr) {
       throw_sdl_error("cannot begin a render pass");
+    }
+    for (const render_detail::MeshRecord& record :
+         recorder.meshes().subspan(recorded.first_mesh, recorded.mesh_count)) {
+      record_mesh(commands, pass, record, uniform_bytes, draw_calls);
     }
     if (recorded.batch_count != 0) {
       const std::array<float, 4> pass_uniforms{static_cast<float>(target_size.width),
@@ -628,6 +747,10 @@ void SdlGpuRenderer::Impl::release_destroyed() {
     custom_shaders.erase(id.value);
   }
   shaders_to_destroy.clear();
+  for (const MeshId id : meshes_to_destroy) {
+    meshes.erase(id.value);
+  }
+  meshes_to_destroy.clear();
 }
 
 SdlGpuRenderer::SdlGpuRenderer(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -711,6 +834,67 @@ TextureId SdlGpuRenderer::create_render_target(Size size, TextureFilter filter) 
   return id;
 }
 
+MeshId SdlGpuRenderer::create_mesh(std::span<const MeshVertex> vertices,
+                                   std::span<const std::uint32_t> indices) {
+  if (vertices.empty() || indices.empty() || indices.size() % 3 != 0) {
+    throw RenderError{"a mesh needs vertices and whole triangles"};
+  }
+  if (std::ranges::any_of(indices, [&](std::uint32_t index) { return index >= vertices.size(); })) {
+    throw RenderError{"a mesh index is past its last vertex"};
+  }
+  constexpr std::size_t kMaxBytes = std::numeric_limits<std::uint32_t>::max();
+  if (vertices.size_bytes() > kMaxBytes || indices.size_bytes() > kMaxBytes) {
+    throw RenderError{"a mesh is too big"};
+  }
+  const auto vertex_bytes = static_cast<std::uint32_t>(vertices.size_bytes());
+  const auto index_bytes = static_cast<std::uint32_t>(indices.size_bytes());
+  SDL_GPUDevice* device = impl_->device.get();
+  Impl::Mesh made;
+  made.vertices = impl_->make_buffer(SDL_GPU_BUFFERUSAGE_VERTEX, vertex_bytes);
+  made.indices = impl_->make_buffer(SDL_GPU_BUFFERUSAGE_INDEX, index_bytes);
+  made.index_count = static_cast<std::uint32_t>(indices.size());
+  const GpuPtr<SDL_GPUTransferBuffer> upload =
+      impl_->make_transfer_buffer(SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, vertex_bytes + index_bytes);
+  auto* mapped = static_cast<std::uint8_t*>(SDL_MapGPUTransferBuffer(device, upload.get(), false));
+  if (mapped == nullptr) {
+    throw_sdl_error("cannot map a GPU transfer buffer");
+  }
+  std::memcpy(mapped, vertices.data(), vertex_bytes);
+  std::memcpy(mapped + vertex_bytes, indices.data(), index_bytes);
+  SDL_UnmapGPUTransferBuffer(device, upload.get());
+
+  SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
+  if (commands == nullptr) {
+    throw_sdl_error("cannot start GPU commands");
+  }
+  SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+  const SDL_GPUTransferBufferLocation vertex_source{.transfer_buffer = upload.get(), .offset = 0};
+  const SDL_GPUBufferRegion vertex_destination{
+      .buffer = made.vertices.get(), .offset = 0, .size = vertex_bytes};
+  SDL_UploadToGPUBuffer(copy, &vertex_source, &vertex_destination, false);
+  const SDL_GPUTransferBufferLocation index_source{.transfer_buffer = upload.get(),
+                                                   .offset = vertex_bytes};
+  const SDL_GPUBufferRegion index_destination{
+      .buffer = made.indices.get(), .offset = 0, .size = index_bytes};
+  SDL_UploadToGPUBuffer(copy, &index_source, &index_destination, false);
+  SDL_EndGPUCopyPass(copy);
+  if (!SDL_SubmitGPUCommandBuffer(commands)) {
+    throw_sdl_error("cannot submit GPU commands");
+  }
+  const MeshId id{impl_->next_mesh++};
+  impl_->meshes.emplace(id.value, std::move(made));
+  return id;
+}
+
+void SdlGpuRenderer::destroy_mesh(MeshId mesh) {
+  if (impl_->meshes.contains(mesh.value)) {
+    impl_->meshes_to_destroy.push_back(mesh);
+    if (!impl_->in_frame) {
+      impl_->release_destroyed();
+    }
+  }
+}
+
 ShaderId SdlGpuRenderer::create_shader(const ShaderBytecode& fragment) {
   if (fragment.samplers > kMaxShaderTextures || fragment.uniform_buffers > 1) {
     throw RenderError{
@@ -778,12 +962,18 @@ void SdlGpuRenderer::begin_pass(const RenderPass& pass) {
   } else if (!impl_->texture(pass.target).render_target) {
     throw RenderError{"texture " + std::to_string(pass.target.value) + " is not a render target"};
   }
+  if (pass.depth && pass.target == kScreen) {
+    throw RenderError{"a pass with a depth buffer needs a render target"};
+  }
   impl_->recorder.begin_pass(pass);
 }
 
 void SdlGpuRenderer::draw(std::span<const Quad> quads, const DrawState& state) {
   if (!impl_->in_frame || !impl_->recorder.in_pass()) {
     throw RenderError{"draw() outside a render pass"};
+  }
+  if (impl_->recorder.current_pass().depth) {
+    throw RenderError{"a pass with a depth buffer draws meshes, not quads"};
   }
   static_cast<void>(impl_->texture(state.texture));
   const TextureId pass_target = impl_->recorder.current_pass().target;
@@ -811,6 +1001,27 @@ void SdlGpuRenderer::draw(std::span<const Quad> quads, const DrawState& state) {
                                      : "the draw has uniforms but the shader takes none"};
   }
   impl_->recorder.add(quads, state);
+}
+
+void SdlGpuRenderer::draw_mesh(const MeshDraw& draw) {
+  if (!impl_->in_frame || !impl_->recorder.in_pass() || !impl_->recorder.current_pass().depth) {
+    throw RenderError{"draw_mesh() outside a render pass with a depth buffer"};
+  }
+  static_cast<void>(impl_->mesh(draw.mesh));
+  static_cast<void>(impl_->texture(draw.texture));
+  if (draw.texture == impl_->recorder.current_pass().target) {
+    throw RenderError{"a pass cannot draw its own target"};
+  }
+  const auto found = impl_->custom_shaders.find(draw.shader.value);
+  if (found == impl_->custom_shaders.end()) {
+    throw RenderError{"a mesh needs a fragment shader that includes mesh.hlsli"};
+  }
+  if (found->second.takes_uniforms == draw.uniforms.empty()) {
+    throw RenderError{found->second.takes_uniforms
+                          ? "the shader needs uniforms but the draw has none"
+                          : "the draw has uniforms but the shader takes none"};
+  }
+  impl_->recorder.add_mesh(draw);
 }
 
 GpuInfo SdlGpuRenderer::gpu_info() const {

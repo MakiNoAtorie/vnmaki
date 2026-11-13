@@ -7,6 +7,7 @@ target_sources(
           frame_recorder.hpp
           image.cpp
           image.hpp
+          mesh.hpp
           renderer.cpp
           renderer.hpp
           shader.hpp
@@ -30,7 +31,7 @@ target_sources(vnmaki_engine PRIVATE sdl_shader_compiler.cpp)
 target_compile_definitions(vnmaki_engine PRIVATE VNMAKI_RUNTIME_SHADERS=${vnmaki_runtime_shaders})
 
 # The headers a game shader includes, embedded as text for the run-time compiler.
-foreach(header IN ITEMS vnmaki sprite_fragment transition)
+foreach(header IN ITEMS vnmaki sprite_fragment transition mesh)
   set(header_path "${PROJECT_SOURCE_DIR}/shaders/${header}.hlsli")
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${header_path}")
   string(TOUPPER "${header}" header_upper)
@@ -54,6 +55,10 @@ vnmaki_add_shaders(
           "${PROJECT_SOURCE_DIR}/shaders/transition_slide.frag.hlsl"
           "${PROJECT_SOURCE_DIR}/shaders/transition_wipe.frag.hlsl"
           "${PROJECT_SOURCE_DIR}/shaders/transition_mask.frag.hlsl"
+          "${PROJECT_SOURCE_DIR}/shaders/mesh.vert.hlsl"
+          "${PROJECT_SOURCE_DIR}/shaders/mesh_unlit.frag.hlsl"
+          "${PROJECT_SOURCE_DIR}/shaders/mesh_toon.frag.hlsl"
+          "${PROJECT_SOURCE_DIR}/shaders/mesh_pbr.frag.hlsl"
   INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/shaders")
 
 # libwebp decodes WebP. vcpkg and Debian/Ubuntu (libwebp-dev) both ship a CMake config.
