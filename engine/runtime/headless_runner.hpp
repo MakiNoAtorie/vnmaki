@@ -32,8 +32,13 @@ struct ReturnScreenInput {
   ScreenValue value{};
 };
 
+/// The player rolls back one say, narrate, menu or call_screen (ScriptRuntime::roll_back()). The
+/// transcript then shows the request the story went back to. It fails the run if there is
+/// nowhere to go back to.
+struct RollbackInput {};
+
 /// One scripted player input.
-using ScriptInput = std::variant<AdvanceInput, ChooseInput, ReturnScreenInput>;
+using ScriptInput = std::variant<AdvanceInput, ChooseInput, ReturnScreenInput, RollbackInput>;
 
 enum class HeadlessOutcome : std::uint8_t {
   kFinished,    ///< The story ended.
@@ -85,7 +90,8 @@ struct HeadlessOptions {
 /// Loads every script under `scripts/` in `vfs`, enters the start label and
 /// answers each yield point with the next input until the story ends, the
 /// inputs run out or a script fails. A wait needs no input: no clock runs, so
-/// the tweens it waits for (SceneCommands::finish_tweens) end at once. An
+/// the tweens it waits for (SceneCommands::finish_tweens) end at once. A rollback goes back over
+/// waits too. An
 /// input that does not fit the yield point (an advance at a menu or a screen,
 /// a choice at a line or of an option the menu does not have, a screen result
 /// anywhere else) also fails the run.

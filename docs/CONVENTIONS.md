@@ -58,8 +58,9 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Tests use doctest. Each doctest executable needs `DOCTEST_CONFIG_USE_STD_HEADERS`.
 - Unit tests are in `tests/unit/*_test.cpp`. They run in `vnmaki_unit_tests`. The ctest name of each test is `unit.<name>`.
 - Platform tests are in `tests/platform/` and have their own executable. On Linux, they use `SDL_VIDEO_DRIVER=offscreen`.
-- CLI tests use `vnmaki_add_cli_test(name ARGS ... EXIT n [STDOUT_LINE t | NO_STDOUT] [STDERR_REGEX r])`.
+- CLI tests use `vnmaki_add_cli_test(name ARGS ... EXIT n [STDOUT_LINE t | NO_STDOUT] [STDERR_REGEX r] [EXPECTED_FILES f...])`.
 - To compare output with a file, use `vnmaki_add_cli_stdout_file_test(... STDOUT_FILE f)`.
+- A `vnmaki run` test never touches the user-data directory (AppData). Both helpers add `--data-dir <build>/tests/cli/data/<name>` to every `ARGS` that starts with `run`, and the runner script empties that folder first. So no test shares saves with another. A test that adds `add_test` by hand must do the same (`vnmaki_isolate_run_data`).
 - Do not make test fixtures by hand. A Python 3 script in `tools/generators/` writes them.
   - The script uses only the standard library. Its only argument is `OUT_DIR`.
   - Register it with `vnmaki_add_fixture_generator(<name> SCRIPT ... TEST_TARGETS ...)`.
@@ -75,7 +76,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - If there is no device, it prints `VNMAKI_SKIP:` and ctest skips the test. `VNMAKI_REQUIRE_GPU=1` stops the skip. Linux CI sets it, because it has lavapipe.
   - Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png`.
   - `tools/generators/render_fixtures.py` makes the golden images with a reference rasterizer.
-  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `frame_anim_fixtures.py`.
+  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`, `frame_anim_fixtures.py`.
 
 ## Module contracts
 
@@ -122,6 +123,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Then draw that target to `kScreen` at `compute_viewport(virtual, window_metrics().pixels, mode).rect`.
 - Shaders are HLSL in `shaders/`. shadercross compiles them at build time through `vnmaki_add_shaders(...)`.
 - Custom fragment shaders include `vnmaki.hlsli`. They can have one constant buffer at `register(b0, space3)`.
+- Game shaders compile at run time, not at build time (`shader_compiler.hpp`).
+  - `compile_fragment_shader(name, hlsl)` uses the SDL_shadercross library (`sdl3-shadercross` in `vcpkg.json` is a target dependency, not only a host tool). It returns a `CompiledShader` that owns SPIR-V, MSL and DXIL. `bytecode()` is the view for `IRenderer::create_shader`.
+  - `#include "vnmaki.hlsli"` finds the engine header. The build embeds `shaders/*.hlsli` as text (`shader_headers.cpp.in`), so a game needs no engine shader files.
+  - A compile error throws `ShaderCompileError`. The message has the file, the line, the column and the compiler message. Example: `shaders/sepia.frag.hlsl:5:18: error: use of undeclared identifier 'x'`.
+  - A shader may use one texture and one constant buffer at `register(b0, space3)`. Storage textures and buffers are errors.
+  - `shader_compiler_available()` is false on macOS, where vcpkg has no `sdl3-shadercross`. Tests that compile shaders return early then.
+  - The compiler is only in `engine/render/sdl_shader_compiler.cpp`, because it includes SDL headers.
 - `load_image(vfs, jobs, path)` loads an image and returns `JobHandle<Image>`.
 - Upload images with `create_texture` on the main thread.
 
@@ -155,7 +163,14 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - The snapshot keeps the properties as a replay leaves them. A tween that ends is at its end value. A loop is at the value where it started.
 - Tweens write through `Scene::find(tag)->properties()`. `Scene::update(seconds)` moves them. `hide` and `scene` end the tweens of the displayables that they remove.
 - `Scene::show` of a tag that is shown does not end its tweens.
-- For each frame, call `scene.prepare(renderer, jobs)` on the main thread. Then call `scene.draw(renderer)` in a pass on the virtual-resolution target.
+- For each frame, call `scene.prepare(renderer, jobs)` on the main thread. Then call `scene.draw(renderer, target)` in a pass on the virtual-resolution target. Give the id of that target: a layer with a shader ends the pass and begins a new pass on `target`.
+- Game shaders:
+  - `shader(name, { "amount", ... })` declares `shaders/<name>.frag.hlsl` and compiles it when the scripts load. A declaration again with the same uniforms does nothing. The uniforms are floats (at most `kMaxUniforms`, 16) packed in order into `b0` and padded to 16 bytes. `SceneCommands::declare_shader` carries it out and returns the error string.
+  - `show(tag, { shader = name, uniforms = { amount = 1 } })` and `layer(name, { shader =, uniforms = })` set them (`SceneCommands::set_shader`). `shader = ""` removes the shader. A `show` without the options keeps them. Uniforms that the call does not name keep their values; a new shader starts with zeros.
+  - `DisplayProperties::shader` is the number of the shader (from 1, in declaration order; 0 is the default shader) and `uniforms` are the values. Every displayable draws through `Displayable::draw_state(texture)`, so images and layered sprites get the shader the same way. `Scene::prepare` makes the GPU shaders and gives them to the displayables.
+  - A layer with a shader (and displayables) draws into its own render target of the virtual size, and then that target draws with the shader. The layer properties are in `layer_properties(layer)`.
+  - The tag `@layer.<name>` is for the uniforms of a layer in `tween`. A `show` tag cannot start with `@layer.`.
+  - The snapshot part `shaders` keeps the shader name (not the number) and the 16 uniform values of each displayable and layer. The part is left out when no shader is set. `restore()` ignores a shader that is not declared.
 - `SceneCommands` calls return an error string. The prelude raises it at the script line.
 - `SceneCommands` calls also run during replay.
 - `SceneCommands` has `animation`, `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
@@ -188,7 +203,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `easing.hpp`: `Ease` is linear, and sine, quad, cubic, back and bounce, each as `in`, `out` and `in_out`. The script names are `linear` and `in_sine`, `out_quad`, `in_out_back`, ... `apply_ease` clamps its input to [0, 1].
 - `Timeline` runs `TweenNode` trees: a tween, a `sequence` or a `parallel` group. It has no clock. The caller gives the elapsed seconds to `update()`. Tests use a fake clock.
 - A `Timeline::Lookup` finds the `DisplayProperties` of a tag. The timeline keeps no pointers to displayables. A tween of a tag that is not found does nothing.
-- A tween changes channels (`Channel`: position, anchor, scale, rotation, alpha, tint, crop). A channel without a target stays as it is. Alpha and tint are kept in [0, 1], also for a back easing.
+- A tween changes channels (`Channel`: position, anchor, scale, rotation, alpha, tint, crop). The 16 shader uniforms are channels after them (`uniform_slot(i)`), so `kChannelCount` is 32. This changed the snapshot form of loops. A channel without a target stays as it is. Alpha and tint are kept in [0, 1], also for a back easing.
 - A tween starts after its `delay` and reads its start values then. A sequence of tweens on one property continues from the last end. The values do not depend on the step size.
 - `yoyo` goes to the target and back. Without `loop`, it does this one time. `loop` repeats a tween forever. On the outermost group, `loop` repeats the whole group. The `delay` of a group applies one time.
 - A loop in a sequence must be the last item. A nested group cannot loop. `start()` returns the reason.
@@ -196,13 +211,13 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `start(node, lookup, instant = true)` is for replay. A tween that ends goes to its end value. A loop starts at time 0.
 - `finish(tag)` puts the tweens that end at their end values. A click or skip does this.
 - `settle()`, `capture()` and `restore()` are the snapshot. `capture()` keeps only loops, with the whole group if it contains a loop. `restore()` starts them at time 0 from the properties that it finds. `Scene::capture()` calls `settle()` on copies first.
-- Script API: `tween(tag, { x, y, anchor = { x, y }, scale = number or { x, y }, rotation, alpha, tint = "#rrggbb", crop = { x, y, width, height }, duration, delay, ease, loop, yoyo })`. The units are those of `show`. `duration` is 0.5 s if the script gives none.
+- Script API: `tween(tag, { x, y, anchor = { x, y }, scale = number or { x, y }, rotation, alpha, tint = "#rrggbb", crop = { x, y, width, height }, duration, delay, ease, loop, yoyo, uniforms = { name = number } })`. The units are those of `show`. `duration` is 0.5 s if the script gives none.
 - `sequence { item, ... }` and `parallel { item, ... }` start a group at once. An item is `{ tag, <options of tween> }`, or a group: `{ sequence = { items } }` or `{ parallel = { items } }`. The group table can have `delay` and `loop`. A group nests up to 16 levels.
 - `tween` has an effect at once and does not block. `wait(tag)` and `wait_all()` block (`WaitRequest`).
 - A wait is always one step, also when nothing is tweening, so replay counts the same steps as live play. `WaitPresenter` (`wait_presenter.hpp`) ends it:
   - Call `update()` once per update after `Scene::update`. It ends a wait whose tweens have ended.
   - Call `skip()` on a click or in skip mode, before `DialoguePresenter::advance()`. It puts the tweens at their end values and goes on. If it returns true, the input is used.
-- `ScriptPosition::wait` marks a wait step. Rollback (task 13) must go back over wait steps to the previous say or menu. This is not done yet.
+- `ScriptPosition::wait` marks a wait step. Rollback goes back over wait steps to the previous say, narrate, menu or `call_screen` (a wait is never a rollback step).
 
 ### Dialogue (`engine/dialogue/`)
 
@@ -219,8 +234,16 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `DialoguePresenter::line_serial()` changes when line() shows another line. The presenter also follows a story that moved by itself (a load).
 - `PlaybackIndicator` (`engine/ui/playback_indicator.hpp`) shows the screen `vnmaki:playback` ("SKIP", "SKIP ALL", "AUTO", ...) while a mode is on. Call `sync(skip, automatic)` every frame.
 - The default font of a project is `fonts/default.ttf` in its VFS. The engine has no font.
-- `vnmaki run <dir> [--frames N]` plays in a window. It exits with 0 when the story ends.
+- `vnmaki run <dir> [--frames N] [--data-dir <path>]` plays in a window. It exits with 0 when the story ends. Saves and `persistent.vnpersist` go to `--data-dir`, or else to the user-data directory of the project title. This also applies to `--headless`.
+- Rollback input (`is_rollback_event`, `rollback_input.hpp`): mouse wheel up, Page Up, gamepad left shoulder. The story window checks it after the screens and calls `ScriptRuntime::roll_back()`. It turns skip off. Task 42 will make the keys configurable.
 - `SayRequest` has `color` (0xRRGGBB) and `voice_tag` from `character{}`.
+- `Backlog` (`backlog.hpp`) has no list of its own. `entries()` reads `ScriptRuntime::rollback_steps()`, so it is right after a rollback and after a load. It is the say and narrate steps (menus and screens are left out), oldest first, at most `max_entries` of the newest (`project.toml` `backlog_length`, default 100). It cannot hold more than `rollback_depth` steps plus one.
+  - A `BacklogEntry` has `speaker` (empty for narrate), `text` (with tags), `label`, `step` and `voice`. `voice` is the name of the last `voice(name)` call before the line (`RollbackStep::voice`). The runtime records it also during a replay, but does not play it.
+  - `play_voice(entry)` calls `AudioCommands::voice`, so a replayed voice also ducks the music and `voice_playing()` is true. Give `Backlog` the same `Audio` as the runtime.
+- `BacklogScreen` (`engine/ui/backlog_screen.hpp`) is the screen `vnmaki:backlog` of a `UiHost` (not modal). The story window gives it every event first. While it is open it takes all key, wheel, gamepad button and pointer events, and the story window does not call `Playback::update`, so auto and skip wait.
+  - `L` or the gamepad north button opens it (not while a modal screen is shown). `Esc`, `L` or the east button closes it.
+  - Up/Down, the d-pad and the wheel select the previous or next line. Page Up/Down and the shoulders move a page. Home/End go to the oldest or newest line. Enter, Space, the south button or a click on a line plays its voice (only a line with a voice is a button).
+  - The scroll viewport is a window of whole entries: `UiRenderer` has no clipping. `BacklogScreen` measures each entry with the `TextMeasure` it gets and shows the entries that fit from `first_visible()`. A line taller than the canvas overflows.
 
 ### UI (`engine/ui/`)
 
@@ -292,13 +315,24 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
 - `wait(tag)` and `wait_all()` are blocking calls too (`WaitRequest`). `advance()` ends them. See Anim.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it. It ends a wait at once and needs no input for it.
-- `project.toml` has `title` (required), `version`, `resolution`, `languages` and `auto_save` (a list of `"label"` and `"menu"`).
+- `project.toml` has `title` (required), `version`, `resolution`, `languages`, `auto_save` (a list of `"label"` and `"menu"`), `rollback_depth` and `backlog_length` (each 0 to 10000, default 100).
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
   - A slot is an integer from 1. `load` with a number is a slot. With a string or function it is Lua's `load`.
 - `on_load(function(old_version, store) ... end)` registers the migration hook while the scripts load. `run_on_load(snapshot, old_version)` runs it on the store of a snapshot, not on the live `store`.
 - `persistent` is a second Lua table, like `store`, but it is not in any snapshot or save. Rollback and load never change it.
   - `persistent_snapshot()` and `restore_persistent()` give the host the data. Call `restore_persistent` before `load_scripts()`.
   - A replay runs script code again, so code that writes to `persistent` must be idempotent (`persistent.won = true`, not `persistent.n = persistent.n + 1`).
+- Rollback keeps its history in the runtime. `roll_back()` and `rollback_steps()` are the interface.
+  - A step (`RollbackStep`) is a position where the story waited at a say, narrate, menu or `call_screen`. A `wait` is not a step. It holds the label-entry snapshot and input log of the outermost running label, the number (`ordinal`) of the yield point, and `voice`, the last `voice(name)` before it (see Backlog in Dialogue). So each step stands alone, and the history works across `jump`, `call` and `ret`.
+  - `roll_back()` replays the outermost label from its snapshot, with the labels it called, to that yield point (`begin_replay` with an ordinal). Replay does not report the label entries, and it does not add a step. The observer then hears the request, as for a load.
+  - From a say or menu it goes to the step before. From a wait it goes to the last step. It returns false when there is nothing to go back to, and then it changes nothing.
+  - The history keeps `ScriptRuntimeOptions::rollback_depth` steps back (default 100, `project.toml` key `rollback_depth`, 0 is off). The oldest steps go first.
+  - A rollback drops the later steps at once. There is no roll forward. The player who goes back to a menu and chooses again gets a new branch with no trace of the old one.
+  - `menu { "a", "b", fixed = true }`: after the player answers it, the history is empty. Rollback cannot go back to the menu or before it. `fixed` must be a boolean.
+  - `replay()` (a load) empties the history. The story then starts a new one.
+  - Rollback and `persistent`: rollback never changes it. A replay runs script code again, so the idempotence rule for `persistent` is also true here.
+  - `show_screen` and `hide_screen` are not in snapshots (see UI), so a rollback does not undo them.
+  - The headless runner has `RollbackInput`. It fails the run when there is nothing to go back to.
 - `skip("seen" | "all" | "off" | false)` and `auto(bool)` queue a `PlaybackRequest`. `take_playback_requests()` gives them to the host. They are dropped during a replay.
 - `character { auto_multiplier = n }` goes to `SayRequest::auto_multiplier` (default 1).
 - `drop_callers()` makes the running label the outermost label. A load calls it before `replay()`.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <ostream>
 #include <string_view>
@@ -19,11 +20,14 @@ inline constexpr std::string_view kDefaultFontPath = "fonts/default.ttf";
 
 /// Plays the game in `vfs` in a window: runs its `start` label, draws the scene and the say box
 /// each frame, and advances on a click, Enter, Space or the gamepad's south button (first
-/// finishing the typewriter reveal, or the tweens a `wait` waits for). Tweens move with the
-/// main-loop clock. The window closes once the story ends, or after `max_frames`
-/// frames. Returns the process exit code: 0, or 1 (after a message on `err`) when the project,
-/// its font, a script or the GPU cannot be used or a script fails while running.
+/// finishing the typewriter reveal, or the tweens a `wait` waits for). The mouse wheel up, Page Up
+/// and the gamepad's left shoulder button roll the story back (ScriptRuntime::roll_back()).
+/// Tweens move with the main-loop clock. The window closes once the story ends, or after
+/// `max_frames` frames. Saves and `persistent` go to `data_directory`, by default the user-data
+/// directory of the game's title. Returns the process exit code: 0, or 1 (after a message on `err`)
+/// when the project, its font, a script or the GPU cannot be used or a script fails while running.
 int run_story_window(const Vfs& vfs, const ProjectConfig& config,
-                     std::optional<std::uint64_t> max_frames, std::ostream& err);
+                     std::optional<std::uint64_t> max_frames,
+                     const std::optional<std::filesystem::path>& data_directory, std::ostream& err);
 
 }  // namespace vnmaki::cli

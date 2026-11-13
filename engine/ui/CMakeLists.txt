@@ -2,7 +2,9 @@
 # and the renderer (docs/SPEC.md section 15).
 target_sources(
   vnmaki_engine
-  PRIVATE playback_indicator.cpp
+  PRIVATE backlog_screen.cpp
+          backlog_screen.hpp
+          playback_indicator.cpp
           playback_indicator.hpp
           screen_presenter.cpp
           screen_presenter.hpp

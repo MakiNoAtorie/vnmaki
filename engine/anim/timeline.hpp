@@ -20,7 +20,8 @@
 
 namespace vnmaki {
 
-/// The properties of a displayable that a tween changes, one float each.
+/// The properties of a displayable that a tween changes, one float each. Shader uniforms are
+/// channels too (see uniform_slot()).
 enum class Channel : std::uint8_t {
   kX,
   kY,
@@ -41,10 +42,17 @@ enum class Channel : std::uint8_t {
   kCount,
 };
 
-inline constexpr std::size_t kChannelCount = static_cast<std::size_t>(Channel::kCount);
+inline constexpr std::size_t kPropertyChannelCount = static_cast<std::size_t>(Channel::kCount);
+/// The channels of the properties, then those of the shader uniforms.
+inline constexpr std::size_t kChannelCount = kPropertyChannelCount + kMaxUniforms;
 
 [[nodiscard]] constexpr std::size_t slot(Channel channel) {
   return static_cast<std::size_t>(channel);
+}
+
+/// The channel of uniform `index` (below kMaxUniforms).
+[[nodiscard]] constexpr std::size_t uniform_slot(std::size_t index) {
+  return kPropertyChannelCount + index;
 }
 
 /// The value a tween moves each channel to; a channel without a value is left alone. Position is in

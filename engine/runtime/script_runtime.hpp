@@ -56,6 +56,8 @@ struct NarrateRequest {
 /// ScriptRuntime::choose().
 struct MenuRequest {
   std::vector<std::string> options;
+  /// `fixed = true`: once answered, rollback cannot go back to this menu or before it.
+  bool fixed = false;
 
   friend bool operator==(const MenuRequest&, const MenuRequest&) = default;
 };
@@ -240,6 +242,20 @@ struct AnimationRequest {
   bool loop = true;  ///< False: the last frame stays when the animation has played once.
 };
 
+/// A uniform of a shader by name and its value.
+using UniformValue = std::pair<std::string, double>;
+
+/// `show(tag, { shader =, uniforms = })` or `layer(name, { shader =, uniforms = })`. Fields the
+/// script left out are empty.
+struct ShaderRequest {
+  /// A displayable's tag, or with `layer` the name of a layer.
+  std::string target{};
+  bool layer = false;
+  /// The shader's name; an empty name removes the shader. Without it the target keeps its shader.
+  std::optional<std::string> shader{};
+  std::vector<UniformValue> uniforms{};
+};
+
 /// `tween(tag, options)`, or the group `sequence{...}` or `parallel{...}` of tweens. Fields the
 /// script left out are empty. Positions are fractions of the virtual resolution, as for `show`;
 /// `anchor` and `crop` are fractions of the displayable.
@@ -261,6 +277,8 @@ struct TweenRequest {
   std::optional<double> crop_y{};
   std::optional<double> crop_width{};
   std::optional<double> crop_height{};
+  /// Shader uniforms by name, of the shader the displayable has.
+  std::vector<UniformValue> uniforms{};
   double duration = 0.5;  ///< Seconds.
   double delay = 0;       ///< Seconds.
   std::string ease{"linear"};
@@ -306,6 +324,18 @@ class SceneCommands {
   /// True while a tween that ends changes `tag`, or an animation that ends plays on it (any tag
   /// when empty): what `wait` waits for.
   [[nodiscard]] virtual bool tweening(std::string_view /*tag*/) const { return false; }
+
+  /// `shader(name, { "uniform", ... })`: declares the game shader `shaders/<name>.frag.hlsl` and
+  /// the floats of its constant buffer, in order. Declaring a shader again with the same uniforms
+  /// does nothing. Returns why it cannot (a missing file, a compile error with its file and
+  /// line). The default does nothing, for implementations that cannot draw shaders.
+  [[nodiscard]] virtual std::string declare_shader(std::string_view /*name*/,
+                                                   std::span<const std::string> /*uniforms*/) {
+    return {};
+  }
+  /// Sets the shader and uniform values of a displayable or a layer. Returns why it cannot (an
+  /// unknown tag, shader or uniform).
+  [[nodiscard]] virtual std::string set_shader(const ShaderRequest& /*request*/) { return {}; }
 };
 
 /// What `show_screen`, `hide_screen` and `call_screen` need from the engine (engine/ui/ui_host.hpp
@@ -442,7 +472,8 @@ class ScriptObserver {
   /// A `scene`, `show`, `hide`, `tween`, `sequence` or `parallel` call was done. `command` is its
   /// transcript form: "scene <image>", "hide <tag>", "tween <tag>", "sequence", "parallel", or
   /// "show <tag>" followed by the options given, in this order: " image <name>", " at <position>",
-  /// " x <number>", " y <number>", " layer <name>".
+  /// " x <number>", " y <number>", " layer <name>", the layered attributes and " shader <name>".
+  /// A `layer(name, options)` call is "layer <name>", with " shader <name>" if it set one.
   virtual void on_scene_command(std::string_view /*command*/) {}
   /// A `music`, `sound`, `voice`, `stop` or `volume` call was done. `command` is its transcript
   /// form, with the options given in this order:
@@ -457,6 +488,31 @@ class ScriptObserver {
   virtual void on_print(std::string_view /*text*/) {}
   /// A dev-mode warning, e.g. a new global outside `store`.
   virtual void on_warning(std::string_view /*message*/) {}
+};
+
+/// How many steps back the player can roll unless ScriptRuntimeOptions::rollback_depth is set.
+inline constexpr std::size_t kDefaultRollbackDepth = 100;
+
+/// How many lines the backlog shows at most unless project.toml `backlog_length` says otherwise.
+inline constexpr std::size_t kDefaultBacklogLength = 100;
+
+/// A position the player can roll back to: a say, narrate, menu or call_screen the story waited
+/// at (never a `wait`). It holds all that replaying to there takes, so every step stands alone.
+struct RollbackStep {
+  /// The label-entry snapshot and input log of the outermost running label at that time. Its
+  /// log covers the answers given in the labels it called.
+  LabelSnapshot root{};
+  std::vector<InputResult> inputs{};
+  /// Label and step of every running label, outermost first.
+  std::vector<ScriptPosition> stack{};
+  /// How many yield points (waits too) the outermost label reached, counting this one, in this
+  /// label and the labels it called: what replaying `root` has to count up to. At least 1.
+  std::uint32_t ordinal = 0;
+  /// What the story waited for there.
+  BlockingRequest request{};
+  /// The name of the last `voice(name)` call before this say or menu (and after the one before);
+  /// empty if there was none. The backlog plays it again.
+  std::string voice{};
 };
 
 /// The seed of the script RNG unless ScriptRuntimeOptions::random_seed is set.
@@ -475,6 +531,8 @@ struct ScriptRuntimeOptions {
   /// error, so an endless loop fails instead of hanging the engine. Counted
   /// in blocks of up to 1000 instructions, so the bound is approximate.
   std::uint32_t instruction_limit = 0;
+  /// How many steps back rollback can go (project.toml `rollback_depth`); 0 turns it off.
+  std::size_t rollback_depth = kDefaultRollbackDepth;
   /// Receives the scripts' requests; may be null. Nothing is reported while
   /// ScriptRuntime::replaying().
   ScriptObserver* observer = nullptr;
@@ -508,9 +566,10 @@ struct ScriptRuntimeOptions {
 /// engine Vfs. `print` goes to ScriptObserver::on_print.
 ///
 /// The engine API: `character { name =, color = "#rrggbb", voice_tag =, auto_multiplier = }`,
-/// `label(name, fn)`, `jump(name)`, `call(name)`, `ret()`, `say(who, text)`, `narrate(text)`, `menu { "option", ... }`
-/// (returns the number of the chosen option, from 1), `rand` (the same function as `math.random`)
-/// and the `store` table. Visuals: `scene(image)`, `show(tag, { image =, at =, x =, y =, layer =
+/// `label(name, fn)`, `jump(name)`, `call(name)`, `ret()`, `say(who, text)`, `narrate(text)`, `menu
+/// { "option", ... }` (returns the number of the chosen option, from 1), `rand` (the same function
+/// as `math.random`) and the `store` table. Visuals: `scene(image)`, `show(tag, { image =, at =, x
+/// =, y =, layer =
 /// })` and `hide(tag)`; option keys they do not know are ignored (later tickets add `with`,
 /// `outfit`...).
 /// Text: `say` and `narrate` take inline tags (docs/TEXT_TAGS.md), and a bad
@@ -526,6 +585,10 @@ struct ScriptRuntimeOptions {
 /// group `{ sequence = { item... } }` or `{ parallel = { item... } }`; the group table may have
 /// `delay` and `loop`. `wait(tag)` and `wait_all()` block until those tweens have ended. A tween
 /// that is not waited for does not block.
+/// Shaders: `shader(name, { "uniform", ... })` declares the game shader `shaders/<name>.frag.hlsl`
+/// and its float uniforms, in order. `show` takes `shader = name` and `uniforms = { uniform =
+/// number }`. `layer(name, { shader =, uniforms = })` sets them on a layer. `tween` takes
+/// `uniforms = { uniform = number }`; the tag `@layer.<name>` tweens those of a layer.
 /// Screens: `screen "name" { node... }` (or a function of the arguments that
 /// returns nodes), the node constructors `box`, `hbox`, `vbox`, `text`, `image` and `button`,
 /// `show_screen(name, args)`, `hide_screen(name)` and `call_screen(name, args)`, which waits for
@@ -609,6 +672,21 @@ class ScriptRuntime {
   /// with these inputs (e.g. the script changed).
   void replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
               std::uint32_t step);
+
+  /// Goes back one say, narrate, menu or call_screen (the previous one: `wait` steps do not
+  /// count), as replay() does: the story waits there again, and the observer hears that request.
+  /// Across a label boundary it replays from the label that was running then, with its callers.
+  /// At a menu or screen the player can answer again; a new answer removes what was after it.
+  /// `persistent` does not change. Returns false, changing nothing, if there is nowhere to go
+  /// back to: the story does not wait, the history is empty or its depth is spent, or the player
+  /// answered a `fixed` menu since. The runtime fails if the replay does.
+  bool roll_back();
+  /// True if roll_back() would go back.
+  [[nodiscard]] bool can_roll_back() const;
+  /// The positions roll_back() can go to, oldest first. While the story waits at a line, menu or
+  /// screen, the last one is that request. A load (replay()) empties it. Invalidated like
+  /// label_snapshot().
+  [[nodiscard]] std::span<const RollbackStep> rollback_steps() const;
 
   /// Makes the running label the outermost one, so a load does not return into the labels that
   /// called the label it replaced. Call it before replay() when a story is already running.

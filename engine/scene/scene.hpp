@@ -20,6 +20,7 @@
 #include "engine/jobs/job_system.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
+#include "engine/render/shader_compiler.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/scene/displayable.hpp"
 #include "engine/scene/frame_animation.hpp"
@@ -56,6 +57,9 @@ inline constexpr double kMaxPositionFraction = 1'000'000.0;
 /// The tag of the displayable `scene(image)` puts on the background layer.
 inline constexpr std::string_view kBackgroundTag = "background";
 
+/// `tween` addresses the uniforms of a layer's shader with the tag "@layer.<name>".
+inline constexpr std::string_view kLayerTagPrefix = "@layer.";
+
 /// What is shown: which displayable has which tag, on which layer, with which properties.
 ///
 /// A tag names at most one displayable in the whole scene. Within a layer, displayables draw in
@@ -88,9 +92,18 @@ inline constexpr std::string_view kBackgroundTag = "background";
 /// definition is not in the snapshot: restore() needs it made first, which the scripts do when
 /// they load.
 ///
+/// `shader(name, { "amount", ... })` declares the game shader `shaders/<name>.frag.hlsl` and
+/// compiles it (engine/render/shader_compiler.hpp). A displayable or a layer then gets a shader
+/// and uniform values from `show(tag, { shader =, uniforms = })` or `layer(name, { shader =,
+/// uniforms = })`, and `tween` changes the values. The uniforms are floats packed into the
+/// shader's constant buffer in the declared order and padded to 16 bytes. A displayable draws
+/// with its shader. A layer with a shader draws into a render target of the virtual resolution,
+/// and then that target draws with the shader. prepare() makes the GPU shaders and the targets.
+///
 /// The snapshot is a map from a part's name to its bytes, so a later feature adds a part without
-/// changing the others: "displayables" (the images), "layered" (the layered sprites), "animations"
-/// (the frame animations) and "tweens" (the loops). It keeps the
+/// changing the others: "displayables" (the images), "layered" (the layered sprites),
+/// "animations" (the frame animations), "tweens" (the loops) and "shaders" (the shader and
+/// uniform values of displayables and layers; left out when no shader is set). It keeps the
 /// properties as a replay would leave them: tweens that end are at their end values, loops at the
 /// value they started from, and restore() starts each loop again at time 0.
 class Scene final : public SceneState, public SceneCommands {
@@ -106,6 +119,9 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] std::string tween(const TweenRequest& request) override;
   void finish_tweens(std::string_view tag) override;
   [[nodiscard]] bool tweening(std::string_view tag) const override;
+  [[nodiscard]] std::string declare_shader(std::string_view name,
+                                           std::span<const std::string> uniforms) override;
+  [[nodiscard]] std::string set_shader(const ShaderRequest& request) override;
 
   [[nodiscard]] std::vector<std::byte> capture() const override;
   void restore(std::span<const std::byte> state) override;
@@ -117,6 +133,10 @@ class Scene final : public SceneState, public SceneCommands {
   /// shown.
   [[nodiscard]] Displayable* find(std::string_view tag);
   [[nodiscard]] const Displayable* find(std::string_view tag) const;
+  /// The shader and uniform values of a layer (the other properties mean nothing).
+  [[nodiscard]] const DisplayProperties& layer_properties(Layer layer) const {
+    return layer_state_.at(static_cast<std::size_t>(layer));
+  }
 
   /// Advances the tweens and every displayable by `seconds`.
   void update(double seconds);
@@ -124,8 +144,10 @@ class Scene final : public SceneState, public SceneCommands {
   /// thread before draw(), always with the same renderer (the scene keeps its textures). Rethrows
   /// ImageError for a file that cannot be decoded and RenderError.
   void prepare(IRenderer& renderer, JobSystem& jobs);
-  /// Draws every layer, back to front, into the renderer's current pass.
-  void draw(IRenderer& renderer) const;
+  /// Draws every layer, back to front, into the renderer's current pass, whose target is
+  /// `target`. A layer with a shader draws in passes of its own, and then the scene goes on in a
+  /// new pass on `target`, so give the right target when a layer has a shader.
+  void draw(IRenderer& renderer, TextureId target = kScreen) const;
 
  private:
   struct Entry {
@@ -140,13 +162,38 @@ class Scene final : public SceneState, public SceneCommands {
     Layer layer = Layer::kBackground;
     std::size_t index = 0;
   };
+  struct GameShader {
+    std::string name;
+    std::vector<std::string> uniforms;
+    CompiledShader compiled;
+    std::size_t uniform_floats = 0;  // what a draw gives the constant buffer; 0 without one
+    std::optional<ShaderId> gpu;     // made by prepare()
+  };
   using Layers = std::array<std::vector<Entry>, kLayerOrder.size()>;
+  // The shader and uniform values of each layer, as DisplayProperties so that tweens reach them.
+  using LayerState = std::array<DisplayProperties, kLayerOrder.size()>;
 
   [[nodiscard]] std::optional<Slot> locate(std::string_view tag) const;
   [[nodiscard]] Timeline::Lookup lookup();
-  [[nodiscard]] static Displayable* find_in(Layers& layers, std::string_view tag);
+  // The properties of a displayable, or of a layer for the tag "@layer.<name>"; null if unknown.
+  [[nodiscard]] static DisplayProperties* properties_in(Layers& layers, LayerState& layer_state,
+                                                        std::string_view tag);
+  [[nodiscard]] const DisplayProperties* properties_of(std::string_view tag) const;
+  // The index of a uniform of the shader that `tag` has, from its name.
+  [[nodiscard]] std::optional<std::size_t> uniform_index(std::string_view tag,
+                                                         std::string_view name) const;
   // Reads the "displayables" part of a snapshot. Throws std::invalid_argument.
   [[nodiscard]] static Layers read_displayables(std::span<const std::byte> bytes);
+  // Reads the "shaders" part into displayables that are there already. Throws
+  // std::invalid_argument.
+  void read_shaders(std::span<const std::byte> bytes, Layers& layers,
+                    LayerState& layer_state) const;
+  // The number of the declared shader `name` (DisplayProperties::shader), or 0.
+  [[nodiscard]] std::uint32_t shader_id(std::string_view name) const;
+  // The shader with this number, or null for 0 and unknown numbers.
+  [[nodiscard]] const GameShader* shader_by_id(std::uint32_t id) const;
+  // Gives displayables their GPU shaders and creates the targets of layers with a shader.
+  void prepare_shaders(IRenderer& renderer);
   // Reads the "layered" part into `layers`. Throws std::invalid_argument.
   void read_layered(std::span<const std::byte> bytes, Layers& layers) const;
   // Reads the "animations" part into `layers`. Throws std::invalid_argument.
@@ -158,6 +205,10 @@ class Scene final : public SceneState, public SceneCommands {
   const Vfs* vfs_;
   Size virtual_size_;
   Layers layers_;
+  LayerState layer_state_;
+  std::vector<GameShader> shaders_;  // number n is shaders_[n - 1]
+  std::array<TextureId, kLayerOrder.size()> layer_targets_{};
+  std::vector<ShaderId> retired_shaders_;  // GPU shaders of redeclared shaders, to destroy
   std::map<std::string, Texture, std::less<>> textures_;
   std::map<std::string, std::shared_ptr<const LayeredDefinition>, std::less<>> definitions_;
   std::map<std::string, std::shared_ptr<const AnimationDefinition>, std::less<>> animations_;

@@ -15,8 +15,10 @@
 
 #include "engine/anim/wait_presenter.hpp"
 #include "engine/audio/audio.hpp"
+#include "engine/dialogue/backlog.hpp"
 #include "engine/dialogue/dialogue_presenter.hpp"
 #include "engine/dialogue/playback.hpp"
+#include "engine/dialogue/rollback_input.hpp"
 #include "engine/dialogue/say_box.hpp"
 #include "engine/jobs/job_system.hpp"
 #include "engine/platform/geometry.hpp"
@@ -33,6 +35,7 @@
 #include "engine/saves/thumbnail.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/text/text.hpp"
+#include "engine/ui/backlog_screen.hpp"
 #include "engine/ui/playback_indicator.hpp"
 #include "engine/ui/screen_presenter.hpp"
 #include "engine/ui/ui_host.hpp"
@@ -85,7 +88,9 @@ SkipMode next_skip_mode(SkipMode mode) {
 }  // namespace
 
 int run_story_window(const Vfs& vfs, const ProjectConfig& config,
-                     std::optional<std::uint64_t> max_frames, std::ostream& err) {
+                     std::optional<std::uint64_t> max_frames,
+                     const std::optional<std::filesystem::path>& data_directory_override,
+                     std::ostream& err) {
   const Size virtual_size{.width = config.resolution.width, .height = config.resolution.height};
   try {
     // Everything that needs no window comes first, so a broken project fails before one opens.
@@ -110,13 +115,15 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     CompositeSceneState scene_state{{&scene, audio.get()}};
     UiHost ui{virtual_size};
     ScriptRuntime runtime{vfs,
-                          {.scene_state = &scene_state,
+                          {.rollback_depth = config.rollback_depth,
+                           .scene_state = &scene_state,
                            .scene = &scene,
                            .screens = &ui,
                            .audio = audio.get()}};
     const auto warn = [&err](std::string_view message) { err << "vnmaki: " << message << '\n'; };
     const std::filesystem::path data_directory =
-        user_data_directory(kUserDataOrganization, config.title);
+        data_directory_override ? *data_directory_override
+                                : user_data_directory(kUserDataOrganization, config.title);
     PersistentStore persistent{runtime, data_directory, warn};
     persistent.load();  // before the scripts, so that their defaults see the saved values
     runtime.load_scripts();
@@ -139,19 +146,20 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     saves.poll();
     ScreenPresenter screens{runtime, ui};
     WaitPresenter waits{runtime, scene};
-    DialoguePresenter presenter{
-        runtime,
-        [&](const DialogueLine& line) { return say_box.glyph_count(line); },
-        kDefaultCharactersPerSecond,
-        [&](const DialogueLine& line, double speed, double elapsed) {
-          return say_box.revealed(line, speed, elapsed);
-        }};
+    DialoguePresenter presenter{runtime,
+                                [&](const DialogueLine& line) { return say_box.glyph_count(line); },
+                                kDefaultCharactersPerSecond,
+                                [&](const DialogueLine& line, double speed, double elapsed) {
+                                  return say_box.revealed(line, speed, elapsed);
+                                }};
     Playback playback{runtime,
                       presenter,
                       persistent,
                       {.voice_playing = [&] { return audio->voice_playing(); },
                        .skip_wait = [&] { return waits.skip(); }}};
     PlaybackIndicator indicator{ui};
+    const Backlog backlog{runtime, audio.get(), config.backlog_length};
+    BacklogScreen backlog_screen{ui, backlog, ui_renderer.text_measure()};
 
     SteadyClock clock;
     MainLoop loop{platform, clock, {.min_frame_time = kFrameTime}};
@@ -172,7 +180,15 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     };
     MainLoopHooks hooks;
     hooks.on_event = [&](const InputEvent& event) {
+      if (backlog_screen.handle_event(event, viewport())) {  // L opens it, Esc or L closes it
+        return;
+      }
       if (screens.handle_event(event, viewport())) {
+        return;
+      }
+      if (is_rollback_event(event)) {
+        playback.set_skip(SkipMode::kOff);
+        static_cast<void>(runtime.roll_back());
         return;
       }
       if (const auto* key = std::get_if<KeyEvent>(&event)) {
@@ -204,7 +220,9 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       const double seconds = std::chrono::duration<double>(step).count();
       saves.poll();  // a script's save or load, or a load in the middle of a line
       presenter.update(seconds);
-      playback.update(seconds);
+      if (!backlog_screen.is_open()) {  // auto and skip wait while the player reads
+        playback.update(seconds);
+      }
       scene.update(seconds);
       audio->update(seconds);
       waits.update();
@@ -231,7 +249,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       }
       renderer->begin_frame();
       renderer->begin_pass({.target = canvas, .clear = rgba8(0, 0, 0)});
-      scene.draw(*renderer);
+      scene.draw(*renderer, canvas);
       renderer->begin_pass({.target = kScreen, .clear = rgba8(0, 0, 0)});
       renderer->draw(quad_from_rect(placed.rect), {.texture = canvas});
       if (line && placed.scale > 0) {

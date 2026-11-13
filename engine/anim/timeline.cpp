@@ -27,11 +27,13 @@ constexpr double kForever = std::numeric_limits<double>::infinity();
 // --- Properties as channels -----------------------------------------------------------------
 
 Values to_values(const DisplayProperties& properties) {
-  return {
+  Values values{
       properties.position.x, properties.position.y, properties.anchor.x,   properties.anchor.y,
       properties.scale.x,    properties.scale.y,    properties.rotation,   properties.alpha,
       properties.tint.r,     properties.tint.g,     properties.tint.b,     properties.tint.a,
       properties.crop.x,     properties.crop.y,     properties.crop.width, properties.crop.height};
+  std::ranges::copy(properties.uniforms, values.begin() + uniform_slot(0));
+  return values;
 }
 
 // Opacity and colour stay in [0, 1], also where a back curve overshoots.
@@ -51,6 +53,7 @@ void write_values(const Values& values, DisplayProperties& properties) {
                      .y = values[slot(Channel::kCropY)],
                      .width = values[slot(Channel::kCropWidth)],
                      .height = values[slot(Channel::kCropHeight)]};
+  std::copy(values.begin() + uniform_slot(0), values.end(), properties.uniforms.begin());
 }
 
 // --- Times ----------------------------------------------------------------------------------

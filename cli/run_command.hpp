@@ -7,9 +7,10 @@
 namespace vnmaki::cli {
 
 inline constexpr std::string_view kRunUsage =
-    "       vnmaki run [<project-dir>] [--headless [--max-steps <n>] | --frames <n>]\n";
+    "       vnmaki run [<project-dir>] [--headless [--max-steps <n>] | --frames <n>]"
+    " [--data-dir <path>]\n";
 
-/// `vnmaki run [<project-dir>] [--headless [--max-steps <n>] | --frames <n>]`
+/// `vnmaki run [<project-dir>] [--headless [--max-steps <n>] | --frames <n>] [--data-dir <path>]`
 /// (docs/SPEC.md section 19). Runs the game in <project-dir> (default: the
 /// current directory) from its `start` label.
 ///
@@ -20,6 +21,9 @@ inline constexpr std::string_view kRunUsage =
 ///
 /// Without it, the game plays in a window (cli/story_window.hpp), for <n>
 /// frames at most.
+///
+/// Saves and the persistent file go to the user-data directory of the game's title, or to
+/// <path> with --data-dir (in a window and headless). Tests use it to leave the user's data alone.
 ///
 /// `args` are the arguments after "run". Returns the process exit code: 0 when
 /// the story ends, 1 on a project or script error or at the step limit, 2 on

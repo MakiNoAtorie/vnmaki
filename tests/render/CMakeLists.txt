@@ -4,7 +4,8 @@
 add_executable(vnmaki_render_tests ../unit/main.cpp gpu_test_support.cpp gpu_test_support.hpp
                                    frame_anim_render_test.cpp layered_render_test.cpp
                                    renderer_test.cpp say_box_render_test.cpp
-                                   scene_render_test.cpp text_render_test.cpp
+                                   scene_render_test.cpp shader_render_test.cpp
+                                   text_render_test.cpp
                                    window_renderer_test.cpp)
 target_link_libraries(vnmaki_render_tests PRIVATE vnmaki::engine vnmaki::options doctest::doctest)
 target_compile_definitions(
