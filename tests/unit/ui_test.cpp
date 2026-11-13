@@ -489,3 +489,65 @@ label("start", function() show_screen("s") end)
   CHECK(bad.runtime.error().find("unknown option 'bogus'") != std::string::npos);
   CHECK(bad.runtime.error().find("main.lua:3") != std::string::npos);
 }
+
+namespace {
+
+// Wheel up, Page Up and the left shoulder: what the story window rolls back on.
+std::vector<vnmaki::InputEvent> rollback_events() {
+  return {vnmaki::WheelEvent{.dy = 1},
+          press(vnmaki::Key::kPageUp),
+          vnmaki::GamepadButtonEvent{.button = vnmaki::GamepadButton::kLeftShoulder,
+                                     .pressed = true}};
+}
+
+}  // namespace
+
+TEST_CASE("ui host: a modal screen consumes every input, a screen that is not modal none") {
+  vnmaki::UiHost host{kCanvas};
+  host.show("quick", column_of_buttons(), false);
+  for (const vnmaki::InputEvent& event : rollback_events()) {
+    CHECK_FALSE(host.handle_event(event, kViewport).consumed);
+  }
+  host.show("prefs", column_of_buttons(), true);
+  for (const vnmaki::InputEvent& event : rollback_events()) {
+    CHECK(host.handle_event(event, kViewport).consumed);
+  }
+  CHECK(host.handle_event(press(vnmaki::Key::kA), kViewport).consumed);
+  CHECK(host.handle_event(press(vnmaki::Key::kL), kViewport).consumed);
+}
+
+TEST_CASE("menu: rollback input reaches the story at a menu, but not under another modal") {
+  Game game{R"(
+label("start", function()
+  narrate("before")
+  narrate("picked " .. menu { "a", "b" })
+end)
+)"};
+  game.runtime.advance();
+  vnmaki::ScreenPresenter screens{game.runtime, game.host};
+  REQUIRE(screens.active());
+  for (const vnmaki::InputEvent& event : rollback_events()) {
+    CHECK_FALSE(screens.handle_event(event, kViewport));  // the story may roll back
+  }
+  game.host.show("save", column_of_buttons(), true);  // a save, load or confirm screen
+  for (const vnmaki::InputEvent& event : rollback_events()) {
+    CHECK(screens.handle_event(event, kViewport));
+  }
+}
+
+TEST_CASE("menu: a replay to the same position with other options shows the new menu") {
+  Game game{R"(
+label("start", function()
+  persistent.n = (persistent.n or 0) + 1
+  menu { "opt" .. persistent.n }
+end)
+)"};
+  vnmaki::ScreenPresenter screens{game.runtime, game.host};
+  REQUIRE(game.host.find(vnmaki::kMenuScreenName)->children.at(0).label == "opt1");
+
+  constexpr std::uint32_t kMenuStep = 1;
+  const vnmaki::LabelSnapshot snapshot = *game.runtime.label_snapshot();
+  game.runtime.replay(snapshot, {}, kMenuStep);  // as a quick-load of the same label and step
+  screens.sync();
+  CHECK(game.host.find(vnmaki::kMenuScreenName)->children.at(0).label == "opt2");
+}

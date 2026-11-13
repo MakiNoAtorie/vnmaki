@@ -57,11 +57,23 @@ void MoviePresenter::update(double seconds) {
   if (request == nullptr) {
     return;
   }
+  try {
+    play(seconds, *request);
+  } catch (const MovieError& error) {
+    if (!warn_) {
+      throw;
+    }
+    warn_(error.what());
+    end();  // a movie that cannot play is skipped, not the game
+  }
+}
+
+void MoviePresenter::play(double seconds, const MovieRequest& request) {
   if (!player_) {
     if (!loading_.valid()) {
-      path_ = request->path;
+      path_ = request.path;
       loading_ =
-          jobs_->submit([vfs = vfs_, path = request->path] { return load_movie(*vfs, path); });
+          jobs_->submit([vfs = vfs_, path = request.path] { return load_movie(*vfs, path); });
     }
     if (!loading_.ready()) {
       return;

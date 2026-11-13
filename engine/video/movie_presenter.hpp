@@ -5,8 +5,12 @@
 // the story on when it has played, or when the player or skip mode ends it. A replay never
 // reaches it (the runtime passes movie steps by itself).
 
+#include <functional>
 #include <memory>
 #include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/jobs/job_system.hpp"
@@ -18,6 +22,7 @@
 
 namespace vnmaki {
 
+struct MovieRequest;
 class ScriptRuntime;
 class Vfs;
 
@@ -38,8 +43,12 @@ class MoviePresenter {
 
   /// Call once per update. Starts the movie when the story waits at one (loading it on a job),
   /// moves it on, and advances the story when it has played. A story that is not at a movie (a
-  /// load, a rollback) drops the one that plays. Throws MovieError if the movie cannot be played.
+  /// load, a rollback) drops the one that plays. Throws MovieError if the movie cannot be played,
+  /// unless a warning handler is set: then it reports the error, skips the movie and advances.
   void update(double seconds);
+  void set_warning_handler(std::function<void(std::string_view)> handler) {
+    warn_ = std::move(handler);
+  }
 
   /// The player clicked. If the story waits at a movie, returns true (the input is used) and ends
   /// the movie when it is skippable.
@@ -56,11 +65,13 @@ class MoviePresenter {
  private:
   void end();
   void drop();
+  void play(double seconds, const MovieRequest& request);
 
   ScriptRuntime* runtime_;
   const Vfs* vfs_;
   JobSystem* jobs_;
   MovieAudio* audio_;
+  std::function<void(std::string_view)> warn_;
   JobHandle<std::shared_ptr<const MovieData>> loading_;
   std::unique_ptr<MoviePlayer> player_;
   std::string path_;  // the movie that loads or plays

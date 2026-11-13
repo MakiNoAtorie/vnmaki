@@ -70,6 +70,11 @@ bool UiHost::is_shown(std::string_view name) const {
 
 bool UiHost::has_modal() const { return std::ranges::any_of(screens_, &Screen::modal); }
 
+bool UiHost::is_top_modal(std::string_view name) const {
+  const auto top = std::ranges::find_if(screens_.rbegin(), screens_.rend(), &Screen::modal);
+  return top != screens_.rend() && top->name == name;
+}
+
 UiNode* UiHost::find(std::string_view name) {
   refresh_bindings();
   ensure_layout();
@@ -486,6 +491,14 @@ UiEventResult UiHost::key_event(const InputEvent& event) {
 
 UiEventResult UiHost::handle_event(const InputEvent& event, const Viewport& viewport) {
   UiEventResult result = dispatch_event(event, viewport);
+  // A modal screen takes every player input, so none reaches the story (rollback, auto, skip).
+  if (!std::holds_alternative<GamepadConnectedEvent>(event) &&
+      !std::holds_alternative<GamepadDisconnectedEvent>(event) &&
+      !std::holds_alternative<WindowResizedEvent>(event) &&
+      !std::holds_alternative<WindowFocusEvent>(event) &&
+      !std::holds_alternative<QuitRequestedEvent>(event) && has_modal()) {
+    result.consumed = true;
+  }
   sync_text_input();
   return result;
 }
