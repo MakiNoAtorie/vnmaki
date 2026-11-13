@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/core/byte_stream.hpp"
 #include "engine/render/image.hpp"
 #include "engine/vfs/vfs.hpp"
 
@@ -106,25 +106,9 @@ std::string quoted(std::string_view prefix, std::string_view name, std::string_v
 // properties as 16 f32: position, anchor, scale, rotation, alpha, tint, crop.
 
 constexpr std::uint32_t kFormatVersion = 1;
-constexpr unsigned kBitsPerByte = 8;
-constexpr unsigned kBitsPerU32 = 32;
-constexpr std::uint32_t kByteMask = 0xFF;
 
-class Writer {
+class Writer : public ByteWriter {
  public:
-  void u8(std::uint8_t value) { bytes_.push_back(static_cast<std::byte>(value)); }
-  void u32(std::uint32_t value) {
-    for (unsigned shift = 0; shift < kBitsPerU32; shift += kBitsPerByte) {
-      bytes_.push_back(static_cast<std::byte>((value >> shift) & kByteMask));
-    }
-  }
-  void f32(float value) { u32(std::bit_cast<std::uint32_t>(value)); }
-  void string(std::string_view text) {
-    u32(static_cast<std::uint32_t>(text.size()));
-    for (const char c : text) {
-      bytes_.push_back(static_cast<std::byte>(c));
-    }
-  }
   void point(PointF value) {
     f32(value.x);
     f32(value.y);
@@ -144,38 +128,13 @@ class Writer {
     f32(value.crop.width);
     f32(value.crop.height);
   }
-  [[nodiscard]] std::vector<std::byte> take() { return std::move(bytes_); }
-
- private:
-  std::vector<std::byte> bytes_;
 };
 
 // Throws std::invalid_argument when the bytes end early.
-class Reader {
+class Reader : public ByteReader {
  public:
-  explicit Reader(std::span<const std::byte> bytes) : bytes_(bytes) {}
+  explicit Reader(std::span<const std::byte> bytes) : ByteReader(bytes, "scene state") {}
 
-  [[nodiscard]] bool at_end() const { return bytes_.empty(); }
-  std::uint8_t u8() { return std::to_integer<std::uint8_t>(take(1).front()); }
-  std::uint32_t u32() {
-    std::uint32_t value = 0;
-    unsigned shift = 0;
-    for (const std::byte byte : take(sizeof(std::uint32_t))) {
-      value |= std::to_integer<std::uint32_t>(byte) << shift;
-      shift += kBitsPerByte;
-    }
-    return value;
-  }
-  float f32() { return std::bit_cast<float>(u32()); }
-  std::string string() {
-    const std::span<const std::byte> bytes = take(u32());
-    std::string text;
-    text.reserve(bytes.size());
-    for (const std::byte byte : bytes) {
-      text.push_back(std::to_integer<char>(byte));
-    }
-    return text;
-  }
   PointF point() {
     const float x = f32();
     const float y = f32();
@@ -198,18 +157,6 @@ class Reader {
     value.crop.height = f32();
     return value;
   }
-
- private:
-  std::span<const std::byte> take(std::size_t count) {
-    if (count > bytes_.size()) {
-      throw std::invalid_argument{"scene state: the data ends early"};
-    }
-    const std::span<const std::byte> taken = bytes_.first(count);
-    bytes_ = bytes_.subspan(count);
-    return taken;
-  }
-
-  std::span<const std::byte> bytes_;
 };
 
 }  // namespace

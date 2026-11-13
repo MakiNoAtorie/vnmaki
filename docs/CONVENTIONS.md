@@ -133,7 +133,6 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Styled layout: `layout_text(FontSet, StyledText, pixel_size, wrap_width)`. `FontSet` has the base family, `font` tag families and the fallback chain (`ProjectConfig::font_fallbacks`). It does bidi (SheenBidi), line breaks (libunibreak) with kinsoku, ruby and links (`link_at`). `TextLayout::fonts` names the fonts of the glyphs, so a `GlyphAtlas` needs no font. `layout_text(font, utf8, ...)` stays for text with one font and no tags.
 - `revealed_glyphs(layout, cps, elapsed)` counts the `speed` and `pause` tags. A glyph with a `color` tag has that colour in place of the tint in `text_quads`.
 - `GlyphRaster::kDistance` atlases and `sdf_text_shader()` are for outline and shadow text only. Normal text uses `GlyphRaster::kCoverage`.
-- The say box (`SayBoxView`) lays out `say` and `narrate` text with `FontSet`, so tags, bidi and fallback work there. The speaker name is plain text. `DialoguePresenter` gets the reveal function from `SayBoxView::revealed`.
 
 ### Scene (`engine/scene/`)
 
@@ -159,9 +158,29 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - The first advance completes a reveal. The next advance goes to the next line.
 - `SayBoxView`: call `prepare(line, scale)` before `begin_frame`.
 - Then call `draw(...)` in a screen-resolution pass. Use the viewport scale and the top-left of the viewport as the origin.
+- `SayBoxView` lays out the line with `FontSet` (tags, bidi, fallback; the speaker name is plain text). Pass `SayBoxView::revealed` as the presenter's `Reveal`, so `speed` and `pause` work. `link_at(line, virtual_point)` gives the `link` id; `vnmaki run` passes it to `runtime.activate_link`. The window loads the fallback chain of the first language in `project.toml`.
 - The default font of a project is `fonts/default.ttf` in its VFS. The engine has no font.
 - `vnmaki run <dir> [--frames N]` plays in a window. It exits with 0 when the story ends.
 - `SayRequest` has `color` (0xRRGGBB) and `voice_tag` from `character{}`.
+
+### Audio (`engine/audio/`)
+
+- `Audio` is the mixer. It implements `SceneState` and `AudioCommands`.
+- Set `ScriptRuntimeOptions::audio` to it. Also put it in `scene_state`, inside a `CompositeSceneState` when there is a `Scene`.
+- The runtime includes no audio headers.
+- Audio name `N` is the VFS file `audio/N.opus`, else `.ogg`, `.flac` or `.wav`. `voice(N)` plays `voice/N`.
+- Channels: `music`, `sound`, `voice`, `ambient`, `ui`. A script makes another by naming it.
+- `AudioOutput::kManual` has no device. `update(seconds)` mixes that much. Tests and headless runs use it.
+- `kNullDevice` mixes on a device thread to nowhere. `kDevice` is the system output.
+- Call the commands, `update()` and `restore()` from one thread.
+- Music crossfades. The same music on a channel carries on. The music channel ducks while a voice plays.
+- The snapshot has each channel's volume and music. `restore()` stops sounds and voices.
+- Music tracks change at the next `update()`. A replay then gives the same music, so it does not stop.
+- The runtime does not pass `sound` and `voice` on during replay.
+- `voice_playing()` is true while a voice plays. Auto-advance waits for it. `voice(name)` also replays a backlog voice.
+- `AudioCommands` calls return an error string. The prelude raises it at the script line.
+- Decoders are in `audio_decoder.hpp`. A bad file throws `AudioError`.
+- Fuzz targets: `fuzz_audio` (decoders) and `fuzz_audio_state` (snapshot).
 
 ### Runtime (`engine/runtime/`)
 

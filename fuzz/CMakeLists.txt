@@ -49,3 +49,14 @@ endif()
 vnmaki_add_fuzzer(markup markup_fuzzer.cpp markup_properties.hpp)
 add_test(NAME fuzz.markup.dictionary
          COMMAND fuzz_markup -runs=10000 -seed=1 "-dict=${CMAKE_CURRENT_SOURCE_DIR}/markup.dict")
+# Audio (ticket 16): the decoders and the audio snapshot. As for images, random bytes rarely
+# make an audio file, so a second smoke run starts from the small clips among the audio fixtures.
+vnmaki_add_fuzzer(audio audio_fuzzer.cpp)
+vnmaki_add_fuzzer(audio_state audio_state_fuzzer.cpp)
+if(TARGET vnmaki_fixtures_audio)
+  add_dependencies(fuzz_audio vnmaki_fixtures_audio)
+  set(vnmaki_audio_corpus "${CMAKE_CURRENT_BINARY_DIR}/corpus/audio")
+  file(MAKE_DIRECTORY "${vnmaki_audio_corpus}")
+  add_test(NAME fuzz.audio.seeded COMMAND fuzz_audio -runs=10000 -seed=1 "${vnmaki_audio_corpus}"
+                                          "${PROJECT_BINARY_DIR}/fixtures/audio/seeds")
+endif()
