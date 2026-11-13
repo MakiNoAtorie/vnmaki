@@ -295,13 +295,21 @@ std::optional<ScanCallKind> call_kind(std::string_view name) {
     std::string_view name{};
     ScanCallKind kind = ScanCallKind::kLabel;
   };
-  static constexpr std::array<Entry, 7> kEntries{{{.name = "label", .kind = ScanCallKind::kLabel},
-                                                  {.name = "jump", .kind = ScanCallKind::kJump},
-                                                  {.name = "call", .kind = ScanCallKind::kCall},
-                                                  {.name = "ret", .kind = ScanCallKind::kRet},
-                                                  {.name = "menu", .kind = ScanCallKind::kMenu},
-                                                  {.name = "say", .kind = ScanCallKind::kSay},
-                                                  {.name = "show", .kind = ScanCallKind::kShow}}};
+  static constexpr std::array<Entry, 13> kEntries{{
+      {.name = "label", .kind = ScanCallKind::kLabel},
+      {.name = "jump", .kind = ScanCallKind::kJump},
+      {.name = "call", .kind = ScanCallKind::kCall},
+      {.name = "ret", .kind = ScanCallKind::kRet},
+      {.name = "menu", .kind = ScanCallKind::kMenu},
+      {.name = "say", .kind = ScanCallKind::kSay},
+      {.name = "show", .kind = ScanCallKind::kShow},
+      {.name = "narrate", .kind = ScanCallKind::kNarrate},
+      {.name = "scene", .kind = ScanCallKind::kScene},
+      {.name = "music", .kind = ScanCallKind::kMusic},
+      {.name = "sound", .kind = ScanCallKind::kSound},
+      {.name = "voice", .kind = ScanCallKind::kVoice},
+      {.name = "movie", .kind = ScanCallKind::kMovie},
+  }};
   for (const Entry& entry : kEntries) {
     if (entry.name == name) {
       return entry.kind;
@@ -367,6 +375,30 @@ bool has_ending(std::span<const LuaToken> tokens, const Range& range) {
   return false;
 }
 
+// The `name =` keys at the top level of the table that the range starts with.
+void add_table_keys(std::span<const LuaToken> tokens, const Range& range,
+                    std::vector<std::string>& keys) {
+  if (range.begin >= range.end || !is_symbol(tokens[range.begin], '{')) {
+    return;
+  }
+  std::size_t nesting = 0;
+  for (std::size_t i = range.begin; i < range.end; ++i) {
+    const LuaToken& token = tokens[i];
+    if (token.kind == LuaTokenKind::kSymbol && token.text.size() == 1) {
+      const char c = token.text.front();
+      if (c == '{' || c == '(' || c == '[') {
+        ++nesting;
+      } else if ((c == '}' || c == ')' || c == ']') && nesting > 0) {
+        --nesting;
+      }
+    } else if (token.kind == LuaTokenKind::kName && nesting == 1 && i + 2 < range.end &&
+               (is_symbol(tokens[i - 1], '{') || is_symbol(tokens[i - 1], ',')) &&
+               is_symbol(tokens[i + 1], '=') && !is_symbol(tokens[i + 2], '=')) {
+      keys.push_back(token.text);
+    }
+  }
+}
+
 bool starts_block(std::string_view name) {
   return name == "function" || name == "if" || name == "do" || name == "repeat";
 }
@@ -424,6 +456,7 @@ std::vector<ScanLabel> scan_tokens(std::span<const LuaToken> tokens) {
       ranges = argument_ranges(tokens, i + 1);
       for (const Range& range : ranges) {
         call.arguments.push_back(literal(tokens, range));
+        add_table_keys(tokens, range, call.option_keys);
       }
     } else if (!is_label && next.kind == LuaTokenKind::kString) {
       call.arguments.emplace_back(next.text);

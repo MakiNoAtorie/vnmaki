@@ -45,6 +45,8 @@ std::string image_path(std::string_view name, std::string_view extension) {
   return path;
 }
 
+}  // namespace
+
 std::optional<std::string> resolve_image(const Vfs& vfs, std::string_view name) {
   for (const std::string_view extension : kImageExtensions) {
     std::string path = image_path(name, extension);
@@ -54,6 +56,8 @@ std::optional<std::string> resolve_image(const Vfs& vfs, std::string_view name) 
   }
   return std::nullopt;
 }
+
+namespace {
 
 std::string missing_image(std::string_view name) {
   std::string message = "image '";

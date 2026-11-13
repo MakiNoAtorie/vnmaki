@@ -22,6 +22,13 @@ namespace vnmaki {
 
 class Vfs;
 
+/// The folder of voice names: `voice(name)` plays the audio "voice/<name>".
+inline constexpr std::string_view kVoicePrefix = "voice/";
+
+/// The file of audio name `name`: "audio/<name>.opus", else ".ogg", ".flac", ".wav" (a name may
+/// hold "/"). Nothing when none exists. `vnmaki check` uses the same rule.
+[[nodiscard]] std::optional<std::string> resolve_audio(const Vfs& vfs, std::string_view name);
+
 /// The channels every game has. A script makes another by naming it.
 inline constexpr std::string_view kMusicChannel = "music";
 inline constexpr std::string_view kSoundChannel = "sound";
