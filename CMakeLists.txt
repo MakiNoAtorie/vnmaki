@@ -14,6 +14,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(VNMAKI_BUILD_TESTS "Build the unit and CLI tests" ON)
 option(VNMAKI_BUILD_FUZZERS "Build the libFuzzer targets (Clang only)" OFF)
+# The dev overlay and the other tools of docs/SPEC.md section 18 (engine/tools/, Dear ImGui). On
+# for debug builds, off for release builds: those compile none of it and link no ImGui.
+if(CMAKE_BUILD_TYPE MATCHES "^(Release|MinSizeRel|RelWithDebInfo)$")
+  set(vnmaki_dev_tools_default OFF)
+else()
+  set(vnmaki_dev_tools_default ON)
+endif()
+option(VNMAKI_DEV_TOOLS "Build the dev tools (overlay, console, REPL)" ${vnmaki_dev_tools_default})
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(VnmakiOptions)

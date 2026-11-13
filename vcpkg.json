@@ -10,6 +10,11 @@
     "dav1d",
     "doctest",
     {
+      "name": "imgui",
+      "default-features": false,
+      "features": [ "sdlgpu3-binding" ]
+    },
+    {
       "name": "sdl3",
       "default-features": false,
       "features": [
