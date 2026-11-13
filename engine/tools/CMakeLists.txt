@@ -17,6 +17,11 @@ if(VNMAKI_DEV_TOOLS)
     vnmaki_engine
     PRIVATE imgui_backend.cpp
             imgui_backend.hpp
+            inspect.hpp
+            inspect_audio.cpp
+            inspect_labels.cpp
+            inspect_scene.cpp
+            inspect_store.cpp
             log_buffer.cpp
             log_buffer.hpp
             overlay.cpp

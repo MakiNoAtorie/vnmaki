@@ -199,3 +199,8 @@ target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)
 if(VNMAKI_DEV_TOOLS)
   target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp)
 endif()
+
+# Dev tools: the row functions of the inspectors, on the default template (ticket 31).
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/inspect_test.cpp)
+endif()

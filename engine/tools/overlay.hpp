@@ -6,6 +6,8 @@
 #include <chrono>
 #include <cstddef>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
@@ -18,9 +20,14 @@
 
 namespace vnmaki {
 
+class Audio;
 class ImguiBackend;
+class Scene;
+struct StoreRow;
 
-/// The overlay: a log console with a Lua REPL, and the story graph. F12 shows and hides it.
+/// The overlay: a log console with a Lua REPL, the story graph, and the inspectors (store,
+/// persistent, scene, tweens, audio, labels; their rows come from engine/tools/inspect.hpp). F12
+/// shows and hides it.
 /// Construct it after the renderer and destroy it before; `platform`, `runtime` and `log` must
 /// outlive it.
 ///
@@ -44,6 +51,10 @@ class DevOverlay {
   /// wants.
   [[nodiscard]] bool handle_event(const InputEvent& event);
 
+  /// The scene and audio that the inspector panels show. Both may be null (their tabs say so);
+  /// they must outlive the overlay or be reset first.
+  void set_inspect_targets(Scene* scene, Audio* audio);
+
   /// Turns on the "Story graph" window: the labels and edges of the scripts in `vfs`, with the
   /// edges that `trace` saw in a second color. The trace must be heard by the runtime (see
   /// ObserverChain). `vfs` and `trace` must outlive the overlay.
@@ -59,12 +70,21 @@ class DevOverlay {
   static constexpr std::size_t kLevels = 3;
 
   void draw_console();
+  void draw_inspectors();
+  void draw_store_tree(const std::vector<StoreRow>& rows);
+  void draw_scene_tab();
+  void draw_tweens_tab();
+  void draw_audio_tab();
+  void draw_labels_tab();
   void draw_story_graph();
   void run_input();
 
   std::unique_ptr<ImguiBackend> backend_;
   Platform* platform_;
   ScriptRuntime* runtime_;
+  Scene* scene_ = nullptr;
+  Audio* audio_ = nullptr;
+  std::string selected_tag_;
   LogBuffer* log_;
   std::chrono::steady_clock::time_point last_frame_ = std::chrono::steady_clock::now();
   bool visible_ = false;

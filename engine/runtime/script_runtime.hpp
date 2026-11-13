@@ -778,6 +778,8 @@ class ScriptRuntime {
   void load_scripts();
 
   [[nodiscard]] bool has_label(std::string_view name) const;
+  /// The names of all labels, sorted.
+  [[nodiscard]] std::vector<std::string> label_names() const;
 
   /// Enters label `name` and runs it to its first yield point. If there is
   /// no such label the runtime fails with an error naming it.

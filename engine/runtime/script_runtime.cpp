@@ -2045,6 +2045,14 @@ class ScriptRuntime::Impl {
   void run_chunk(std::string_view source, const std::string& chunk_name);
   void load_scripts();
   [[nodiscard]] bool has_label(std::string_view name) const { return labels_.contains(name); }
+  [[nodiscard]] std::vector<std::string> label_names() const {
+    std::vector<std::string> names;
+    names.reserve(labels_.size());
+    for (const auto& entry : labels_) {
+      names.push_back(entry.first);
+    }
+    return names;
+  }
   void start(std::string_view name);
   void advance();
   void choose(std::size_t index);
@@ -3593,6 +3601,8 @@ ScriptRuntime::~ScriptRuntime() = default;
 void ScriptRuntime::load_script(std::string_view path) { impl_->load_script(path); }
 void ScriptRuntime::load_scripts() { impl_->load_scripts(); }
 bool ScriptRuntime::has_label(std::string_view name) const { return impl_->has_label(name); }
+
+std::vector<std::string> ScriptRuntime::label_names() const { return impl_->label_names(); }
 void ScriptRuntime::start(std::string_view name) { impl_->start(name); }
 void ScriptRuntime::advance() { impl_->advance(); }
 void ScriptRuntime::choose(std::size_t index) { impl_->choose(index); }

@@ -262,6 +262,31 @@ std::vector<std::string> Timeline::tags() const {
   return {found.begin(), found.end()};
 }
 
+std::vector<TweenInfo> Timeline::active() const {
+  std::vector<TweenInfo> found;
+  for (const Running& running : running_) {
+    for (const Leaf& leaf : running.leaves) {
+      if (leaf.done && running.period <= 0) {
+        continue;
+      }
+      TweenInfo info{.tag = leaf.tag,
+                     .elapsed = std::max(0.0, running.elapsed - running.delay - leaf.begin -
+                                                  leaf.delay),
+                     .duration = leaf.duration,
+                     .loop = leaf.loop || running.period > 0,
+                     .yoyo = leaf.yoyo,
+                     .ease = leaf.ease};
+      for (std::size_t channel = 0; channel < kChannelCount; ++channel) {
+        if (leaf.to.at(channel).has_value()) {
+          info.channels.push_back(channel);
+        }
+      }
+      found.push_back(std::move(info));
+    }
+  }
+  return found;
+}
+
 void Timeline::settle(const Lookup& lookup) {
   finish({}, lookup);
   for (const Running& running : running_) {

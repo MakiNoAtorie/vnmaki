@@ -446,7 +446,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - A tween of `@camera` (also `camera`, and each `@camera` item of `sequence` and `parallel`) gets a duration of 0, no delay, no loop and no yoyo. `tween` and `camera` also make it instant. The `wait` step stays, so a replay counts the same steps.
   - `shake` checks its arguments and starts nothing (`ShakeRequest::replaying`).
   - Other motion (tweens of displayables, transitions) is not changed by this flag yet.
-- `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
+- `label_names()` lists the labels, sorted. `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
 - `wait(tag)`, `wait_all()` and transitions (`transition(...)`, the `with` option) are blocking calls too (`WaitRequest`; a transition has the tag `@transition`). `advance()` ends them. See Anim.
 - `movie(path, { skippable = })` is a blocking call (`MovieRequest`) that works as a wait for rollback and replay. See Video.
 - `say` with a character that has a `voice_tag`, right after a `voice(name)` call, tags the playing voice (`AudioCommands::tag_voice`). It does nothing in a replay. See Audio and Layered sprites.
@@ -571,4 +571,10 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - It runs in the script sandbox: the same globals, limits and no `io`, `debug`, `package` or `require`. `print` goes to the log.
   - A change to `store` stays until the next rollback or load, which restore the snapshot of a label entry. `persistent` and `prefs` keep their changes. A new global gives the dev-mode warning.
   - A blocking call is an error.
-- Tests: `tests/unit/repl_test.cpp` (REPL and log) and `tests/render/overlay_render_test.cpp` (a headless GPU frame, F12, input). Both are only built with the tools.
+- Inspectors (`inspect.hpp`, `inspect_*.cpp`): each panel is a function that returns rows and uses no ImGui. The overlay draws the rows in one window, `Inspectors`, with a tab for each. `DevOverlay::set_inspect_targets(scene, audio)` gives it the `Scene` and `Audio`. A null target makes its tabs say so.
+  - `inspect_store` and `inspect_persistent` (`StoreRow`: `depth`, `key`, `value`, `is_table`) list a snapshot depth first. A table that two fields share is expanded once, and the other field says `(same table as #n)`.
+  - `inspect_scene` lists all layers, back to front, with the tag and kind of each displayable. `inspect_properties(scene, tag)` lists its properties by name (`x`, `alpha`, `tint_r`, `crop_x`, ... and `uniform_n` when it has a game shader). `set_property` writes one at once and keeps `alpha` and `tint_*` in [0, 1].
+  - A property edit is live. It is not in the snapshot of the label, so a rollback or a load brings back the old value (the panel says this). A tween that writes the property also overwrites it.
+  - `inspect_tweens` lists the running tweens from `Timeline::active()` (`Scene::timeline()`). `inspect_audio` lists a row for each playing track (file, channel volume, position in seconds) and for each silent channel. `inspect_labels` lists `ScriptRuntime::label_names()` and marks the label that the story waits in.
+  - `jump_to_label(runtime, name)` is the "Jump" button. It calls `drop_callers()`, then `replay()` of a snapshot of `name` with the current `store` and the scene bytes of the running label's entry, no inputs, to step 1. The story is then at the first blocking call of the label. If the label has none, it returns the error and replays the story back to where it was (the callers are then gone, as after a load).
+- Tests: `tests/unit/repl_test.cpp` (REPL and log), `tests/unit/inspect_test.cpp` (the row functions, on the template in `templates/default`) and `tests/render/overlay_render_test.cpp` (a headless GPU frame, F12, input, a click on each inspector tab). All are only built with the tools.

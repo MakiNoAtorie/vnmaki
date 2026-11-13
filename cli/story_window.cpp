@@ -149,6 +149,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     const std::unique_ptr<SdlGpuRenderer> renderer = SdlGpuRenderer::create_for_window(platform);
 #if VNMAKI_DEV_TOOLS
     DevOverlay dev_overlay{*renderer, platform, runtime, dev_log};  // F12; dies before the renderer
+    dev_overlay.set_inspect_targets(&scene, audio.get());
     dev_overlay.set_story(vfs, dev_trace);
 #endif
     JobSystem jobs;

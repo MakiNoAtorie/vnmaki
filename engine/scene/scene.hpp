@@ -186,6 +186,7 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] const DisplayProperties& layer_properties(Layer layer) const {
     return layer_state_.at(static_cast<std::size_t>(layer));
   }
+  [[nodiscard]] const Timeline& timeline() const { return timeline_; }
   [[nodiscard]] const CameraState& camera() const { return camera_; }
   /// The shake that runs, or null.
   [[nodiscard]] const Shake* active_shake() const {
