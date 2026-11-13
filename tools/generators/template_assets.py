@@ -20,6 +20,9 @@ writes only its own files and never deletes anything:
   shaders/sepia.frag.hlsl            a game shader (shader_fixtures.SEPIA_SHADER)
   fonts/default.ttf                  a 5 by 7 pixel font for ASCII, one rectangle for each run
                                      of pixels (built with text_fixtures.build_font)
+  fonts/dyslexia.ttf                 the same glyphs with wider spacing: a placeholder for the
+                                     dyslexia-friendly font (prefs.dyslexia_font). Replace it with
+                                     an OFL font such as OpenDyslexic (ASSETS.txt)
 
 Everything is made of rectangles, ellipses and sine waves, so no source art or font file is
 involved. The assets are CC0 1.0 (templates/default/ASSETS.txt). Only the standard library is used.
@@ -294,6 +297,7 @@ def voice() -> bytes:
 
 CELL = 100  # Font units of one pixel of the 5 by 7 grid; the baseline is under row 6.
 GLYPH_ADVANCE = 600
+DYSLEXIA_ADVANCE = 760  # Wider spacing, so the placeholder font looks different.
 SPACE_ADVANCE = 400
 CAP_TOP = 700
 
@@ -419,20 +423,22 @@ def pixel_boxes(first_row: int, rows: list) -> list:
     return boxes
 
 
-def pixel_font() -> bytes:
+def pixel_font(advance: int = GLYPH_ADVANCE) -> bytes:
     shapes = {" ": (SPACE_ADVANCE, None)}
     glyphs = {char: (0, rows) for char, rows in TALL.items()}
     glyphs.update({char: (2, rows) for char, rows in SHORT.items()})
     glyphs.update({char: (2, rows) for char, rows in TAILED.items()})
     glyphs.update(OTHER)
     for char, (first_row, rows) in glyphs.items():
-        shapes[char] = (GLYPH_ADVANCE, pixel_boxes(first_row, rows))
+        shapes[char] = (advance, pixel_boxes(first_row, rows))
     return tf.build_font(shapes)
 
 
 def files() -> dict:
     return {**images(), "audio/bgm/theme.wav": theme(), "audio/voice/eileen/hello.wav": voice(),
-            "fonts/default.ttf": pixel_font(), "shaders/sepia.frag.hlsl": sf.SEPIA_SHADER.encode()}
+            "fonts/default.ttf": pixel_font(),
+            "fonts/dyslexia.ttf": pixel_font(DYSLEXIA_ADVANCE),
+            "shaders/sepia.frag.hlsl": sf.SEPIA_SHADER.encode()}
 
 
 def main() -> int:
