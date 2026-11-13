@@ -85,6 +85,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png`.
   - `tools/generators/render_fixtures.py` makes the golden images with a reference rasterizer.
   - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`, `frame_anim_fixtures.py`, `transition_fixtures.py`, `camera_fixtures.py`.
+  - `lipsync_fixtures.py` is stand-alone: it writes `voice.wav` (0.2 s of silence, 0.4 s of a tone, 0.2 s of silence) for `tests/unit/lipsync_test.cpp`.
   - `webp_fixtures.py` is stand-alone. It writes a tiny lossless WebP (VP8L: no transforms, no colour cache, one simple prefix code per channel, so each channel has at most two values) with the standard library only. The test pixels in `image_test.cpp` are the specification.
 
 ## Module contracts
@@ -223,6 +224,10 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - A changed group fades its new image in over its old image. The old image stays at full alpha. The fade runs on `Scene::update(seconds)`, the same clock as tweens. A replay, a restore and a definition without `crossfade` cut at once. `finish_tweens` does not end a fade.
 - The snapshot part `layered` has the definition name, the layer position, the properties and the (group, value) of each sprite. It has no definition. `restore()` throws if the scene does not know the definition, so the scripts must load first. A fade that runs is saved as its end.
 - `Scene::prepare` loads the images that a sprite shows now. `LayeredSprite::missing_paths()` and `set_texture(path, ...)` do this.
+- Lip sync: `layered(..., { lip_sync = { group = "mouth", frames = { "closed", "half", "open" }, thresholds = { 0.05, 0.2 }, voice_tag = "eileen" } })`.
+  - `group` is a group in `order`. `frames` are two or more value names of it, the closed mouth first. `thresholds` are one fewer than the frames, rising, above 0 and up to 1: the frame is the number of thresholds that the voice level has reached. `voice_tag` is the tag of the voice to follow (the name of the definition if you leave it out). A bad table is an error at the script line (`LayeredRequest::LipSync`, checked in `make_lip_sync` in `scene.cpp`).
+  - `Scene::set_voice_level(&audio)` gives the `VoiceLevel`. `Scene::update` gives each lip-synced sprite `voice_level(tag)` (`LayeredSprite::set_voice_level`): the group shows the frame for that level, and the first frame when no voice with the tag plays. The group draws only that frame, with no crossfade, in place of the value that `show` chose.
+  - The mouth is not state: `attributes()` and the snapshot keep the chosen value, a new sprite (a `show`, a `restore`) starts with the mouth closed, and a replay plays no voice, so it stays closed. `vnmaki run` also stops the voice channel while skip mode is on.
 
 ### Frame animation (`engine/scene/frame_animation.*`)
 
@@ -391,6 +396,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Music tracks change at the next `update()`. A replay then gives the same music, so it does not stop.
 - The runtime does not pass `sound` and `voice` on during replay.
 - `set_preference_volume(channel, level)` is the player's volume for a channel. It multiplies the script's `volume` and the ducking. It is not in the snapshot, so a load or rollback leaves it.
+- `voice_level(tag)` (`VoiceLevel`, `voice_level.hpp`) is the RMS level (0 to 1) of the voice that has `tag`, or empty when none plays. A voice gets its tag from the runtime: a `say` with a `voice_tag` after a `voice(name)` call (and not in a replay) calls `AudioCommands::tag_voice(tag)`. The mixer sums the squares of the decoded samples, before volume, in windows of 960 frames (20 ms), as it consumes them. So the level follows the clock of `update()` (manual output) or of the device thread (device and null device), and it has no delay beyond the window. A voice that ends has no level.
 - `voice_playing()` is true while a voice plays. `Playback` (Dialogue) waits for it: set `PlaybackOptions::voice_playing`. `voice(name)` also replays a backlog voice.
 - `AudioCommands` calls return an error string. The prelude raises it at the script line.
 - Decoders are in `audio_decoder.hpp`. A bad file throws `AudioError`.
@@ -428,6 +434,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
 - `wait(tag)`, `wait_all()` and transitions (`transition(...)`, the `with` option) are blocking calls too (`WaitRequest`; a transition has the tag `@transition`). `advance()` ends them. See Anim.
 - `movie(path, { skippable = })` is a blocking call (`MovieRequest`) that works as a wait for rollback and replay. See Video.
+- `say` with a character that has a `voice_tag`, right after a `voice(name)` call, tags the playing voice (`AudioCommands::tag_voice`). It does nothing in a replay. See Audio and Layered sprites.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it. It ends a wait at once and needs no input for it.
 - `project.toml` has `title` (required), `version`, `resolution`, `languages`, `auto_save` (a list of `"label"` and `"menu"`), `rollback_depth` and `backlog_length` (each 0 to 10000, default 100).
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.

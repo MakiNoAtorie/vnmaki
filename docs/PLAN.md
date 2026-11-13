@@ -236,11 +236,11 @@ Files: new `engine/video/`, `engine/audio/` (movie stream), `vcpkg.json`, `engin
 
 Files: `engine/audio/` (voice level), `engine/scene/layered_sprite.*`, runtime.
 
-- [ ] The audio module gives the RMS level of the voice that plays for each `voice_tag`. This also works with the null audio device.
-- [ ] `layered` accepts `lip_sync = { group = "mouth", frames = { "closed", "half", "open" }, thresholds = { 0.05, 0.2 } }`.
-- [ ] While the character's voice plays, the group shows the frame for the level. When the voice stops, the group shows the first frame.
-- [ ] Replay and skip mode play no voice, so the mouth stays closed. Lip sync state is not in the snapshot.
-- [ ] A generator writes a WAV of silence, then a tone, then silence (Python `wave`). Unit test with a fake clock: the mouth is closed, then open, then closed at the expected times.
+- [x] The audio module gives the RMS level of the voice that plays for each `voice_tag`. This also works with the null audio device.
+- [x] `layered` accepts `lip_sync = { group = "mouth", frames = { "closed", "half", "open" }, thresholds = { 0.05, 0.2 } }`.
+- [x] While the character's voice plays, the group shows the frame for the level. When the voice stops, the group shows the first frame.
+- [x] Replay and skip mode play no voice, so the mouth stays closed. Lip sync state is not in the snapshot.
+- [x] A generator writes a WAV of silence, then a tone, then silence (Python `wave`). Unit test with a fake clock: the mouth is closed, then open, then closed at the expected times.
 
 ### 27: Frame animation (SPEC §10)
 

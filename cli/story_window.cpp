@@ -106,6 +106,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     const std::unique_ptr<Audio> audio = make_audio(vfs, err);
     Scene scene{vfs, virtual_size};
     scene.set_movie_audio(audio.get());
+    scene.set_voice_level(audio.get());
     CompositeSceneState scene_state{{&scene, audio.get()}};
     UiHost ui{virtual_size};
     ScriptRuntime runtime{vfs,
@@ -262,6 +263,9 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       preferences.update();
       if (!backlog_screen.is_open() && !ui.has_modal()) {  // auto and skip wait while the player
         playback.update(seconds);                          // reads or sets something
+      }
+      if (playback.skip() != SkipMode::kOff) {
+        static_cast<void>(audio->stop("voice", 0));  // skip mode plays no voice
       }
       scene.update(seconds);
       audio->update(seconds);

@@ -112,6 +112,12 @@ vnmaki_add_fixture_generator(
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_render_tests)
 
+# Lip sync: the voice level of the audio and the mouth of a layered sprite (ticket 26).
+target_sources(vnmaki_unit_tests PRIVATE unit/lipsync_test.cpp)
+vnmaki_add_fixture_generator(
+  lipsync SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/lipsync_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
 # Audio: decoders, mixer state, script commands, snapshots (ticket 16).
 target_sources(vnmaki_unit_tests PRIVATE unit/audio_decoder_test.cpp unit/audio_test.cpp)
 vnmaki_add_fixture_generator(

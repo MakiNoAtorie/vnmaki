@@ -1081,6 +1081,38 @@ local function layered_group(name, spec)
   end
   return { name = name, values = values }
 end
+)lua" R"lua(
+-- lip_sync = { group =, frames = { value, ... }, thresholds = { level, ... }, voice_tag = }:
+-- the group shows the frame for the level of the voice. `listed` has the groups of `order`.
+local function lip_sync_request(spec, listed)
+  local bad = "bad option 'lip_sync' to 'layered' (%s)"
+  if type(spec) ~= "table" then
+    layered_option("lip_sync", "table", spec, 3)
+  end
+  for key in pairs(spec) do
+    if key ~= "group" and key ~= "frames" and key ~= "thresholds" and key ~= "voice_tag" then
+      error(format(bad, "unknown key '" .. tostring(key) .. "'"), 3)
+    end
+  end
+  if type(spec.group) ~= "string" or not listed[spec.group] then
+    error(format(bad, "'group' must be a group in 'order'"), 3)
+  end
+  if spec.voice_tag ~= nil and type(spec.voice_tag) ~= "string" then
+    error(format(bad, "'voice_tag' must be a string"), 3)
+  end
+  for list, kind in pairs { frames = "string", thresholds = "number" } do
+    local items = spec[list]
+    if type(items) ~= "table" then
+      error(format(bad, "'" .. list .. "' must be a list"), 3)
+    end
+    for i = 1, #items do
+      if type(items[i]) ~= kind then
+        error(format(bad, "'" .. list .. "' item #" .. i .. " is not a " .. kind), 3)
+      end
+    end
+  end
+  return spec
+end
 
 function layered(name, definition)
   if type(name) ~= "string" then
@@ -1103,7 +1135,8 @@ function layered(name, definition)
     request.groups[i] = layered_group(group, definition[group])
   end
   for key in pairs(definition) do
-    if not listed[key] and key ~= "order" and key ~= "default" and key ~= "crossfade" then
+    if not listed[key] and key ~= "order" and key ~= "default" and key ~= "crossfade"
+       and key ~= "lip_sync" then
       error(format("bad option '%s' to 'layered' (not a group in 'order')", tostring(key)), 2)
     end
   end
@@ -1129,6 +1162,9 @@ function layered(name, definition)
       local n = #request.default
       request.default[n + 1], request.default[n + 2] = group, value
     end
+  end
+  if definition.lip_sync ~= nil then
+    request.lip_sync = lip_sync_request(definition.lip_sync, listed)
   end
   local problem = engine.layered(name, request)
   if problem then
@@ -1822,6 +1858,21 @@ void read_layered(const sol::table& table, LayeredRequest& request) {
   if (const auto defaults = table.get<sol::optional<sol::table>>("default")) {
     request.defaults = read_pairs(*defaults);
   }
+  if (const auto sync = table.get<sol::optional<sol::table>>("lip_sync")) {
+    LayeredRequest::LipSync& lip = request.lip_sync.emplace();
+    lip.group = sync->get_or<std::string>("group", "");
+    lip.voice_tag = sync->get_or<std::string>("voice_tag", "");
+    if (const auto frames = sync->get<sol::optional<sol::table>>("frames")) {
+      for (std::size_t i = 1; i <= frames->size(); ++i) {
+        lip.frames.push_back(frames->get_or<std::string>(i, ""));
+      }
+    }
+    if (const auto thresholds = sync->get<sol::optional<sol::table>>("thresholds")) {
+      for (std::size_t i = 1; i <= thresholds->size(); ++i) {
+        lip.thresholds.push_back(thresholds->get<sol::optional<double>>(i).value_or(0.0));
+      }
+    }
+  }
 }
 
 // Copies the definition table that the prelude's `animation` built into `request`.
@@ -2200,6 +2251,11 @@ void ScriptRuntime::Impl::bind_engine() {
     std::optional<std::uint32_t> rgb;
     if (color) {
       rgb = static_cast<std::uint32_t>(*color);
+    }
+    // The voice call before this line plays for this character: lip sync follows the tag.
+    if (options_.audio != nullptr && !replaying_ && !pending_voice_.empty() &&
+        !voice_tag.empty()) {
+      options_.audio->tag_voice(voice_tag);
     }
     yield_at(state,
              SayRequest{.speaker = speaker, .text = text, .color = rgb, .voice_tag = voice_tag,
