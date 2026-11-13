@@ -245,6 +245,9 @@ target_sources(vnmaki_unit_tests PRIVATE unit/profiler_test.cpp)
 # 3D scenes (ticket 46): the glTF loader, the maths, the script calls, tweens, the snapshot, and
 # the GPU cases (unlit golden, toon and PBR probes, a custom shader) of the generated cubes.
 target_sources(vnmaki_unit_tests PRIVATE unit/model3d_test.cpp)
+# 3D animation (ticket 47): joint matrices, morph weights, crossfades, clips in scripts and snapshots,
+# lip sync, with a fake clock; the GPU probe is in render/model3d_render_test.cpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/model3d_anim_test.cpp)
 vnmaki_add_fixture_generator(
   model3d SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
   DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"

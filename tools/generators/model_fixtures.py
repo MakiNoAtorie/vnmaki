@@ -18,6 +18,9 @@ The cube has half-size 1, 24 vertices (4 per face, with normals and texture coor
   cube.glb     orange, buffer in the file            rough.gltf   orange, metallic 0, roughness 1
   tex.gltf     white, external tex.bin and tex.png   metal.gltf   orange, metallic 1, roughness 0.2
   tex.glb      white, the texture inside the file    moved.gltf   a node with a translation and scale
+  skinned.gltf a bar of two segments with two joints ("root" at the origin, "tip" 1 above it) and
+               the clips bend, flip, snap and slide (see skinned() below)
+  morph.gltf   a quad with the morph targets mouth_open and smile, and the clip open
   bad/         files that must fail to load
 
 The reference of the unlit case does not need a triangle rasterizer. The camera looks along -z at
@@ -30,6 +33,7 @@ z = 1, d = 4) covers half-width 1/4 of 32 = 8 pixels, and the far cube (centre z
 
 import base64
 import json
+import math
 import shutil
 import struct
 import sys
@@ -129,6 +133,150 @@ def gltf_json(*, color=ORANGE, metallic=0.0, roughness=0.5, textured=False, buff
     return document, data
 
 
+# --- Skins, morph targets and clips (ticket 47) -----------------------------------------------
+
+FLOAT_ACCESSOR = 5126
+UNSIGNED_BYTE = 5121
+
+
+class Gltf:
+    """A glTF document with one buffer: add() appends data and returns the accessor's index."""
+
+    def __init__(self) -> None:
+        self.data = bytearray()
+        self.views: list = []
+        self.accessors: list = []
+
+    def add(self, blob: bytes, component: int, count: int, kind: str, target=None, **extra) -> int:
+        view = {"buffer": 0, "byteOffset": len(self.data), "byteLength": len(blob)}
+        if target is not None:
+            view["target"] = target
+        self.data += blob + b"\0" * (-len(blob) % 4)
+        self.views.append(view)
+        self.accessors.append({"bufferView": len(self.views) - 1, "componentType": component,
+                               "count": count, "type": kind, **extra})
+        return len(self.accessors) - 1
+
+    def floats(self, values, kind: str, width: int, target=None, bounds=False) -> int:
+        flat = [x for value in values for x in (value if hasattr(value, "__len__") else (value,))]
+        extra = {}
+        if bounds:
+            columns = list(zip(*values)) if width > 1 else [list(values)]
+            extra = {"min": [min(c) for c in columns], "max": [max(c) for c in columns]}
+        return self.add(struct.pack("<%df" % len(flat), *flat), FLOAT_ACCESSOR, len(values), kind,
+                        target, **extra)
+
+    def document(self, **parts) -> dict:
+        return {"asset": {"version": "2.0", "generator": "model_fixtures.py"},
+                "buffers": [{"byteLength": len(self.data), "uri": data_uri(bytes(self.data))}],
+                "bufferViews": self.views, "accessors": self.accessors, **parts}
+
+
+def quat_z(degrees: float) -> tuple:
+    half = math.radians(degrees) / 2
+    return (0.0, 0.0, math.sin(half), math.cos(half))
+
+
+BAR_HALF = 0.25
+BAR_RINGS = (0.0, 1.0, 2.0)  # heights of the three rings of four vertices; the tip joint is at 1
+CORNERS = ((-BAR_HALF, -BAR_HALF), (BAR_HALF, -BAR_HALF), (BAR_HALF, BAR_HALF), (-BAR_HALF, BAR_HALF))
+ORANGE_MATERIAL = [{"pbrMetallicRoughness": {"baseColorFactor": [*ORANGE, 1.0],
+                                              "metallicFactor": 0.0, "roughnessFactor": 0.5}}]
+
+
+def skinned(joint_override=None, times_override=None) -> dict:
+    """A bar along y (0 to 2, half-width 0.25) with the joints root (node 0, at the origin) and
+    tip (node 1, a child of root, 1 above it). The ring at y = 0 follows root, the ring at y = 2
+    follows tip, and the ring at y = 1 follows both by half. The mesh is node 2, skin 0.
+
+    Clips (each a time in seconds and a value, linear unless it says another):
+      bend   tip turns about z from 0 to 90 degrees, times 0 to 1
+      flip   tip is turned -90 degrees, times 0 and 1
+      snap   root moves 0, 1, 2 up at times 0, 1, 2 (step)
+      slide  root moves 0 to 1 along x in a second, cubic spline with an out-tangent of 4 at 0
+    """
+    g = Gltf()
+    positions = [(x, y, z) for y in BAR_RINGS for x, z in CORNERS]
+    k = 1 / math.sqrt(2)
+    normals = [(math.copysign(k, x), 0.0, math.copysign(k, z)) for _ in BAR_RINGS for x, z in CORNERS]
+    joints = [(0, 0, 0, 0)] * 4 + [(0, 1, 0, 0)] * 4 + [(1, 0, 0, 0)] * 4
+    if joint_override is not None:
+        joints[0] = (joint_override, 0, 0, 0)
+    weights = [(1.0, 0.0, 0.0, 0.0)] * 4 + [(0.5, 0.5, 0.0, 0.0)] * 4 + [(1.0, 0.0, 0.0, 0.0)] * 4
+    indices = []
+    for segment in range(2):
+        for c in range(4):
+            a, b = segment * 4 + c, segment * 4 + (c + 1) % 4
+            indices += [a, b, b + 4, a, b + 4, a + 4]
+    attributes = {
+        "POSITION": g.floats(positions, "VEC3", 3, ARRAY_BUFFER, bounds=True),
+        "NORMAL": g.floats(normals, "VEC3", 3, ARRAY_BUFFER),
+        "JOINTS_0": g.add(b"".join(struct.pack("<4B", *j) for j in joints), UNSIGNED_BYTE,
+                           len(joints), "VEC4", ARRAY_BUFFER),
+        "WEIGHTS_0": g.floats(weights, "VEC4", 4, ARRAY_BUFFER),
+    }
+    index_accessor = g.add(b"".join(struct.pack("<H", i) for i in indices), UNSIGNED_SHORT,
+                           len(indices), "SCALAR", ELEMENT_ARRAY_BUFFER)
+    identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    below = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -1, 0, 1]  # column-major: moves down by 1
+    inverse_bind = g.floats([identity, below], "MAT4", 16)
+
+    def clip(name, path, interpolation, times, values, kind, node):
+        # Only the first clip takes the damaged times: the others keep their key counts.
+        damaged = times_override is not None and name == "bend"
+        time_accessor = g.floats(times_override if damaged else times, "SCALAR", 1, bounds=True)
+        return {"name": name,
+                "samplers": [{"input": time_accessor, "output": g.floats(values, kind, 0),
+                              "interpolation": interpolation}],
+                "channels": [{"sampler": 0, "target": {"node": node, "path": path}}]}
+
+    zero = (0.0, 0.0, 0.0)
+    animations = [
+        clip("bend", "rotation", "LINEAR", [0.0, 1.0], [(0.0, 0.0, 0.0, 1.0), quat_z(90)], "VEC4", 1),
+        clip("flip", "rotation", "LINEAR", [0.0, 1.0], [quat_z(-90), quat_z(-90)], "VEC4", 1),
+        clip("snap", "translation", "STEP", [0.0, 1.0, 2.0],
+             [zero, (0.0, 1.0, 0.0), (0.0, 2.0, 0.0)], "VEC3", 0),
+        clip("slide", "translation", "CUBICSPLINE", [0.0, 1.0],
+             [zero, zero, (4.0, 0.0, 0.0), zero, (1.0, 0.0, 0.0), zero], "VEC3", 0),
+    ]
+    return g.document(
+        scene=0, scenes=[{"nodes": [0, 2]}],
+        nodes=[{"name": "root", "children": [1]}, {"name": "tip", "translation": [0, 1, 0]},
+               {"name": "bar", "mesh": 0, "skin": 0}],
+        skins=[{"joints": [0, 1], "inverseBindMatrices": inverse_bind, "skeleton": 0}],
+        meshes=[{"primitives": [{"attributes": attributes, "indices": index_accessor,
+                                 "material": 0}]}],
+        materials=ORANGE_MATERIAL, animations=animations)
+
+
+def morph() -> dict:
+    """A quad in the xy plane (-1 to 1, 0 to 1) with two morph targets that move its vertices:
+    mouth_open raises the top edge by 1, smile spreads the bottom edge by 0.5 each way. The weights
+    start at 0. The clip open takes both weights from 0 to (1, 0.5) in a second."""
+    g = Gltf()
+    positions = [(-1.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (-1.0, 1.0, 0.0)]
+    zero = (0.0, 0.0, 0.0)
+    open_deltas = [zero, zero, (0.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+    smile_deltas = [(-0.5, 0.0, 0.0), (0.5, 0.0, 0.0), zero, zero]
+    attributes = {"POSITION": g.floats(positions, "VEC3", 3, ARRAY_BUFFER, bounds=True),
+                  "NORMAL": g.floats([(0.0, 0.0, 1.0)] * 4, "VEC3", 3, ARRAY_BUFFER)}
+    index_accessor = g.add(b"".join(struct.pack("<H", i) for i in (0, 1, 2, 0, 2, 3)),
+                           UNSIGNED_SHORT, 6, "SCALAR", ELEMENT_ARRAY_BUFFER)
+    targets = [{"POSITION": g.floats(open_deltas, "VEC3", 3, bounds=True)},
+               {"POSITION": g.floats(smile_deltas, "VEC3", 3, bounds=True)}]
+    times = g.floats([0.0, 1.0], "SCALAR", 1, bounds=True)
+    values = g.floats([0.0, 0.0, 1.0, 0.5], "SCALAR", 1)
+    return g.document(
+        scene=0, scenes=[{"nodes": [0]}], nodes=[{"name": "mouth", "mesh": 0}],
+        meshes=[{"primitives": [{"attributes": attributes, "indices": index_accessor,
+                                 "material": 0, "targets": targets}],
+                 "weights": [0.0, 0.0], "extras": {"targetNames": ["mouth_open", "smile"]}}],
+        materials=ORANGE_MATERIAL,
+        animations=[{"name": "open", "samplers": [{"input": times, "output": values,
+                                                    "interpolation": "LINEAR"}],
+                     "channels": [{"sampler": 0, "target": {"node": 0, "path": "weights"}}]}])
+
+
 def text(document: dict) -> bytes:
     return json.dumps(document, indent=1).encode("utf-8")
 
@@ -163,6 +311,8 @@ def models() -> dict:
 
     document, data = gltf_json()
     files["models/cube.glb"] = glb(document, data)
+    files["models/skinned.gltf"] = text(skinned())
+    files["models/morph.gltf"] = text(morph())
 
     png = rf.png_rgba(TEXTURE)
     document, data = gltf_json(color=WHITE, textured=True, buffer_uri="tex.bin", image={"uri": "tex.png"})
@@ -189,6 +339,8 @@ def models() -> dict:
     document, data = gltf_json(index_override=24)
     document["buffers"][0]["uri"] = data_uri(data)
     files["models/bad/index_range.gltf"] = text(document)
+    files["models/bad/joint_range.gltf"] = text(skinned(joint_override=9))
+    files["models/bad/time_back.gltf"] = text(skinned(times_override=[1.0, 0.0]))
     files["models/bad/truncated.glb"] = files["models/cube.glb"][:40]
     files["models/bad/not_json.gltf"] = b"{ this is not json"
     return files
@@ -229,6 +381,15 @@ def cube(path: str, shader: str, extra: str = "") -> str:
     return 'model("cube", "models/%s", { scene = "stage", shader = "%s"%s })' % (path, shader, extra)
 
 
+def bent_arm() -> str:
+    """The bar bent 90 degrees at the tip joint, seen from the front by a camera that looks at the
+    joint. The bar goes up from y = 0 to the joint, and the arm goes from there to the left."""
+    return ('label("skinned_bent", function()\n  scene3d("stage")\n'
+            '  camera("stage", { position = { 0, 1, 5 }, look_at = { 0, 1, 0 }, fov = 90 })\n'
+            '  model("arm", "models/skinned.gltf", { scene = "stage" })\n'
+            '  play("@3d.stage.arm", "bend", { seek = 1 })\n  narrate("framed")\nend)\n')
+
+
 def script() -> str:
     labels = [
         label("unlit",
@@ -246,6 +407,7 @@ def script() -> str:
         label("textured", cube("tex.glb", "unlit")),
         label("custom", 'shader("whiten", { "amount" })',
               cube("cube.gltf", "whiten", ", uniforms = { amount = 0.5 }")),
+        bent_arm(),
     ]
     return "\n".join(labels)
 

@@ -203,3 +203,20 @@ TEST_CASE("model3d: a game shader that includes mesh.hlsli draws a model") {
                                    (kByteMax * kWhitenAmount)))};
   frame.expect(kCenter, kCenter, expected);
 }
+
+TEST_CASE("model3d: a skinned bar bent by its clip draws as bent, with the vertices uploaded") {
+  // The camera looks at the tip joint at (0, 1, 0), 6.7 pixels to a unit at the front of the bar.
+  // "bend" at its end (seek = 1) turns the top half to the left: the arm covers (x = -0.6,
+  // y = 1), nothing is above the joint, and the lower half still stands.
+  const Frame frame{"skinned_bent"};
+  if (!frame.ok()) {
+    return;
+  }
+  constexpr int kArmX = 28;      // x = -0.6
+  constexpr int kJointRow = 32;  // y = 1
+  constexpr int kAboveRow = 28;  // y = 1.5, above the bent arm
+  constexpr int kBelowRow = 38;  // y = 0.04, in the lower half
+  frame.expect(kArmX, kJointRow, kOrange);
+  frame.expect(kCenter, kAboveRow, {0, 0, 0});
+  frame.expect(kCenter, kBelowRow, kOrange);
+}
