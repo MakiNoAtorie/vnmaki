@@ -16,7 +16,40 @@
 
 namespace vnmaki {
 
+namespace {
+
+constexpr std::string_view kEngineScreenPrefix = "vnmaki:";
+constexpr std::string_view kScreenScope = "screen/";
+
+// Puts the translation of the text of each text node and button into `text`, and into `label` when
+// that was the text. A node that the typewriter reveals is a line of the story: the presenters
+// translate it.
+void translate_nodes(UiNode& node, const Translator& translator, const std::string& scope) {
+  const bool takes_text = node.kind == NodeKind::kText || node.kind == NodeKind::kButton;
+  if (takes_text && !node.reveal) {
+    if (node.source_text.empty()) {
+      node.source_text = node.text;
+    }
+    std::string translated = translator.translate(scope, {}, node.source_text);
+    if (node.label == node.text) {
+      node.label = translated;
+    }
+    node.text = std::move(translated);
+  }
+  for (UiNode& child : node.children) {
+    translate_nodes(child, translator, scope);
+  }
+}
+
+}  // namespace
+
 UiHost::UiHost(Size canvas) : canvas_(canvas), measure_(estimate_text_size) {}
+
+void UiHost::set_translator(const Translator* translator) {
+  translator_ = translator;
+  translation_revision_ = translator != nullptr ? translator->revision() : 0;
+  dirty_ = true;
+}
 
 void UiHost::set_text_measure(TextMeasure measure) {
   measure_ = std::move(measure);
@@ -46,6 +79,9 @@ void UiHost::hide_screen(std::string_view name) { hide(name); }
 
 void UiHost::show(std::string name, UiNode root, bool modal) {
   hide(name);
+  if (translator_ != nullptr && !name.starts_with(kEngineScreenPrefix)) {
+    translate_nodes(root, *translator_, std::string{kScreenScope} + name);
+  }
   if (modal) {
     static_cast<void>(move_focus(root, FocusMove::kNext));
   }
@@ -94,11 +130,22 @@ std::vector<const UiNode*> UiHost::roots() {
 }
 
 void UiHost::ensure_layout() {
+  if (translator_ != nullptr && translator_->revision() != translation_revision_) {
+    translation_revision_ = translator_->revision();
+    for (Screen& screen : screens_) {
+      if (!screen.name.starts_with(kEngineScreenPrefix)) {
+        translate_nodes(screen.root, *translator_, std::string{kScreenScope} + screen.name);
+      }
+    }
+    dirty_ = true;
+  }
   if (!dirty_) {
     return;
   }
+  const TextDirection direction =
+      translator_ != nullptr ? translator_->direction() : TextDirection::kLtr;
   for (Screen& screen : screens_) {
-    layout_tree(screen.root, canvas_, measure_);
+    layout_tree(screen.root, canvas_, measure_, direction);
   }
   dirty_ = false;
 }

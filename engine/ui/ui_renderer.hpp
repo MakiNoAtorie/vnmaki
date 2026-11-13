@@ -47,6 +47,10 @@ class UiRenderer {
     generated_ = std::move(source);
   }
 
+  /// Uses `fonts` from now on (the font chain of another language). The fonts must outlive this
+  /// object. Texts are laid out again.
+  void set_fonts(FontSet fonts);
+
   /// The measure that sizes text with the font. Valid while this object lives.
   [[nodiscard]] TextMeasure text_measure();
 

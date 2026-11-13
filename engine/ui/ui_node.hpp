@@ -120,6 +120,9 @@ struct UiNode {
   UiStyle style{};
   /// The content: a text node's string, a button's caption, an image's name (`images/<name>.png`).
   std::string text{};
+  /// The text of a text node or button before UiHost translated it (SPEC section 16); empty until
+  /// then. UiHost translates again from this when the language changes.
+  std::string source_text{};
   /// `text` has text tags (docs/TEXT_TAGS.md) that the renderer applies; a bad tag draws as plain
   /// text.
   bool markup = false;

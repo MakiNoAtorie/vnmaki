@@ -118,6 +118,15 @@ UiNode* find_reveal(UiNode& node) {
 
 }  // namespace
 
+void SayBoxView::set_language(FontSet fonts, TextDirection direction) {
+  fonts_ = fonts;
+  ui_.set_fonts(std::move(fonts));
+  direction_ = direction;
+  built_for_.reset();
+  built_.reset();
+  has_layout_ = false;
+}
+
 void SayBoxView::set_screen_source(ScreenSource source, Size canvas) {
   source_ = std::move(source);
   canvas_ = canvas;
@@ -139,7 +148,7 @@ UiNode* SayBoxView::scripted_screen(const DialogueLine& line) {
       built_.reset();
     }
     if (built_) {
-      layout_tree(*built_, canvas_, ui_.text_measure());
+      layout_tree(*built_, canvas_, ui_.text_measure(), direction_);
     }
     has_layout_ = false;
   }
@@ -174,7 +183,7 @@ UiNode SayBoxView::laid_out_screen(const DialogueLine& line,
   UiNode screen = make_say_screen(style_, line, visible_glyphs);
   const Size canvas{.width = static_cast<int>(std::ceil(style_.box.x + style_.box.width)),
                     .height = static_cast<int>(std::ceil(style_.box.y + style_.box.height))};
-  layout_tree(screen, canvas, ui_.text_measure());
+  layout_tree(screen, canvas, ui_.text_measure(), direction_);
   return screen;
 }
 

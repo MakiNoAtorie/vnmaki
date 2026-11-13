@@ -80,11 +80,12 @@ YGJustify to_yoga(Justify justify) {
 
 // Mirrors `node` and its children as Yoga nodes. A leaf that shows text gets a measure function.
 YGNodeRef build(const UiNode& node, std::deque<MeasureContext>& contexts,
-                const TextMeasure& measure) {
+                const TextMeasure& measure, TextDirection direction) {
   YGNodeRef yoga = YGNodeNew();
   const UiStyle& style = node.style;
-  YGNodeStyleSetFlexDirection(
-      yoga, node.kind == NodeKind::kHbox ? YGFlexDirectionRow : YGFlexDirectionColumn);
+  const YGFlexDirection row =
+      direction == TextDirection::kRtl ? YGFlexDirectionRowReverse : YGFlexDirectionRow;
+  YGNodeStyleSetFlexDirection(yoga, node.kind == NodeKind::kHbox ? row : YGFlexDirectionColumn);
   if (style.width) {
     YGNodeStyleSetWidth(yoga, *style.width);
   }
@@ -110,7 +111,7 @@ YGNodeRef build(const UiNode& node, std::deque<MeasureContext>& contexts,
     YGNodeSetMeasureFunc(yoga, measure_node);
   }
   for (std::size_t i = 0; i < node.children.size(); ++i) {
-    YGNodeInsertChild(yoga, build(node.children[i], contexts, measure), i);
+    YGNodeInsertChild(yoga, build(node.children[i], contexts, measure, direction), i);
   }
   return yoga;
 }
@@ -141,9 +142,9 @@ MeasuredSize estimate_text_size(const UiNode& node, float /*max_width*/) {
           .height = node.style.text_size};
 }
 
-void layout_tree(UiNode& root, Size canvas, const TextMeasure& measure) {
+void layout_tree(UiNode& root, Size canvas, const TextMeasure& measure, TextDirection direction) {
   std::deque<MeasureContext> contexts;
-  const YogaTree tree{build(root, contexts, measure)};
+  const YogaTree tree{build(root, contexts, measure, direction)};
   YGNodeStyleSetWidth(tree.get(), static_cast<float>(canvas.width));
   YGNodeStyleSetHeight(tree.get(), static_cast<float>(canvas.height));
   YGNodeCalculateLayout(tree.get(), static_cast<float>(canvas.width),

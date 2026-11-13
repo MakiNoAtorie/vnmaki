@@ -10,6 +10,7 @@
 #include <string>
 
 #include "engine/dialogue/dialogue_presenter.hpp"
+#include "engine/l10n/text_direction.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
 #include "engine/text/text.hpp"
@@ -63,6 +64,10 @@ class SayBoxView {
   using ScreenSource = std::function<std::optional<UiNode>(const DialogueLine&)>;
   void set_screen_source(ScreenSource source, Size canvas);
 
+  /// Uses `fonts` (the font chain of another language) and lays the screen out in `direction`
+  /// from now on. The fonts must outlive the view.
+  void set_language(FontSet fonts, TextDirection direction);
+
   /// Lays `line` out and returns its glyph count (what DialoguePresenter needs).
   [[nodiscard]] std::size_t glyph_count(const DialogueLine& line);
 
@@ -98,6 +103,7 @@ class SayBoxView {
   std::optional<UiNode> built_;
   FontSet fonts_;
   SayBoxStyle style_;
+  TextDirection direction_ = TextDirection::kLtr;
   UiRenderer ui_;
   std::string laid_out_text_;
   bool has_layout_ = false;

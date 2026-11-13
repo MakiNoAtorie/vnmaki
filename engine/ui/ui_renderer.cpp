@@ -91,6 +91,11 @@ UiRenderer::~UiRenderer() {
   }
 }
 
+void UiRenderer::set_fonts(FontSet fonts) {
+  fonts_ = std::move(fonts);
+  layouts_.clear();
+}
+
 const TextLayout& UiRenderer::layout(const UiNode& node, float wrap_width) {
   auto key = std::make_tuple(display_text(node), node.markup, node.style.text_size, wrap_width,
                              node.style.font);

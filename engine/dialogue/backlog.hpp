@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "engine/l10n/translator.hpp"
 #include "engine/runtime/script_runtime.hpp"
 
 namespace vnmaki {
@@ -16,7 +17,7 @@ namespace vnmaki {
 struct BacklogEntry {
   /// Empty for a narrate line.
   std::string speaker{};
-  /// The line as the script wrote it, with text tags.
+  /// The line with text tags, translated if the backlog has a translator.
   std::string text{};
   /// The label that said the line, and its step there.
   std::string label{};
@@ -30,9 +31,17 @@ struct BacklogEntry {
 class Backlog {
  public:
   /// `runtime` must outlive this. `audio` (may be null) plays voices again; it must outlive this.
+  /// With a `translator` (may be null; it must outlive this) the entries have the translated text
+  /// of its language (scope: the label of the entry), so a change of language shows in the backlog.
   explicit Backlog(const ScriptRuntime& runtime, AudioCommands* audio = nullptr,
-                   std::size_t max_entries = kDefaultBacklogLength)
-      : runtime_(&runtime), audio_(audio), max_entries_(max_entries) {}
+                   std::size_t max_entries = kDefaultBacklogLength,
+                   const Translator* translator = nullptr)
+      : runtime_(&runtime), audio_(audio), max_entries_(max_entries), translator_(translator) {}
+
+  /// The revision of the translator (0 without one): what entries() is translated for.
+  [[nodiscard]] std::uint64_t revision() const {
+    return translator_ != nullptr ? translator_->revision() : 0;
+  }
 
   /// The say and narrate lines of the step log, oldest first, at most `max_entries` of the
   /// newest. The log keeps ScriptRuntimeOptions::rollback_depth steps, so that bounds it too.
@@ -46,6 +55,7 @@ class Backlog {
   const ScriptRuntime* runtime_;
   AudioCommands* audio_;
   std::size_t max_entries_;
+  const Translator* translator_;
 };
 
 }  // namespace vnmaki

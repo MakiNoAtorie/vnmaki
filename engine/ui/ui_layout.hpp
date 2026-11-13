@@ -5,6 +5,7 @@
 
 #include <functional>
 
+#include "engine/l10n/text_direction.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/ui/ui_node.hpp"
 
@@ -27,7 +28,9 @@ using TextMeasure = std::function<MeasuredSize(const UiNode& node, float max_wid
 /// Sets `rect` of every node of the tree under `root`, in virtual pixels from the canvas'
 /// top-left corner. `root` fills the canvas. `box` and `vbox` stack their children top to bottom,
 /// `hbox` left to right; a node with a position leaves the flow. Text nodes and buttons without
-/// children are sized by `measure`.
-void layout_tree(UiNode& root, Size canvas, const TextMeasure& measure);
+/// children are sized by `measure`. In a right-to-left language (`direction`) an `hbox` puts its
+/// first child at the right edge, so the children run right to left.
+void layout_tree(UiNode& root, Size canvas, const TextMeasure& measure,
+                 TextDirection direction = TextDirection::kLtr);
 
 }  // namespace vnmaki

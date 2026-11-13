@@ -104,6 +104,7 @@ std::string ScreenActions::open(std::string_view name, const ScreenNodeDef& args
   std::erase(opened_, name);
   if (modal) {
     opened_.emplace_back(name);
+    opened_args_.insert_or_assign(std::string{name}, args);
   }
   return {};
 }
@@ -177,6 +178,18 @@ bool ScreenActions::handle(const ScreenActivation& activation) {
   } else if (verb == "backlog") {
     if (targets_.backlog != nullptr) {
       targets_.backlog->open();
+    }
+  } else if (verb == "language") {
+    if (const std::string problem = runtime_->set_binding("prefs", "language", argument);
+        !problem.empty()) {
+      warn(problem);
+    } else if (targets_.language) {
+      targets_.language(argument);
+      // The screen of the button is built again, so that the styles of the language apply to it.
+      if (const auto args = opened_args_.find(activation.screen); args != opened_args_.end()) {
+        const ScreenNodeDef again = args->second;
+        static_cast<void>(open(activation.screen, again));
+      }
     }
   } else if (verb == "quit") {
     if (confirmed) {

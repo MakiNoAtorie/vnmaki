@@ -20,7 +20,13 @@ ScreenPresenter::ScreenPresenter(ScriptRuntime& runtime, UiHost& host)
 // The Lua screen `choice` for the options, or the built-in one if the game's screen fails (a
 // broken screen must not stop the story).
 UiNode ScreenPresenter::menu_tree(const MenuRequest& menu) {
-  const std::vector<std::string>& options = menu.options;
+  std::vector<std::string> options = menu.options;
+  if (translator_ != nullptr) {
+    const std::string scope = runtime_->position().label;
+    for (std::string& option : options) {
+      option = translator_->translate(scope, {}, option);
+    }
+  }
   // In NVL mode the options show inside the NVL screen, under the page.
   ScreenNodeDef args;
   if (menu.nvl) {
@@ -49,9 +55,11 @@ void ScreenPresenter::sync() {
   const auto* menu = request != nullptr ? std::get_if<MenuRequest>(request) : nullptr;
   const auto* call = request != nullptr ? std::get_if<CallScreenRequest>(request) : nullptr;
   const ScriptPosition position = runtime_->position();
+  const std::uint64_t revision = translator_ != nullptr ? translator_->revision() : 0;
   // A replay to the same position (a quick-load) can bring other options or another screen.
-  if (shown_ && ((menu == nullptr && call == nullptr) || shown_->position != position ||
-                 shown_->request != *request)) {
+  if (shown_ &&
+      ((menu == nullptr && call == nullptr) || shown_->position != position ||
+       shown_->request != *request || (menu != nullptr && shown_->revision != revision))) {
     host_->hide(shown_->name);
     shown_.reset();
   }
@@ -60,10 +68,10 @@ void ScreenPresenter::sync() {
   }
   if (menu != nullptr) {
     host_->show(std::string{kMenuScreenName}, menu_tree(*menu), true);
-    shown_ = Shown{std::string{kMenuScreenName}, position, *request};
+    shown_ = Shown{std::string{kMenuScreenName}, position, *request, revision};
   } else if (call != nullptr) {
     host_->show(call->name, build_ui_tree(call->screen), true);
-    shown_ = Shown{call->name, position, *request};
+    shown_ = Shown{call->name, position, *request, revision};
   }
 }
 

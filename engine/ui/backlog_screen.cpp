@@ -112,8 +112,17 @@ float span_height(const std::vector<float>& heights, std::size_t from, std::size
 BacklogScreen::BacklogScreen(UiHost& host, const Backlog& backlog, TextMeasure measure)
     : host_(&host), backlog_(&backlog), measure_(std::move(measure)) {}
 
-void BacklogScreen::open() {
+void BacklogScreen::open() { load(false); }
+
+void BacklogScreen::sync() {
+  if (open_ && backlog_->revision() != revision_) {
+    load(true);
+  }
+}
+
+void BacklogScreen::load(bool keep_selection) {
   entries_ = backlog_->entries();
+  revision_ = backlog_->revision();
   const Size canvas = host_->canvas();
   const Metrics metrics = metrics_for(canvas);
   const float wrap = static_cast<float>(canvas.width) - (2 * (metrics.margin + metrics.padding));
@@ -129,8 +138,9 @@ void BacklogScreen::open() {
   const UiNode title = text_node("Backlog", metrics.title_size, kWhite, false);
   available_ = static_cast<float>(canvas.height) - (2 * metrics.margin) -
                measure_(title, wrap).height - metrics.gap;
-  selected_ = entries_.empty() ? 0 : entries_.size() - 1;
-  first_ = 0;
+  const std::size_t newest = entries_.empty() ? 0 : entries_.size() - 1;
+  selected_ = keep_selection ? std::min(selected_, newest) : newest;
+  first_ = keep_selection ? std::min(first_, selected_) : 0;
   open_ = true;
   rebuild();
 }
