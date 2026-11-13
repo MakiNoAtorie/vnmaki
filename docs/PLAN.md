@@ -413,12 +413,12 @@ Files: new `engine/l10n/po.*`, `engine/l10n/extract.*`, `engine/tools/script_sca
 
 Files: `engine/l10n/`, `engine/runtime/`, `engine/vfs/` (language lookup), `engine/ui/`, `engine/tools/translation_editor.*`.
 
-- [ ] `prefs.language` and `vnmaki run --lang ja`. A missing or fuzzy entry uses the source text.
-- [ ] Image `N` in language `ja` is `images/ja/N` if it exists. Voice uses `voice/ja/...` the same way.
-- [ ] `project.toml` sets the font chain, the style override file (`styles/<lang>.lua`) and the text direction for each language. RTL languages reverse hbox order.
-- [ ] A language change at run time updates the current line, the backlog and the screens at once. It is not a rollback step.
-- [ ] The overlay translation editor lists the entries of the current label. An edit updates the say box at once and saves the `.po` file.
-- [ ] Tests: headless transcript in two languages, image and voice lookup, a switch during a line, and an RTL hbox rectangle test.
+- [x] `prefs.language` and `vnmaki run --lang ja`. A missing or fuzzy entry uses the source text.
+- [x] Image `N` in language `ja` is `images/ja/N` if it exists. Voice uses `voice/ja/...` the same way.
+- [x] `project.toml` sets the font chain, the style override file (`styles/<lang>.lua`) and the text direction for each language. RTL languages reverse hbox order.
+- [x] A language change at run time updates the current line, the backlog and the screens at once. It is not a rollback step.
+- [x] The overlay translation editor lists the entries of the current label. An edit updates the say box at once and saves the `.po` file.
+- [x] Tests: headless transcript in two languages, image and voice lookup, a switch during a line, and an RTL hbox rectangle test.
 
 ### 42: Accessibility options (SPEC §17)
 

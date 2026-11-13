@@ -145,3 +145,12 @@ say(eileen, "Hello.")
 - `voice_tag` is the voice to follow (the name of the definition by default). `voice(name)` plays `audio/voice/<name>`. A `say` with a character that has `voice_tag`, right after `voice`, gives the voice its tag.
 - The mouth shows the first frame when no voice with the tag plays. It does not change `show` values, saves or rollback. A replay plays no voice, so the mouth stays closed.
 - `vnmaki run` stops the voice while skip mode is on.
+
+## Languages
+
+- `languages = ["en", "ja"]` in `project.toml` lists the languages. The first is the one the scripts are written in.
+- `vnmaki extract-strings <folder>` writes `translations/template.pot` and `translations/<code>.po`. Translate the `msgstr` lines. A fuzzy or empty entry shows the source text.
+- `vnmaki run <folder> --lang ja` or `prefs.language = "ja"` plays in that language. `languages()` lists the codes. A button that returns `"@language:ja"` changes the language at once; the default `preferences` screen has these buttons when there is more than one language.
+- Images and voices: `images/ja/<name>` and `audio/voice/ja/<name>` are used first in that language.
+- `[fonts.fallback]` gives the font chain of a language. `[text_direction]` with `ar = "rtl"` reverses the order of an `hbox`. `[styles]` with `ja = "styles/ja_look.lua"` (or `styles/<code>.lua`) is a file of `style(...)` calls that runs over the game styles.
+- A dev build has a "Translations" window in the overlay (F12): it lists the entries of the current label and saves an edit to the `.po` file.
