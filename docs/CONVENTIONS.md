@@ -16,7 +16,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - While you work, run only the tests for the changed code: `ctest --test-dir build/debug -R <pattern>`.
 - Before a push, run `cmake --workflow --preset debug`. CI runs the other presets, clang-tidy and the format check.
 - CI (`.github/workflows/ci.yml`) runs:
-  - Windows, MSVC: debug, release.
+  - Windows, MSVC: debug (with `/analyze`), release.
   - Linux, Clang 18: asan-ubsan, tsan, fuzz, release, a build without threads.
   - macOS, Apple Clang: debug, asan-ubsan.
   - A clang-tidy job and a format check.
@@ -26,6 +26,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Lua is 5.4.8, because the specification requires 5.4.
   - `sdl3` has no default features. On Linux, it has `x11` and `wayland`.
   - mpack has no vcpkg port, and `third_party/` has no copy of it. The save format (`engine/saves/save_file.cpp`) has a small MessagePack reader and writer of its own. It is plain MessagePack, so mpack can replace it.
+  - libwebp is a vcpkg dependency. `engine/render/CMakeLists.txt` finds it with `find_package(WebP CONFIG REQUIRED)` (target `WebP::webp`). Debian: `libwebp-dev`.
   - zstd is a vcpkg dependency. `engine/saves/CMakeLists.txt` finds `zstd::libzstd` (vcpkg) or the plain library (Debian: `libzstd-dev`).
 
 ## Code
@@ -39,6 +40,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Includes use the path from the repository root, for example `"engine/vfs/vfs.hpp"`.
 - Include order: the header of the file, `<std>`, `<third/party.h>`, `"engine/..."`.
 - All warnings are errors. clang-tidy uses `WarningsAsErrors: '*'`. Correct the findings. Do not suppress them.
+  - MSVC `/analyze` runs in the Windows debug CI job. Locally: `tools\dev\vsenv.cmd cmake --preset debug -B build/analyze -DVNMAKI_MSVC_ANALYZE=ON`, then build in `build/analyze`. The option adds `/analyze /analyze:external-` to `vnmaki::options` only, so third-party headers (SYSTEM includes) are not analyzed. Its warnings are errors. Correct them. Do not suppress them. Put a dependency's headers on a SYSTEM include path (imported targets do this).
   - Give names to literal constants, also in tests. Integer literals in doctest `CHECK(...)` are permitted.
   - Floating-point literals other than 0 and 1 always need a name.
   - Declare a variable with a cast initializer as `auto`.
@@ -69,6 +71,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `RecordingRenderer` (`tests/support/recording_renderer.hpp`) is an `IRenderer` that records the quads of each draw. Use it to test what a displayable draws, without a GPU.
 - Fuzz targets use `vnmaki_add_fuzzer(<name> <sources>)`. ctest gives each target a smoke test of 10,000 runs.
   - A fuzz target checks properties of the output, for example idempotence or an independent oracle. If a property is false, it calls `std::abort()`.
+  - `fuzz_image` and `fuzz_webp` share `fuzz/image_properties.hpp` (also run by `tests/unit/image_test.cpp`). `fuzz_webp` adds the RIFF/VP8L container to the input, so the bytes are the chunk data. libwebp is a vcpkg library, so it has no fuzz instrumentation; only the engine code around it has.
   - To check a new fuzz target, add a bug and make sure that the smoke test finds it.
 - Threaded tests put a timeout on each wait. If `!JobSystem::threads_supported()`, they return immediately, because jobs run inline.
 - GPU tests are in `tests/render/` (`vnmaki_render_tests`).
@@ -77,6 +80,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png`.
   - `tools/generators/render_fixtures.py` makes the golden images with a reference rasterizer.
   - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`, `frame_anim_fixtures.py`, `transition_fixtures.py`.
+  - `webp_fixtures.py` is stand-alone. It writes a tiny lossless WebP (VP8L: no transforms, no colour cache, one simple prefix code per channel, so each channel has at most two values) with the standard library only. The test pixels in `image_test.cpp` are the specification.
 
 ## Module contracts
 
@@ -132,7 +136,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - A shader may use up to three textures and one constant buffer at `register(b0, space3)`. Storage textures and buffers are errors.
   - `shader_compiler_available()` is false on macOS, where vcpkg has no `sdl3-shadercross`. Tests that compile shaders return early then.
   - The compiler is only in `engine/render/sdl_shader_compiler.cpp`, because it includes SDL headers.
-- `load_image(vfs, jobs, path)` loads an image and returns `JobHandle<Image>`.
+- `load_image(vfs, jobs, path)` loads an image and returns `JobHandle<Image>`. `decode_image` reads PNG and JPEG (stb_image) and WebP, lossless or lossy, not animated (libwebp). It finds WebP by the `RIFF....WEBP` header, not by the file name. All three are premultiplied after decoding.
 - Upload images with `create_texture` on the main thread.
 
 ### Text (`engine/text/text.hpp`)
@@ -153,7 +157,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `Scene` keeps tagged displayables on the SPEC §9 layers.
 - `Scene` implements `SceneState` and `SceneCommands`. Set `ScriptRuntimeOptions::scene` and `::scene_state` to it.
 - The runtime includes no scene headers.
-- Image name `N` is the VFS file `images/N.png`. If that file does not exist, it is `images/N.jpg`.
+- Image name `N` is the VFS file `images/N.png`. If that file does not exist, it is `images/N.jpg`, then `images/N.webp`.
 - A tag is unique across all layers.
 - `show` defaults: layer `characters`, position `center`, anchor bottom-center.
 - `DisplayProperties`:
@@ -287,7 +291,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `ScreenPresenter` shows the modal screen of a `menu` or `call_screen` request and answers the runtime. Make it after `runtime.start()`. Call `sync()` after anything else that moves the story. Give it events before the dialogue presenter: if `handle_event` returns true, do not advance.
 - `UiRenderer` draws trees through `IRenderer`. Call `prepare(root, scale)` before `begin_frame`. Draw into a screen-resolution pass with the viewport scale and origin, like `SayBoxView`.
   - It has one glyph atlas for each text size. A node with `markup = true` uses text tags.
-  - An image node draws `images/<name>.png` (else `.jpg`) from the VFS. It needs `width` and `height`.
+  - An image node draws `images/<name>.png` (else `.jpg`, else `.webp`) from the VFS. It needs `width` and `height`.
 - The say box is a screen: `make_say_screen` builds it, and `SayBoxView` lays it out and draws it with a `UiRenderer`.
   - `SayBoxView::set_screen_source` replaces the built-in tree with one from a script. The story window gives it the Lua screen `say`.
   - The tree needs a text node with `reveal = true`: the line. Its size, width and position give the layout, the reveal and `link_at`. If the source gives nothing, the built-in box is used.

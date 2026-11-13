@@ -137,10 +137,10 @@ Files: `engine/ui/`, `engine/runtime/` (prelude, screen nodes), `engine/runtime/
 
 Files: `engine/render/image.cpp`, `vcpkg.json`, `fuzz/`, `.github/workflows/ci.yml`, `tools/generators/`.
 
-- [ ] `load_image` decodes WebP through libwebp (vcpkg). Image name `N` also finds `images/N.webp` after `.png` and `.jpg`.
-- [ ] A generator writes a small lossless WebP with the Python standard library (VP8L with literal pixels). A test compares its pixels.
-- [ ] A fuzz target for the WebP decoder path.
-- [ ] CI runs MSVC `/analyze` on the Windows debug job. Correct the findings in first-party code. Do not suppress them.
+- [x] `load_image` decodes WebP through libwebp (vcpkg). Image name `N` also finds `images/N.webp` after `.png` and `.jpg`.
+- [x] A generator writes a small lossless WebP with the Python standard library (VP8L with literal pixels). A test compares its pixels.
+- [x] A fuzz target for the WebP decoder path.
+- [x] CI runs MSVC `/analyze` on the Windows debug job. Correct the findings in first-party code. Do not suppress them.
 
 ### Deferred from Phase 2
 

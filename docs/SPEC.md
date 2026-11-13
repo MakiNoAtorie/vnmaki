@@ -58,7 +58,7 @@ Design rules for the later targets:
 
 - Build, test and code rules are in `docs/CONVENTIONS.md`. Tools enforce them: warnings as errors, clang-tidy, clang-format, sanitizers, and CI on MSVC and Clang.
 - Each loader of untrusted data has a fuzz target: saves, scripts, packs, images, glTF, Inochi2D puppets, translation files.
-- Later: a second static analyzer (cppcheck or MSVC `/analyze`).
+- MSVC `/analyze` runs on first-party code in the Windows debug CI job. Later: cppcheck.
 - Benchmark and tool output is CSV.
 
 ## 6. Architecture
