@@ -9,6 +9,8 @@ target_sources(
           image.hpp
           renderer.cpp
           renderer.hpp
+          precompiled_shader.cpp
+          precompiled_shader.hpp
           shader.hpp
           shader_compiler.hpp
           shader_headers.hpp)
@@ -19,9 +21,12 @@ target_sources(vnmaki_engine PRIVATE sdl_gpu_renderer.cpp sdl_gpu_renderer.hpp)
 target_link_libraries(vnmaki_engine PRIVATE SDL3::SDL3)
 
 # Run-time compiler for a game's shaders (sdl_shader_compiler.cpp). macOS has no vcpkg port of the
-# library (vcpkg.json), so there the compiler is a stub that throws.
-find_package(SDL3_shadercross CONFIG)
+# library (vcpkg.json), and a release build (VNMAKI_SHADER_COMPILER off) does not link it: there the
+# compiler is a stub that throws, and `shaders/<name>.frag.vnshader` files from `vnmaki import` load.
 set(vnmaki_runtime_shaders 0)
+if(VNMAKI_SHADER_COMPILER)
+  find_package(SDL3_shadercross CONFIG)
+endif()
 if(TARGET SDL3_shadercross::SDL3_shadercross)
   set(vnmaki_runtime_shaders 1)
   target_link_libraries(vnmaki_engine PRIVATE SDL3_shadercross::SDL3_shadercross)

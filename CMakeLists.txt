@@ -22,6 +22,10 @@ else()
   set(vnmaki_dev_tools_default ON)
 endif()
 option(VNMAKI_DEV_TOOLS "Build the dev tools (overlay, console, REPL)" ${vnmaki_dev_tools_default})
+# SDL_shadercross: game shaders compile when they load, and `vnmaki import` precompiles them
+# (docs/SPEC.md section 19). A release build links none of it and loads the precompiled shaders.
+option(VNMAKI_SHADER_COMPILER "Link the run-time shader compiler (SDL_shadercross)"
+       ${vnmaki_dev_tools_default})
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(VnmakiOptions)
