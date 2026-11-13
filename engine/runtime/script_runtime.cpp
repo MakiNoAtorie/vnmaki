@@ -255,6 +255,9 @@ local function options_argument(fname, options)
   return options
 end
 
+-- Defined with the layered sprites below: the attributes `show` gives a layered sprite.
+local layered_attributes
+
 function scene(image, options)
   if type(image) ~= "string" then
     bad_argument("scene", 1, "string", image)
@@ -278,8 +281,9 @@ function show(tag, options)
   local x = option("show", options, "x", "number")
   local y = option("show", options, "y", "number")
   local layer = option("show", options, "layer", "string")
+  local attributes, attribute_text = layered_attributes(options, image or tag)
   require_label("show")
-  local problem = engine.show(tag, image or tag, at, x, y, layer)
+  local problem = engine.show(tag, image or tag, at, x, y, layer, attributes)
   if problem then
     error(problem, 2)
   end
@@ -299,7 +303,7 @@ function show(tag, options)
   if layer then
     command = command .. " layer " .. layer
   end
-  engine.scene_command(command)
+  engine.scene_command(command .. attribute_text)
 end
 
 function hide(tag)
@@ -687,6 +691,128 @@ end
 function wait_all()
   require_label("wait_all")
   engine.wait("")
+end
+)lua" R"lua(
+-- Layered sprites: layered(name, { order = { group, ... }, <group> = "image" or
+-- { value = "image", ... }, default = { group = value }, crossfade = seconds }).
+-- `show` of the name then takes a value for each group: show("eileen", { face = "smile" }).
+local pairs, ipairs, sort = pairs, ipairs, table.sort
+local layered_defs = {}
+local show_options = { image = true, at = true, x = true, y = true, layer = true }
+
+-- `level` is the error() level of the caller of this function.
+local function layered_option(key, expected, value, level)
+  error(format("bad option '%s' to 'layered' (%s expected, got %s)", key, expected, type(value)),
+        level + 1)
+end
+
+-- A group's spec as { name =, values = { value, image, ... } }; a single image has the value "".
+local function layered_group(name, spec)
+  local values = {}
+  if type(spec) == "string" then
+    values[1], values[2] = "", spec
+  elseif type(spec) == "table" then
+    local names = {}
+    for value, image in pairs(spec) do
+      if type(value) ~= "string" or value == "" or type(image) ~= "string" then
+        error(format("bad option '%s' to 'layered' (a table of value = \"image\" expected)", name),
+              3)
+      end
+      names[#names + 1] = value
+    end
+    if #names == 0 then
+      error(format("bad option '%s' to 'layered' (it needs at least one value)", name), 3)
+    end
+    sort(names)
+    for i = 1, #names do
+      values[2 * i - 1], values[2 * i] = names[i], spec[names[i]]
+    end
+  else
+    layered_option(name, "string or table", spec, 3)
+  end
+  return { name = name, values = values }
+end
+
+function layered(name, definition)
+  if type(name) ~= "string" then
+    bad_argument("layered", 1, "string", name)
+  end
+  if type(definition) ~= "table" then
+    bad_argument("layered", 2, "table", definition)
+  end
+  local order = definition.order
+  if type(order) ~= "table" or #order == 0 then
+    error("bad option 'order' to 'layered' (a list of group names expected)", 2)
+  end
+  local request, listed = { groups = {}, default = {}, crossfade = definition.crossfade }, {}
+  for i = 1, #order do
+    local group = order[i]
+    if type(group) ~= "string" or group == "" or listed[group] then
+      error(format("bad option 'order' to 'layered' (item #%d is not a new group name)", i), 2)
+    end
+    listed[group] = true
+    request.groups[i] = layered_group(group, definition[group])
+  end
+  for key in pairs(definition) do
+    if not listed[key] and key ~= "order" and key ~= "default" and key ~= "crossfade" then
+      error(format("bad option '%s' to 'layered' (not a group in 'order')", tostring(key)), 2)
+    end
+  end
+  if request.crossfade ~= nil and type(request.crossfade) ~= "number" then
+    layered_option("crossfade", "number", request.crossfade, 2)
+  end
+  local default = definition.default
+  if default ~= nil and type(default) ~= "table" then
+    layered_option("default", "table", default, 2)
+  end
+  for key in pairs(default or {}) do
+    if not listed[key] then
+      error(format("bad option 'default' to 'layered' ('%s' is not a group in 'order')",
+                   tostring(key)), 2)
+    end
+  end
+  for _, group in ipairs(order) do
+    local value = default and default[group]
+    if value ~= nil then
+      if type(value) ~= "string" then
+        layered_option("default", "table of strings", value, 2)
+      end
+      local n = #request.default
+      request.default[n + 1], request.default[n + 2] = group, value
+    end
+  end
+  local problem = engine.layered(name, request)
+  if problem then
+    error(problem, 2)
+  end
+  layered_defs[name] = { groups = listed, order = order }
+end
+
+-- Checks the group keys in the `show` options of a layered sprite and returns them as a flat
+-- list and as the text of the transcript. Other images ignore keys that are not options.
+layered_attributes = function(options, name)
+  local def = layered_defs[name]
+  if def == nil then
+    return nil, ""
+  end
+  for key in pairs(options) do
+    if not def.groups[key] and not show_options[key] then
+      error(format("unknown group '%s' for '%s' (the groups are %s)", tostring(key), name,
+                   concat(def.order, ", ")), 3)
+    end
+  end
+  local attributes, text = {}, ""
+  for _, group in ipairs(def.order) do
+    local value = options[group]
+    if value ~= nil then
+      if type(value) ~= "string" then
+        error(format("bad option '%s' to 'show' (string expected, got %s)", group, type(value)), 3)
+      end
+      attributes[#attributes + 1], attributes[#attributes + 2] = group, value
+      text = text .. " " .. group .. " " .. value
+    end
+  end
+  return attributes, text
 end
 )lua" R"lua(
 
@@ -1153,6 +1279,39 @@ std::string read_tween(const sol::table& table, int depth, TweenRequest& request
   return {};
 }
 
+// A flat list { a1, b1, a2, b2, ... } that the prelude built, as pairs.
+std::vector<std::pair<std::string, std::string>> read_pairs(const sol::table& table) {
+  std::vector<std::pair<std::string, std::string>> pairs;
+  const std::size_t count = table.size();
+  pairs.reserve(count / 2);
+  for (std::size_t i = 1; i < count; i += 2) {
+    pairs.emplace_back(table.get_or<std::string>(i, ""), table.get_or<std::string>(i + 1, ""));
+  }
+  return pairs;
+}
+
+// Copies the definition table that the prelude's `layered` built into `request`.
+void read_layered(const sol::table& table, LayeredRequest& request) {
+  request.crossfade = table.get_or("crossfade", 0.0);
+  if (const auto groups = table.get<sol::optional<sol::table>>("groups")) {
+    const std::size_t count = groups->size();
+    request.groups.reserve(count);
+    for (std::size_t i = 1; i <= count; ++i) {
+      const auto group = groups->get<sol::optional<sol::table>>(i);
+      LayeredRequest::Group& added = request.groups.emplace_back();
+      if (group) {
+        added.name = group->get_or<std::string>("name", "");
+        if (const auto values = group->get<sol::optional<sol::table>>("values")) {
+          added.values = read_pairs(*values);
+        }
+      }
+    }
+  }
+  if (const auto defaults = table.get<sol::optional<sol::table>>("default")) {
+    request.defaults = read_pairs(*defaults);
+  }
+}
+
 // Continues `coroutine` with the answer of a blocking call as its result.
 sol::protected_function_result resume_with(sol::coroutine& coroutine, const ScreenValue& value) {
   return std::visit(
@@ -1519,11 +1678,16 @@ void ScriptRuntime::Impl::bind_engine() {
   engine_["show"] = [this, problem_or_nil](
                         sol::this_state state, const std::string& tag, const std::string& image,
                         const sol::optional<std::string>& at, sol::optional<double> x,
-                        sol::optional<double> y, const sol::optional<std::string>& layer) {
+                        sol::optional<double> y, const sol::optional<std::string>& layer,
+                        const sol::optional<sol::table>& attributes) {
     if (options_.scene == nullptr) {
       return problem_or_nil(state, {});
     }
-    ShowRequest request{.tag = tag, .image = image};
+    ShowRequest request{.tag = tag, .image = image, .replaying = replaying_};
+    if (attributes) {
+      const MemoryLimitScope unlimited{allocator_, false};
+      request.attributes = read_pairs(*attributes);
+    }
     if (at) {
       request.at = *at;
     }
@@ -1537,6 +1701,18 @@ void ScriptRuntime::Impl::bind_engine() {
       request.layer = *layer;
     }
     return problem_or_nil(state, options_.scene->show(request));
+  };
+  // Definitions are not story state: they are made when the scripts load, and again when a label
+  // that defines one replays.
+  engine_["layered"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
+                                              const sol::table& definition) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    LayeredRequest request{.name = name};
+    read_layered(definition, request);
+    return problem_or_nil(state, options_.scene->layered(request));
   };
   engine_["hide"] = [this](const std::string& tag) {
     if (options_.scene != nullptr) {

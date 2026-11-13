@@ -74,6 +74,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - If there is no device, it prints `VNMAKI_SKIP:` and ctest skips the test. `VNMAKI_REQUIRE_GPU=1` stops the skip. Linux CI sets it, because it has lavapipe.
   - Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png`.
   - `tools/generators/render_fixtures.py` makes the golden images with a reference rasterizer.
+  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Example: `layered_fixtures.py`.
 
 ## Module contracts
 
@@ -149,7 +150,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Anchor and crop are fractions.
   - Rotation is in degrees, clockwise.
 - `Scene` keeps `std::unique_ptr<Displayable>`. `find(tag)` returns a `Displayable*`. Use `dynamic_cast` to get an `ImageDisplayable`.
-- The snapshot is a map from a part name to bytes: `displayables` and `tweens`. A new feature adds a part. `restore()` ignores a part that it does not know and reads a missing part as empty.
+- The snapshot is a map from a part name to bytes: `displayables` (images), `layered` and `tweens`. A new feature adds a part. `restore()` ignores a part that it does not know and reads a missing part as empty.
 - The snapshot keeps the properties as a replay leaves them. A tween that ends is at its end value. A loop is at the value where it started.
 - Tweens write through `Scene::find(tag)->properties()`. `Scene::update(seconds)` moves them. `hide` and `scene` end the tweens of the displayables that they remove.
 - `Scene::show` of a tag that is shown does not end its tweens.
@@ -157,6 +158,19 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `SceneCommands` calls return an error string. The prelude raises it at the script line.
 - `SceneCommands` calls also run during replay.
 - `SceneCommands` has `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
+- A displayable draws its quads with `draw_state(texture)` (`Displayable`, protected). What a displayable adds to its draws, for example a shader, goes there, so it applies to every kind of displayable.
+- `place_corners(properties, size, part)` and `bounding_box(corners)` (`displayable.hpp`) place a box with the properties. Use them in a new displayable.
+
+### Layered sprites (`engine/scene/layered_sprite.*`)
+
+- Script API: `layered(name, { order = { "base", "outfit", "face" }, base = "eileen/base", outfit = { school = "..." }, face = { ... }, default = { outfit = "school", face = "smile" }, crossfade = 0.2 })`. A group is one image (a string) or a table of `value = "image"`. The images are image names, as for `show`. `layered` may be called at any time. Calling it again with the same name replaces the definition.
+- `show("eileen", { outfit = "school", face = "smile" })` shows a layered sprite when `image` (or the tag) is a defined name. It changes only the groups that it names, and a sprite that is shown again keeps its other groups. A new sprite has the defaults. A group without a default shows nothing.
+- An unknown group, an unknown value, a bad definition or a missing image gives an error at the script line. The prelude checks group names: any `show` option that is not a group and not in `show_options` (in the prelude) is an unknown group. **A new `show` option must be added to `show_options`.**
+- `SceneCommands::layered(LayeredRequest)` makes the definition. `ShowRequest::attributes` holds the (group, value) pairs, and `ShowRequest::replaying` is true during a replay.
+- The layers draw in the order of `order`, each at its own size from the sprite's top-left corner. The first group is the base. Its image is the size that `anchor`, `scale`, `crop` and `bounds()` measure. A crop shows the part of each layer that it covers.
+- A changed group fades its new image in over its old image. The old image stays at full alpha. The fade runs on `Scene::update(seconds)`, the same clock as tweens. A replay, a restore and a definition without `crossfade` cut at once. `finish_tweens` does not end a fade.
+- The snapshot part `layered` has the definition name, the layer position, the properties and the (group, value) of each sprite. It has no definition. `restore()` throws if the scene does not know the definition, so the scripts must load first. A fade that runs is saved as its end.
+- `Scene::prepare` loads the images that a sprite shows now. `LayeredSprite::missing_paths()` and `set_texture(path, ...)` do this.
 
 ### Anim (`engine/anim/`)
 

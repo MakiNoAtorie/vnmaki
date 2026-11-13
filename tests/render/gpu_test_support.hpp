@@ -26,6 +26,11 @@ void skip_without_gpu(const std::string& reason);
 /// golden-actual/<name>.pam in the working directory for inspection.
 void check_golden(const Image& actual, const std::string& name, int tolerance = 2);
 
+/// As check_golden, for a golden image that another generator wrote to
+/// `fixtures`/golden/<name>.png (a directory of VNMAKI_FIXTURES_DIR, e.g. "layered").
+void check_golden_in(const std::string& fixtures, const Image& actual, const std::string& name,
+                     int tolerance = 2);
+
 /// Loads fixture images/<name> through the image decoder.
 [[nodiscard]] Image load_fixture_image(const std::string& name);
 

@@ -3,6 +3,7 @@
 // The displayable interface (docs/SPEC.md section 6): everything visible implements it, so the
 // scene and the animation system treat images, text, video and the rest the same way.
 
+#include <array>
 #include <string>
 #include <utility>
 
@@ -33,6 +34,15 @@ struct DisplayProperties {
   bool operator==(const DisplayProperties&) const = default;
 };
 
+/// Where the corners of `part` of a box of `size` land with `properties` applied (top-left,
+/// top-right, bottom-right, bottom-left). `part` is in fractions of the box the crop shows, as
+/// `anchor` is; the whole box by default.
+[[nodiscard]] std::array<PointF, 4> place_corners(const DisplayProperties& properties, Size size,
+                                                  RectF part = kWholeTexture);
+
+/// The axis-aligned box around four corners.
+[[nodiscard]] RectF bounding_box(const std::array<PointF, 4>& corners);
+
 /// Something visible. The scene owns displayables, updates them once per fixed step and draws
 /// them back to front.
 class Displayable {
@@ -54,6 +64,13 @@ class Displayable {
   /// The axis-aligned box, in virtual pixels, that the displayable covers with its properties
   /// applied.
   [[nodiscard]] virtual RectF bounds() const = 0;
+
+ protected:
+  /// How a quad of `texture` is drawn. Every displayable draws through it, so what a displayable
+  /// adds to its draws (a shader) applies to all kinds alike.
+  [[nodiscard]] DrawState draw_state(TextureId texture) const {
+    return DrawState{.texture = texture};
+  }
 
  private:
   DisplayProperties properties_{};

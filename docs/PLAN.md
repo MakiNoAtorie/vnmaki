@@ -167,12 +167,12 @@ Files: new `engine/anim/transition.*`, `shaders/transition_*.hlsl`, `engine/scen
 
 Files: new `engine/scene/layered_sprite.*`, `engine/scene/scene.cpp`, runtime.
 
-- [ ] `layered(name, { order = { "base", "outfit", "face" }, base = "eileen/base", outfit = { school = "..." }, face = { ... }, default = { ... }, crossfade = 0.2 })`.
-- [ ] `show("eileen", { outfit = "school", face = "smile" })` changes only the groups it names (the §7 example). An unknown group or value gives an error at the script line.
-- [ ] Layers draw in the declared order at the same origin. `bounds()` is the base image.
-- [ ] A changed group crossfades from the old image to the new image. Replay does not crossfade. Tweens, `with` and shaders work as they do on an image.
-- [ ] The attributes are in the snapshot.
-- [ ] Tests: unit tests for attribute merge, errors and snapshot. GPU goldens for a composed sprite and for the middle of a crossfade.
+- [x] `layered(name, { order = { "base", "outfit", "face" }, base = "eileen/base", outfit = { school = "..." }, face = { ... }, default = { ... }, crossfade = 0.2 })`.
+- [x] `show("eileen", { outfit = "school", face = "smile" })` changes only the groups it names (the §7 example). An unknown group or value gives an error at the script line.
+- [x] Layers draw in the declared order at the same origin. `bounds()` is the base image.
+- [x] A changed group crossfades from the old image to the new image. Replay does not crossfade. Tweens, `with` and shaders work as they do on an image.
+- [x] The attributes are in the snapshot.
+- [x] Tests: unit tests for attribute merge, errors and snapshot. GPU goldens for a composed sprite and for the middle of a crossfade.
 
 ### 23: Camera and parallax (SPEC §10, §17)
 

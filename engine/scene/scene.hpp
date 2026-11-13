@@ -22,6 +22,7 @@
 #include "engine/render/renderer.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/scene/displayable.hpp"
+#include "engine/scene/layered_sprite.hpp"
 
 namespace vnmaki {
 
@@ -72,8 +73,15 @@ inline constexpr std::string_view kBackgroundTag = "background";
 /// `tween` changes the properties of shown displayables over time (engine/anim/timeline.hpp), as
 /// update() moves the clock on. `hide` and `scene` end the tweens of the displayables they remove.
 ///
+/// `layered(name, ...)` defines a layered sprite (engine/scene/layered_sprite.hpp). `show` of
+/// that name (as the tag or as `image`) shows it, and the groups of layers that the call names
+/// change; the others keep their images. A group that changes crossfades, except in a replay. A
+/// definition is not in the snapshot: restore() needs it made first, which the scripts do when
+/// they load.
+///
 /// The snapshot is a map from a part's name to its bytes, so a later feature adds a part without
-/// changing the others: "displayables" (what is shown) and "tweens" (the loops). It keeps the
+/// changing the others: "displayables" (the images), "layered" (the layered sprites) and "tweens"
+/// (the loops). It keeps the
 /// properties as a replay would leave them: tweens that end are at their end values, loops at the
 /// value they started from, and restore() starts each loop again at time 0.
 class Scene final : public SceneState, public SceneCommands {
@@ -84,6 +92,7 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] std::string scene(std::string_view image) override;
   [[nodiscard]] std::string show(const ShowRequest& request) override;
   void hide(std::string_view tag) override;
+  [[nodiscard]] std::string layered(const LayeredRequest& request) override;
   [[nodiscard]] std::string tween(const TweenRequest& request) override;
   void finish_tweens(std::string_view tag) override;
   [[nodiscard]] bool tweening(std::string_view tag) const override;
@@ -128,6 +137,8 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] static Displayable* find_in(Layers& layers, std::string_view tag);
   // Reads the "displayables" part of a snapshot. Throws std::invalid_argument.
   [[nodiscard]] static Layers read_displayables(std::span<const std::byte> bytes);
+  // Reads the "layered" part into `layers`. Throws std::invalid_argument.
+  void read_layered(std::span<const std::byte> bytes, Layers& layers) const;
 
   [[nodiscard]] std::vector<Entry>& entries(Layer layer);
   [[nodiscard]] const std::vector<Entry>& entries(Layer layer) const;
@@ -136,6 +147,7 @@ class Scene final : public SceneState, public SceneCommands {
   Size virtual_size_;
   Layers layers_;
   std::map<std::string, Texture, std::less<>> textures_;
+  std::map<std::string, std::shared_ptr<const LayeredDefinition>, std::less<>> definitions_;
   Timeline timeline_;
 };
 

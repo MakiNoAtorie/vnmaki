@@ -67,6 +67,14 @@ target_sources(vnmaki_unit_tests PRIVATE unit/scene_test.cpp)
 # Animation: easings, tweens, the timeline and the script's wait (ticket 20).
 target_sources(vnmaki_unit_tests PRIVATE unit/anim_test.cpp)
 
+# Layered sprites: attributes, crossfade, snapshot, drawing order (ticket 22).
+target_sources(vnmaki_unit_tests PRIVATE unit/layered_test.cpp)
+vnmaki_add_fixture_generator(
+  layered SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/layered_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
 # Audio: decoders, mixer state, script commands, snapshots (ticket 16).
 target_sources(vnmaki_unit_tests PRIVATE unit/audio_decoder_test.cpp unit/audio_test.cpp)
 vnmaki_add_fixture_generator(

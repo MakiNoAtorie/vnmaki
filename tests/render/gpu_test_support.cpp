@@ -97,7 +97,13 @@ std::unique_ptr<SdlGpuRenderer> make_headless_renderer() {
 }
 
 void check_golden(const Image& actual, const std::string& name, int tolerance) {
-  const Image expected = load_png(kFixtures / "golden" / (name + ".png"));
+  check_golden_in("render", actual, name, tolerance);
+}
+
+void check_golden_in(const std::string& fixtures, const Image& actual, const std::string& name,
+                     int tolerance) {
+  const Image expected = load_png(std::filesystem::path{VNMAKI_FIXTURES_DIR} / fixtures /
+                                  "golden" / (name + ".png"));
   REQUIRE(actual.size == expected.size);
   REQUIRE(actual.pixels.size() == expected.pixels.size());
 
