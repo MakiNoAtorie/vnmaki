@@ -116,6 +116,40 @@ std::string unknown_layer(std::string_view name) {
                 "transient)");
 }
 
+// Checks the `lip_sync` of a layered sprite and stores it in `definition`. Returns why it cannot.
+std::string make_lip_sync(const LayeredRequest::LipSync& sync, LayeredDefinition& definition) {
+  const auto group =
+      std::ranges::find(definition.groups, sync.group, &LayeredDefinition::Group::name);
+  if (group == definition.groups.end()) {
+    return quoted("option 'lip_sync' names the unknown group '", sync.group, "'");
+  }
+  if (sync.frames.size() < 2 || sync.thresholds.size() + 1 != sync.frames.size()) {
+    return "option 'lip_sync' needs two or more frames and one threshold fewer than frames";
+  }
+  LayeredDefinition::LipSync made{
+      .group = static_cast<std::size_t>(group - definition.groups.begin()),
+      .thresholds = sync.thresholds,
+      .voice_tag = sync.voice_tag.empty() ? definition.name : sync.voice_tag};
+  made.frames.reserve(sync.frames.size());
+  for (const std::string& frame : sync.frames) {
+    const auto value = std::ranges::find(group->values, frame, &LayeredDefinition::Value::name);
+    if (frame.empty() || value == group->values.end()) {
+      return quoted("option 'lip_sync' names the unknown value '", frame,
+                    "' of group '" + group->name + "'");
+    }
+    made.frames.push_back(static_cast<std::size_t>(value - group->values.begin()));
+  }
+  double before = 0;
+  for (const double threshold : made.thresholds) {
+    if (!(threshold > before && threshold <= 1)) {
+      return "option 'lip_sync' needs thresholds that rise, above 0 and up to 1";
+    }
+    before = threshold;
+  }
+  definition.lip_sync = std::move(made);
+  return {};
+}
+
 // --- Serialized form -------------------------------------------------------------------------
 // Little-endian. A u32 format version, a u32 count of parts, then for each part in the order of
 // its name: the name (a u32 length and the bytes) and its bytes (a u32 length and the bytes).
@@ -553,6 +587,11 @@ std::string Scene::layered(const LayeredRequest& request) {
         added.values, [](const LayeredDefinition::Value& value) { return value.name.empty(); });
     if (added.name.empty() || added.values.empty() || (unnamed && !fixed)) {
       return quoted("the group '", added.name, "' needs a name and values with names");
+    }
+  }
+  if (request.lip_sync.has_value()) {
+    if (std::string problem = make_lip_sync(*request.lip_sync, *definition); !problem.empty()) {
+      return problem;
     }
   }
   // The defaults are checked by choosing them in a sprite made without them.
@@ -1444,6 +1483,11 @@ void Scene::update(double seconds) {
   for (std::vector<Entry>& shown : layers_) {
     for (Entry& entry : shown) {
       entry.displayable->update(seconds);
+      if (auto* sprite = dynamic_cast<LayeredSprite*>(entry.displayable.get())) {
+        sprite->set_voice_level(voice_level_ != nullptr ? voice_level_->voice_level(
+                                                              sprite->lip_voice_tag())
+                                                        : std::nullopt);
+      }
     }
   }
 }

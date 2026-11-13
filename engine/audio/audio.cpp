@@ -42,6 +42,9 @@ constexpr std::array kDefaultChannels{
 constexpr std::size_t kBlockFrames = 480;
 constexpr auto kFramesPerSecond = static_cast<double>(kAudioSampleRate);
 
+// A track's level is the RMS of its last 20 ms of samples (voice_level).
+constexpr std::size_t kLevelFrames = 960;
+
 // The longest time one update() mixes without a device, in seconds.
 constexpr double kMaxUpdateSeconds = 60.0;
 
@@ -102,6 +105,10 @@ struct Track {
   bool fading_out = false;
   bool ended = false;
   std::uint64_t movie = 0;  ///< The token of a movie's audio (MovieAudio); 0 for any other track.
+  std::string voice_tag{};  ///< Set by tag_voice, for a voice track.
+  double level = 0;         ///< The RMS of the last full window of kLevelFrames frames.
+  double energy = 0;        ///< The sum of the squares of the window that fills now.
+  std::size_t level_frames = 0;
 };
 
 struct Channel {
@@ -506,6 +513,12 @@ void Audio::Impl::mix_track(Track& track, double level, std::span<float> out) {
       for (std::size_t side = 0; side < kAudioChannels; ++side) {
         const std::size_t sample = (frame * kAudioChannels) + side;
         to[sample] += decoded[sample] * gain;
+        track.energy += static_cast<double>(decoded[sample]) * decoded[sample];
+      }
+      if (++track.level_frames == kLevelFrames) {
+        track.level = std::sqrt(track.energy / static_cast<double>(kLevelFrames * kAudioChannels));
+        track.energy = 0;
+        track.level_frames = 0;
       }
       track.gain = std::clamp(track.gain + track.gain_step, 0.0, 1.0);
     }
@@ -588,6 +601,28 @@ std::string Audio::voice(std::string_view name) {
   voices.tracks.clear();
   voices.tracks.push_back(std::move(*track));
   return {};
+}
+
+void Audio::tag_voice(std::string_view tag) {
+  const std::scoped_lock lock{impl_->mutex};
+  const auto voices = impl_->channels.find(kVoiceChannel);
+  if (voices != impl_->channels.end() && !voices->second.tracks.empty()) {
+    voices->second.tracks.back().voice_tag = tag;
+  }
+}
+
+std::optional<double> Audio::voice_level(std::string_view tag) const {
+  const std::scoped_lock lock{impl_->mutex};
+  const auto voices = impl_->channels.find(kVoiceChannel);
+  if (tag.empty() || voices == impl_->channels.end()) {
+    return std::nullopt;
+  }
+  for (const Track& track : voices->second.tracks) {
+    if (track.voice_tag == tag) {
+      return track.level;
+    }
+  }
+  return std::nullopt;
 }
 
 std::string Audio::stop(std::string_view channel_name, double fade) {

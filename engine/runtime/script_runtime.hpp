@@ -244,6 +244,16 @@ struct LayeredRequest {
   std::vector<Group> groups{};                                  ///< From the back to the front.
   std::vector<std::pair<std::string, std::string>> defaults{};  ///< (group, value)
   double crossfade = 0;  ///< Seconds an attribute change takes; 0 for a cut.
+
+  /// `lip_sync`: `group` shows the value in `frames` for the level of the voice with `voice_tag`
+  /// (the sprite's name if empty). A level below `thresholds[0]` is the first frame, and so on.
+  struct LipSync {
+    std::string group{};
+    std::vector<std::string> frames{};
+    std::vector<double> thresholds{};
+    std::string voice_tag{};
+  };
+  std::optional<LipSync> lip_sync{};
 };
 
 /// `animation(name, options)`: frames from `frames` (image names), or from the `columns` x `rows`
@@ -464,6 +474,9 @@ class AudioCommands {
   [[nodiscard]] virtual std::string music(const MusicRequest& request) = 0;
   [[nodiscard]] virtual std::string sound(const SoundRequest& request) = 0;
   [[nodiscard]] virtual std::string voice(std::string_view name) = 0;
+  /// Names the voice that plays now `tag`: the `voice_tag` of the character whose `say` follows a
+  /// `voice` call. Lip sync follows the level of that tag. The default does nothing.
+  virtual void tag_voice(std::string_view /*tag*/) {}
   [[nodiscard]] virtual std::string stop(std::string_view channel, double fade) = 0;
   [[nodiscard]] virtual std::string volume(std::string_view channel, double volume) = 0;
 };

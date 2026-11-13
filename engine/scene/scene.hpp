@@ -26,6 +26,7 @@
 #include "engine/scene/camera.hpp"
 #include "engine/scene/displayable.hpp"
 #include "engine/scene/frame_animation.hpp"
+#include "engine/audio/voice_level.hpp"
 #include "engine/scene/layered_sprite.hpp"
 #include "engine/scene/movie_displayable.hpp"
 #include "engine/video/movie_audio.hpp"
@@ -103,6 +104,10 @@ inline constexpr std::string_view kLayerTagPrefix = "@layer.";
 /// definition is not in the snapshot: restore() needs it made first, which the scripts do when
 /// they load.
 ///
+/// A layered sprite with `lip_sync` shows the frame for the voice level on update(), from the
+/// VoiceLevel of set_voice_level(). It is not state: restore() and a replay leave the mouth closed
+/// (a replay plays no voice).
+///
 /// `shader(name, { "amount", ... })` declares the game shader `shaders/<name>.frag.hlsl` and
 /// compiles it (engine/render/shader_compiler.hpp). A displayable or a layer then gets a shader
 /// and uniform values from `show(tag, { shader =, uniforms = })` or `layer(name, { shader =,
@@ -162,6 +167,9 @@ class Scene final : public SceneState, public SceneCommands {
   /// The audio that movies play on. May be null (movies are then silent). It must outlive the
   /// scene, whose movies stop their audio when they go away.
   void set_movie_audio(MovieAudio* audio) { movie_audio_ = audio; }
+  /// The voice level that lip-synced layered sprites follow on update(). May be null: the mouths
+  /// then stay closed. It must outlive the scene.
+  void set_voice_level(const VoiceLevel* levels) { voice_level_ = levels; }
 
   /// The tags on `layer`, back to front.
   [[nodiscard]] std::vector<std::string> tags(Layer layer) const;
@@ -279,6 +287,7 @@ class Scene final : public SceneState, public SceneCommands {
   std::vector<ShaderId> retired_shaders_;  // GPU shaders of redeclared shaders, to destroy
   std::map<std::string, Texture, std::less<>> textures_;
   MovieAudio* movie_audio_ = nullptr;
+  const VoiceLevel* voice_level_ = nullptr;
   // Textures of movies that went away, for prepare() to destroy.
   std::shared_ptr<std::vector<TextureId>> retired_textures_ =
       std::make_shared<std::vector<TextureId>>();

@@ -45,6 +45,11 @@ std::string unknown_value(const LayeredDefinition& definition,
   return message;
 }
 
+// What a layer shows: the lip sync frame if it has one, else the chosen value.
+std::optional<std::size_t> shown(const auto& layer) {
+  return layer.lip.has_value() ? layer.lip : layer.current;
+}
+
 }  // namespace
 
 LayeredSprite::LayeredSprite(std::shared_ptr<const LayeredDefinition> definition)
@@ -56,6 +61,33 @@ LayeredSprite::LayeredSprite(std::shared_ptr<const LayeredDefinition> definition
   }
   // The definition was checked when it was made, so the defaults are known groups and values.
   [[maybe_unused]] const std::string problem = set_attributes(definition_->defaults, false);
+  set_voice_level(std::nullopt);
+}
+
+void LayeredSprite::set_voice_level(std::optional<double> level) {
+  const auto& sync = definition_->lip_sync;
+  if (!sync.has_value()) {
+    return;
+  }
+  std::size_t frame = 0;
+  const std::vector<double>& thresholds = sync->thresholds;
+  while (level.has_value() && frame < thresholds.size() && *level >= thresholds[frame]) {
+    ++frame;
+  }
+  layers_[sync->group].lip = sync->frames[frame];
+}
+
+std::string_view LayeredSprite::lip_voice_tag() const {
+  return definition_->lip_sync.has_value() ? std::string_view{definition_->lip_sync->voice_tag}
+                                           : std::string_view{};
+}
+
+std::string_view LayeredSprite::lip_frame() const {
+  const auto& sync = definition_->lip_sync;
+  if (!sync.has_value() || !layers_[sync->group].lip.has_value()) {
+    return {};
+  }
+  return definition_->groups[sync->group].values.at(*layers_[sync->group].lip).name;
 }
 
 LayerAttributes LayeredSprite::attributes() const {
@@ -177,7 +209,11 @@ std::vector<std::string> LayeredSprite::missing_paths() const {
   std::vector<std::string> missing;
   for (std::size_t group = 0; group < layers_.size(); ++group) {
     const Layer& layer = layers_[group];
-    for (const std::optional<std::size_t>& value : {layer.current, layer.previous}) {
+    // A lip-synced group draws only its lip frame.
+    const std::optional<std::size_t> none{};
+    for (const std::optional<std::size_t>& value :
+         {layer.lip.has_value() ? layer.lip : layer.current,
+          layer.lip.has_value() ? none : layer.previous}) {
       if (!value.has_value()) {
         continue;
       }
@@ -219,10 +255,10 @@ void LayeredSprite::update(double seconds) {
 }
 
 Size LayeredSprite::base_size() const {
-  if (layers_.empty() || !layers_.front().current.has_value()) {
+  if (layers_.empty() || !shown(layers_.front()).has_value()) {
     return {};
   }
-  return picture_size(picture_of(0, *layers_.front().current, layers_.front().play));
+  return picture_size(picture_of(0, *shown(layers_.front()), layers_.front().play));
 }
 
 void LayeredSprite::draw_layer(IRenderer& renderer, const Picture& picture, Size base,
@@ -270,6 +306,10 @@ void LayeredSprite::draw(IRenderer& renderer) const {
   }
   for (std::size_t group = 0; group < layers_.size(); ++group) {
     const Layer& layer = layers_[group];
+    if (layer.lip.has_value()) {
+      draw_layer(renderer, picture_of(group, *layer.lip, layer.play), base, 1);
+      continue;
+    }
     float opacity = 1;
     if (layer.fading) {
       // The new image fades in over the old one, which stays whole: no see-through dip.

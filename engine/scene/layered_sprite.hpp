@@ -35,8 +35,18 @@ struct LayeredDefinition {
     std::vector<Value> values{};
   };
 
+  /// `lip_sync`: the group shows the frame for the level of the voice with `voice_tag`.
+  struct LipSync {
+    std::size_t group = 0;
+    std::vector<std::size_t> frames{};  ///< Indices of the group's values, the closed mouth first.
+    /// The level at which each frame after the first starts: one less than the frames, rising.
+    std::vector<double> thresholds{};
+    std::string voice_tag{};
+  };
+
   std::string name{};
   std::vector<Group> groups{};  ///< From the back to the front.
+  std::optional<LipSync> lip_sync{};
   /// (group, value) chosen when the sprite is made. A group without one shows nothing.
   std::vector<std::pair<std::string, std::string>> defaults{};
   /// Seconds that a changed group takes to fade from its old image to its new image.
@@ -64,6 +74,14 @@ class LayeredSprite final : public Displayable {
   /// and then changes nothing. With `crossfade` a changed group fades if the definition has a
   /// crossfade time; without it, the change is a cut and ends the fades that are running.
   [[nodiscard]] std::string set_attributes(const LayerAttributes& changes, bool crossfade);
+  /// Lip sync: the lip-synced group shows the frame for `level` (the voice level of the
+  /// definition's tag), or its first frame when it is empty. Does nothing without a `lip_sync`.
+  /// It is not in attributes(), so not in the snapshot: a new sprite starts with the mouth closed.
+  void set_voice_level(std::optional<double> level);
+  /// The value of the lip-synced group that shows now; empty without a `lip_sync`.
+  [[nodiscard]] std::string_view lip_frame() const;
+  /// The tag of the voice that the lip sync follows; empty without a `lip_sync`.
+  [[nodiscard]] std::string_view lip_voice_tag() const;
   /// How far the fade of `group` is, from 0 to 1, or nothing when it does not fade.
   [[nodiscard]] std::optional<float> fade_progress(std::string_view group) const;
 
@@ -86,6 +104,7 @@ class LayeredSprite final : public Displayable {
   struct Layer {
     std::optional<std::size_t> current{};   ///< Index in the group's values.
     std::optional<std::size_t> previous{};  ///< What the fade started from.
+    std::optional<std::size_t> lip{};       ///< The lip sync frame; it shows in place of the rest.
     bool fading = false;
     double elapsed = 0;
     double play = 0;           ///< Seconds the current value has played, if it is an animation.
