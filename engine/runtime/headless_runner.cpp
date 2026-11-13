@@ -103,6 +103,7 @@ void run_into(HeadlessResult& result, const Vfs& vfs, std::span<const ScriptInpu
         runtime_options.scene->finish_tweens(wait->tag);
       }
       runtime.advance();
+      poll();
       continue;
     }
     if (next_input == inputs.end()) {

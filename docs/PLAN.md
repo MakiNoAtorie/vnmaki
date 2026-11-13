@@ -57,13 +57,13 @@ Do not do these tasks in parallel, because they change the same files:
 
 ### 14: Persistent store, seen text, skip, auto (SPEC §8)
 
-- [ ] `persistent` is a Lua table. Save it on change and on exit. Load it at start.
-- [ ] Rollback and load do not change `persistent`.
-- [ ] Seen steps use label, step and source hash as the key. An edited line is unseen.
-- [ ] "Skip seen" stops at the first unseen line or menu. "Skip all" stops at menus.
-- [ ] Auto delay = base + time for each character × the `character{}` multiplier. Add a hook for the voice delay.
-- [ ] Script and input turn skip and auto on and off. Show an indicator.
-- [ ] Headless tests: skip seen, skip all at a menu, auto timing with a fake clock.
+- [x] `persistent` is a Lua table. Save it on change and on exit. Load it at start.
+- [x] Rollback and load do not change `persistent`.
+- [x] Seen steps use label, step and source hash as the key. An edited line is unseen.
+- [x] "Skip seen" stops at the first unseen line or menu. "Skip all" stops at menus.
+- [x] Auto delay = base + time for each character × the `character{}` multiplier. Add a hook for the voice delay.
+- [x] Script and input turn skip and auto on and off. Show an indicator.
+- [x] Headless tests: skip seen, skip all at a menu, auto timing with a fake clock.
 
 ### 15: Backlog (SPEC §8)
 

@@ -187,6 +187,12 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `SayBoxView`: call `prepare(line, scale)` before `begin_frame`.
 - Then call `draw(...)` in a screen-resolution pass. Use the viewport scale and the top-left of the viewport as the origin.
 - `SayBoxView` lays out the line with `FontSet` (tags, bidi, fallback; the speaker name is plain text). Pass `SayBoxView::revealed` as the presenter's `Reveal`, so `speed` and `pause` work. `link_at(line, virtual_point)` gives the `link` id; `vnmaki run` passes it to `runtime.activate_link`. The window loads the fallback chain of the first language in `project.toml`.
+- `Playback` (`playback.hpp`) does skip and auto. Make it after the presenter. Each frame call `presenter.update(dt)`, then `playback.update(dt)`.
+  - Skip `kSeen` goes on while the line is in the seen set. It stops at the first unseen line, and at any menu or screen. `kAll` stops at menus and screens only. `PlaybackOptions::skip_wait` ends a `wait` for tweens (`WaitPresenter::skip`) and skip goes on.
+  - Auto waits `auto_base_delay + auto_seconds_per_glyph × glyphs × auto_multiplier` after the line is fully shown. While `PlaybackOptions::voice_playing` returns true it waits, and after a line that had a voice it waits only `auto_base_delay`.
+  - `Playback` marks each line it sees in the `PersistentStore`. It takes the script's `skip` and `auto` calls. `vnmaki run`: `A` toggles auto, `S` cycles skip (off, seen, all), and an advance input turns skip off.
+  - `DialoguePresenter::line_serial()` changes when line() shows another line. The presenter also follows a story that moved by itself (a load).
+- `PlaybackIndicator` (`engine/ui/playback_indicator.hpp`) shows the screen `vnmaki:playback` ("SKIP", "SKIP ALL", "AUTO", ...) while a mode is on. Call `sync(skip, automatic)` every frame.
 - The default font of a project is `fonts/default.ttf` in its VFS. The engine has no font.
 - `vnmaki run <dir> [--frames N]` plays in a window. It exits with 0 when the story ends.
 - `SayRequest` has `color` (0xRRGGBB) and `voice_tag` from `character{}`.
@@ -223,11 +229,12 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `AudioOutput::kManual` has no device. `update(seconds)` mixes that much. Tests and headless runs use it.
 - `kNullDevice` mixes on a device thread to nowhere. `kDevice` is the system output.
 - Call the commands, `update()` and `restore()` from one thread.
+- `vnmaki run` in a window makes an `Audio` with the system output (the null device if there is none) and calls `update()` every frame. A headless run uses `kManual` and never mixes.
 - Music crossfades. The same music on a channel carries on. The music channel ducks while a voice plays.
 - The snapshot has each channel's volume and music. `restore()` stops sounds and voices.
 - Music tracks change at the next `update()`. A replay then gives the same music, so it does not stop.
 - The runtime does not pass `sound` and `voice` on during replay.
-- `voice_playing()` is true while a voice plays. Auto-advance waits for it. `voice(name)` also replays a backlog voice.
+- `voice_playing()` is true while a voice plays. `Playback` (Dialogue) waits for it: set `PlaybackOptions::voice_playing`. `voice(name)` also replays a backlog voice.
 - `AudioCommands` calls return an error string. The prelude raises it at the script line.
 - Decoders are in `audio_decoder.hpp`. A bad file throws `AudioError`.
 - Fuzz targets: `fuzz_audio` (decoders) and `fuzz_audio_state` (snapshot).
@@ -264,6 +271,11 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
   - A slot is an integer from 1. `load` with a number is a slot. With a string or function it is Lua's `load`.
 - `on_load(function(old_version, store) ... end)` registers the migration hook while the scripts load. `run_on_load(snapshot, old_version)` runs it on the store of a snapshot, not on the live `store`.
+- `persistent` is a second Lua table, like `store`, but it is not in any snapshot or save. Rollback and load never change it.
+  - `persistent_snapshot()` and `restore_persistent()` give the host the data. Call `restore_persistent` before `load_scripts()`.
+  - A replay runs script code again, so code that writes to `persistent` must be idempotent (`persistent.won = true`, not `persistent.n = persistent.n + 1`).
+- `skip("seen" | "all" | "off" | false)` and `auto(bool)` queue a `PlaybackRequest`. `take_playback_requests()` gives them to the host. They are dropped during a replay.
+- `character { auto_multiplier = n }` goes to `SayRequest::auto_multiplier` (default 1).
 - `drop_callers()` makes the running label the outermost label. A load calls it before `replay()`.
 
 ### Saves (`engine/saves/`)
@@ -294,3 +306,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `capture_thumbnail(renderer, target)` reads the target with `read_pixels`. Call it between frames. Set it as `SavesOptions::thumbnail`.
   - Without a thumbnail function, saves get `stub_thumbnail()`. Headless runs and tests use it.
 - This module has no UI. Task 18 shows the slot list (`Saves::list()`).
+- `PersistentStore` (`persistent_store.hpp`) keeps `persistent` and the seen steps in `<directory>/persistent.vnpersist`, in the same directory as the saves.
+  - The file is plain MessagePack (`encode_persistent`, `decode_persistent` in `save_file.hpp`). A bad file is reported through `on_warning`, and the game starts with no data.
+  - `load()` runs before `load_scripts()`. `flush()` writes the file only if `persistent` or the seen set changed. Call it whenever the story waits. The destructor calls it too.
+  - A seen step is `{label, step, source hash of the label}` (`SeenStep`). An edited label has a new hash, so all its steps are unseen.
+- Hosts call `Saves::poll()` and `PersistentStore::flush()` once for each frame (`vnmaki run`) or after each input (`run_headless` with `HeadlessOptions::saves`).
