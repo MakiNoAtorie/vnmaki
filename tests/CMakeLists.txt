@@ -47,7 +47,9 @@ vnmaki_add_fixture_generator(
   TEST_TARGETS vnmaki_unit_tests)
 
 # Text: layout, glyph atlas, typewriter reveal (ticket 07).
-target_sources(vnmaki_unit_tests PRIVATE unit/text_test.cpp)
+target_sources(vnmaki_unit_tests PRIVATE unit/text_test.cpp unit/markup_test.cpp
+                                         unit/styled_text_test.cpp
+                                         unit/script_text_test.cpp)
 vnmaki_add_fixture_generator(
   text SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
@@ -61,6 +63,12 @@ vnmaki_add_fixture_generator(
 
 # Scene graph, layers and displayables (ticket 09).
 target_sources(vnmaki_unit_tests PRIVATE unit/scene_test.cpp)
+
+# Audio: decoders, mixer state, script commands, snapshots (ticket 16).
+target_sources(vnmaki_unit_tests PRIVATE unit/audio_decoder_test.cpp unit/audio_test.cpp)
+vnmaki_add_fixture_generator(
+  audio SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/audio_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
 
 # Say box: characters, the dialogue presenter and the say box view (ticket 08).
 target_sources(vnmaki_unit_tests PRIVATE unit/character_test.cpp

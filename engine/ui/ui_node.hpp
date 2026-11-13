@@ -69,6 +69,9 @@ struct UiNode {
   UiStyle style{};
   /// The content: a text node's string, a button's caption, an image's name (`images/<name>.png`).
   std::string text{};
+  /// `text` has text tags (docs/TEXT_TAGS.md) that the renderer applies; a bad tag draws as plain
+  /// text.
+  bool markup = false;
   /// A button hands this to its screen when activated; unset, activating does nothing.
   std::optional<ScreenValue> returns{};
   /// A text node shows only its first glyphs (a typewriter reveal); unset shows all.

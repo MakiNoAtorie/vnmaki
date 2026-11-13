@@ -8,9 +8,14 @@
 //   languages = ["en", "ja"]      # the first is the source language;
 //                                 # default ["en"]
 //
+//   [fonts.fallback]              # for a language: the fonts (virtual paths)
+//   ja = ["fonts/jp.otf"]         # that supply characters the text's font
+//                                 # lacks, in the order to try; default none
+//
 // Other keys (platforms, plugins, build options) belong to later features and
 // are ignored for now.
 
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -32,6 +37,9 @@ struct ProjectConfig {
   std::string version;
   Resolution resolution;
   std::vector<std::string> languages;
+  /// The font fallback chain of each language that has one. Every key is in
+  /// `languages`. Load the fonts into FontSet::fallbacks (engine/text/text.hpp).
+  std::map<std::string, std::vector<std::string>> font_fallbacks;
 };
 
 /// project.toml is missing, is not valid TOML, or breaks the schema above.

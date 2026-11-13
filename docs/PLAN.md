@@ -74,21 +74,21 @@ Do not do these tasks in parallel, because they change the same files:
 
 ### 16: Audio (SPEC §14, §7)
 
-- [ ] miniaudio, Opus, Vorbis (vcpkg). Stream Opus, Vorbis, WAV and FLAC from the VFS.
-- [ ] Channels with volume: music, sound, voice, ambient, ui, custom.
-- [ ] `music`, `sound`, `voice`, `stop(channel, { fade })`. Music crossfades and has loop points.
-- [ ] Music volume decreases while voice plays.
-- [ ] Music state is in the scene snapshot. After replay or load, one-shot sounds do not play.
+- [x] miniaudio, Opus, Vorbis (vcpkg). Stream Opus, Vorbis, WAV and FLAC from the VFS.
+- [x] Channels with volume: music, sound, voice, ambient, ui, custom.
+- [x] `music`, `sound`, `voice`, `stop(channel, { fade })`. Music crossfades and has loop points.
+- [x] Music volume decreases while voice plays.
+- [x] Music state is in the scene snapshot. After replay or load, one-shot sounds do not play.
 - [ ] Backlog replays voice. Auto-advance waits for the voice end.
-- [ ] Null audio device in headless tests. Fuzz target for the decoders.
+- [x] Null audio device in headless tests. Fuzz target for the decoders.
 
 ### 17: Text tags, bidi, font fallback (SPEC §13, §7)
 
-- [ ] Tags: color, size, font, bold, italic, speed, pause, ruby, link. Example: `"I {color=#f00}really{/color} mean it.{pause=0.5}"`.
-- [ ] Document the syntax. A malformed tag gives an error with the script line. Fuzz target for the parser.
-- [ ] SheenBidi orders RTL text. libunibreak and kinsoku rules break Japanese lines.
-- [ ] A font fallback chain for each language. SDF only for outline and shadow text.
-- [ ] Layout tests: each tag, RTL, kinsoku, fallback.
+- [x] Tags: color, size, font, bold, italic, speed, pause, ruby, link. Example: `"I {color=#f00}really{/color} mean it.{pause=0.5}"`.
+- [x] Document the syntax. A malformed tag gives an error with the script line. Fuzz target for the parser.
+- [x] SheenBidi orders RTL text. libunibreak and kinsoku rules break Japanese lines.
+- [x] A font fallback chain for each language. SDF only for outline and shadow text.
+- [x] Layout tests: each tag, RTL, kinsoku, fallback.
 
 ### 18: Preferences and default screens (SPEC §15, §17)
 

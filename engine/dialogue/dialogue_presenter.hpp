@@ -34,9 +34,15 @@ class DialoguePresenter {
   /// once for each line.
   using GlyphCounter = std::function<std::size_t(const DialogueLine&)>;
 
-  /// `runtime` must outlive the presenter and be started already.
+  /// Returns how many glyphs of `line` show `elapsed_seconds` after it started, at
+  /// `characters_per_second`. Use it to count the `speed` and `pause` tags of the line's text.
+  using Reveal = std::function<std::size_t(const DialogueLine&, double characters_per_second,
+                                           double elapsed_seconds)>;
+
+  /// `runtime` must outlive the presenter and be started already. Without `reveal`, every glyph
+  /// takes the same time (revealed_glyphs of engine/text/text.hpp).
   DialoguePresenter(ScriptRuntime& runtime, GlyphCounter counter,
-                    double characters_per_second = kDefaultCharactersPerSecond);
+                    double characters_per_second = kDefaultCharactersPerSecond, Reveal reveal = {});
 
   /// The line being shown; empty when the story waits at something else or has ended.
   [[nodiscard]] const std::optional<DialogueLine>& line() const { return line_; }
@@ -58,6 +64,7 @@ class DialoguePresenter {
 
   ScriptRuntime* runtime_;
   GlyphCounter counter_;
+  Reveal reveal_;
   double characters_per_second_;
   std::optional<DialogueLine> line_;
   std::size_t glyph_count_ = 0;

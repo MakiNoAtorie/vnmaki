@@ -21,6 +21,8 @@
 
 #include <sol/sol.hpp>
 
+#include "engine/core/byte_stream.hpp"
+#include "engine/text/markup.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki {
@@ -171,6 +173,14 @@ function character(definition)
   return { name = definition.name, color = color, voice_tag = definition.voice_tag }
 end
 
+-- Raises a bad text tag at the caller of the API function that called this.
+local function check_text(text)
+  local problem = engine.check_text(text)
+  if problem then
+    error(problem, 3)
+  end
+end
+
 function say(who, text)
   local speaker, color, voice_tag
   if type(who) == "string" then
@@ -190,6 +200,7 @@ function say(who, text)
     bad_argument("say", 2, "string", text)
   end
   require_label("say")
+  check_text(text)
   if speaker == nil then
     engine.narrate(text)
   else
@@ -202,7 +213,19 @@ function narrate(text)
     bad_argument("narrate", 1, "string", text)
   end
   require_label("narrate")
+  check_text(text)
   engine.narrate(text)
+end
+
+-- The function the engine calls with a link's id when the player activates a
+-- {link=id} part of the text on screen. It runs outside the labels: it cannot
+-- block, and the replay does not run it again, so it must not change `store`.
+local link_handler
+function on_link(handler)
+  if type(handler) ~= "function" then
+    bad_argument("on_link", 1, "function", handler)
+  end
+  link_handler = handler
 end
 
 -- Visuals. The engine primitives return why a call cannot be done, or nil.
@@ -280,6 +303,100 @@ function hide(tag)
   require_label("hide")
   engine.hide(tag)
   engine.scene_command("hide " .. tag)
+end
+
+-- Audio. Times are in seconds.
+function music(name, options)
+  if type(name) ~= "string" then
+    bad_argument("music", 1, "string", name)
+  end
+  options = options_argument("music", options)
+  local channel = option("music", options, "channel", "string")
+  local fade = option("music", options, "fade", "number")
+  local loop_start = option("music", options, "loop_start", "number")
+  local loop_end = option("music", options, "loop_end", "number")
+  require_label("music")
+  local problem = engine.music(name, channel, fade, loop_start, loop_end)
+  if problem then
+    error(problem, 2)
+  end
+  local command = "music " .. name
+  if channel then
+    command = command .. " channel " .. channel
+  end
+  if fade then
+    command = command .. format(" fade %.14g", fade)
+  end
+  if loop_start then
+    command = command .. format(" loop_start %.14g", loop_start)
+  end
+  if loop_end then
+    command = command .. format(" loop_end %.14g", loop_end)
+  end
+  engine.audio_command(command)
+end
+
+function sound(name, options)
+  if type(name) ~= "string" then
+    bad_argument("sound", 1, "string", name)
+  end
+  options = options_argument("sound", options)
+  local channel = option("sound", options, "channel", "string")
+  require_label("sound")
+  local problem = engine.sound(name, channel)
+  if problem then
+    error(problem, 2)
+  end
+  local command = "sound " .. name
+  if channel then
+    command = command .. " channel " .. channel
+  end
+  engine.audio_command(command)
+end
+
+function voice(name)
+  if type(name) ~= "string" then
+    bad_argument("voice", 1, "string", name)
+  end
+  require_label("voice")
+  local problem = engine.voice(name)
+  if problem then
+    error(problem, 2)
+  end
+  engine.audio_command("voice " .. name)
+end
+
+function stop(channel, options)
+  if type(channel) ~= "string" then
+    bad_argument("stop", 1, "string", channel)
+  end
+  options = options_argument("stop", options)
+  local fade = option("stop", options, "fade", "number")
+  require_label("stop")
+  local problem = engine.stop(channel, fade)
+  if problem then
+    error(problem, 2)
+  end
+  local command = "stop " .. channel
+  if fade then
+    command = command .. format(" fade %.14g", fade)
+  end
+  engine.audio_command(command)
+end
+
+function volume(channel, value)
+  if type(channel) ~= "string" then
+    bad_argument("volume", 1, "string", channel)
+  end
+  if type(value) ~= "number" then
+    bad_argument("volume", 2, "number", value)
+  end
+  require_label("volume")
+  local problem = engine.volume(channel, value)
+  if problem then
+    error(problem, 2)
+  end
+  engine.audio_command(format("volume %s %.14g", channel, value))
 end
 
 -- The minimal menu: a list of option texts. Returns the number of the
@@ -582,6 +699,13 @@ end
 function limits.reset(ticks)
   ticks_left = ticks
 end
+function limits.link(id)
+  if link_handler == nil then
+    return false
+  end
+  link_handler(id)
+  return true
+end
 return limits
 )lua";
 
@@ -795,6 +919,7 @@ class ScriptRuntime::Impl {
   void advance();
   void choose(std::size_t index);
   void return_screen(ScreenValue value);
+  bool activate_link(std::string_view id);
   void replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
               std::uint32_t step);
 
@@ -915,6 +1040,7 @@ class ScriptRuntime::Impl {
   sol::protected_function limits_configure_;
   sol::protected_function limits_watch_;
   sol::protected_function limits_reset_;
+  sol::protected_function link_;
 
   std::map<std::string, Label, std::less<>> labels_;
   // Script path -> source text, for the label source hashes; kept only while
@@ -983,6 +1109,7 @@ ScriptRuntime::Impl::Impl(const Vfs& vfs, const ScriptRuntimeOptions& options)
   limits_configure_ = limits_table["configure"];
   limits_watch_ = limits_table["watch"];
   limits_reset_ = limits_table["reset"];
+  link_ = limits_table["link"];
   if (options_.instruction_limit != 0) {
     hook_period_ = std::min(options_.instruction_limit, kHookPeriod);
     limits_configure_(hook_period_);
@@ -1021,6 +1148,20 @@ void ScriptRuntime::Impl::bind_engine() {
                                   .source_hash = source_hash});
       return sol::lua_nil;
     }
+    return sol::make_object(state, problem);
+  };
+  // The prelude raises the problem at the script line of the say or narrate call.
+  engine_["check_text"] = [this](sol::this_state state, const std::string& text) -> sol::object {
+    std::string problem;
+    try {
+      (void)parse_markup(text);
+    } catch (const MarkupError& error) {
+      problem = "bad text tag at byte " + std::to_string(error.offset()) + ": " + error.what();
+    }
+    if (problem.empty()) {
+      return sol::lua_nil;
+    }
+    const MemoryLimitScope unlimited{allocator_, false};
     return sol::make_object(state, problem);
   };
   engine_["say"] = sol::yielding([this](sol::this_state state, const std::string& speaker,
@@ -1118,6 +1259,68 @@ void ScriptRuntime::Impl::bind_engine() {
   engine_["scene_command"] = [this](const std::string& command) {
     if (!replaying_) {
       observer_->on_scene_command(command);
+    }
+  };
+  // Music, stops and volumes are state, so they also run during a replay. Sounds and voices
+  // are one-shots: a replay must not play them.
+  engine_["music"] = [this, problem_or_nil](
+                         sol::this_state state, const std::string& name,
+                         const sol::optional<std::string>& channel, sol::optional<double> fade,
+                         sol::optional<double> loop_start, sol::optional<double> loop_end) {
+    if (options_.audio == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    MusicRequest request;
+    request.name = name;
+    if (channel) {
+      request.channel = *channel;
+    }
+    if (fade) {
+      request.fade = *fade;
+    }
+    if (loop_start) {
+      request.loop_start = *loop_start;
+    }
+    if (loop_end) {
+      request.loop_end = *loop_end;
+    }
+    return problem_or_nil(state, options_.audio->music(request));
+  };
+  engine_["sound"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
+                                            const sol::optional<std::string>& channel) {
+    if (options_.audio == nullptr || replaying_) {
+      return problem_or_nil(state, {});
+    }
+    SoundRequest request;
+    request.name = name;
+    if (channel) {
+      request.channel = *channel;
+    }
+    return problem_or_nil(state, options_.audio->sound(request));
+  };
+  engine_["voice"] = [this, problem_or_nil](sol::this_state state, const std::string& name) {
+    if (options_.audio == nullptr || replaying_) {
+      return problem_or_nil(state, {});
+    }
+    return problem_or_nil(state, options_.audio->voice(name));
+  };
+  engine_["stop"] = [this, problem_or_nil](sol::this_state state, const std::string& channel,
+                                           sol::optional<double> fade) {
+    if (options_.audio == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    return problem_or_nil(state, options_.audio->stop(channel, fade ? *fade : 0));
+  };
+  engine_["volume"] = [this, problem_or_nil](sol::this_state state, const std::string& channel,
+                                             double value) {
+    if (options_.audio == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    return problem_or_nil(state, options_.audio->volume(channel, value));
+  };
+  engine_["audio_command"] = [this](const std::string& command) {
+    if (!replaying_) {
+      observer_->on_audio_command(command);
     }
   };
   engine_["transfer"] =
@@ -1618,6 +1821,20 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
   }
 }
 
+bool ScriptRuntime::Impl::activate_link(std::string_view id) {
+  if (state_ != RunState::kWaiting) {
+    return false;
+  }
+  reset_instruction_budget();
+  const MemoryLimitScope limited{allocator_, true};
+  const sol::protected_function_result result = link_(std::string{id});
+  if (!result.valid()) {
+    fail(error_text(result));
+    return false;
+  }
+  return result.get<bool>();
+}
+
 void ScriptRuntime::Impl::fail(std::string message) {
   state_ = RunState::kFailed;
   replaying_ = false;
@@ -1627,6 +1844,48 @@ void ScriptRuntime::Impl::fail(std::string message) {
 void ScriptRuntime::Impl::reset_instruction_budget() {
   if (hook_period_ != 0) {
     limits_reset_(options_.instruction_limit / hook_period_);
+  }
+}
+
+CompositeSceneState::CompositeSceneState(std::vector<SceneState*> parts)
+    : parts_(std::move(parts)) {}
+
+// A u32 count of parts, then each part's capture() as a u32 length and the bytes.
+std::vector<std::byte> CompositeSceneState::capture() const {
+  ByteWriter writer;
+  writer.u32(static_cast<std::uint32_t>(parts_.size()));
+  for (const SceneState* part : parts_) {
+    writer.block(part->capture());
+  }
+  return writer.take();
+}
+
+void CompositeSceneState::restore(std::span<const std::byte> state) {
+  std::vector<std::span<const std::byte>> blocks(parts_.size());
+  if (!state.empty()) {
+    ByteReader reader{state, "scene state"};
+    if (reader.u32() != parts_.size()) {
+      throw std::invalid_argument{"scene state: made by another set of subsystems"};
+    }
+    for (std::span<const std::byte>& block : blocks) {
+      block = reader.block();
+    }
+    if (!reader.at_end()) {
+      throw std::invalid_argument{"scene state: unexpected data after the last part"};
+    }
+  }
+  std::vector<std::vector<std::byte>> before;
+  before.reserve(parts_.size());
+  for (std::size_t i = 0; i < parts_.size(); ++i) {
+    before.push_back(parts_[i]->capture());
+    try {
+      parts_[i]->restore(blocks[i]);
+    } catch (const std::invalid_argument&) {
+      for (std::size_t restored = 0; restored < i; ++restored) {
+        parts_[restored]->restore(before[restored]);
+      }
+      throw;
+    }
   }
 }
 
@@ -1642,6 +1901,7 @@ void ScriptRuntime::start(std::string_view name) { impl_->start(name); }
 void ScriptRuntime::advance() { impl_->advance(); }
 void ScriptRuntime::choose(std::size_t index) { impl_->choose(index); }
 void ScriptRuntime::return_screen(ScreenValue value) { impl_->return_screen(std::move(value)); }
+bool ScriptRuntime::activate_link(std::string_view id) { return impl_->activate_link(id); }
 void ScriptRuntime::replay(const LabelSnapshot& snapshot, std::span<const InputResult> inputs,
                            std::uint32_t step) {
   impl_->replay(snapshot, inputs, step);

@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <utility>
 
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
@@ -21,8 +22,10 @@ class Vfs;
 
 class UiRenderer {
  public:
-  /// `renderer` and `font` must outlive this object. `vfs` (may be null, then image nodes draw
+  /// `renderer` and the fonts must outlive this object. `vfs` (may be null, then image nodes draw
   /// nothing) reads `images/<name>.png` or `.jpg` for image nodes; it must outlive this too.
+  UiRenderer(IRenderer& renderer, FontSet fonts, const Vfs* vfs = nullptr);
+  /// One font, no fallbacks.
   UiRenderer(IRenderer& renderer, const Font& font, const Vfs* vfs = nullptr);
   UiRenderer(const UiRenderer&) = delete;
   UiRenderer& operator=(const UiRenderer&) = delete;
@@ -43,25 +46,20 @@ class UiRenderer {
   void draw(const UiNode& root, float scale, PointF origin = {});
 
  private:
-  struct SizeAtlas {
-    explicit SizeAtlas(const Font& font) : atlas(font) {}
-    GlyphAtlas atlas;
-    std::optional<TextureId> texture{};
-  };
-
   [[nodiscard]] const TextLayout& layout(const UiNode& node, float wrap_width);
-  [[nodiscard]] SizeAtlas& atlas_for(float text_size);
   [[nodiscard]] std::optional<TextureId> image_texture(const std::string& name);
   void draw_node(const UiNode& node, float scale, PointF origin);
   void draw_fill(RectF rect, Color color);
   void draw_text(const UiNode& node, float scale, PointF origin);
 
   IRenderer* renderer_;
-  const Font* font_;
+  FontSet fonts_;
   const Vfs* vfs_;
   TextureId white_;
-  std::map<std::tuple<std::string, float, float>, TextLayout> layouts_;
-  std::map<float, SizeAtlas> atlases_;
+  std::map<std::tuple<std::string, bool, float, float>, TextLayout> layouts_;
+  // One atlas for all text: it keeps glyphs of every size apart.
+  GlyphAtlas atlas_;
+  std::optional<TextureId> atlas_texture_;
   std::map<std::string, std::optional<TextureId>> images_;
 };
 

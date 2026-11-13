@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "engine/render/image.hpp"
+#include "engine/text/markup.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki {
@@ -38,8 +39,11 @@ float widest_line(const TextLayout& layout) {
 }  // namespace
 
 UiRenderer::UiRenderer(IRenderer& renderer, const Font& font, const Vfs* vfs)
+    : UiRenderer(renderer, FontSet{.base = {.regular = &font}}, vfs) {}
+
+UiRenderer::UiRenderer(IRenderer& renderer, FontSet fonts, const Vfs* vfs)
     : renderer_(&renderer),
-      font_(&font),
+      fonts_(std::move(fonts)),
       vfs_(vfs),
       white_(renderer.create_texture(Image{.size = {.width = 1, .height = 1},
                                            .pixels = {UINT8_MAX, UINT8_MAX, UINT8_MAX, UINT8_MAX}},
@@ -47,10 +51,8 @@ UiRenderer::UiRenderer(IRenderer& renderer, const Font& font, const Vfs* vfs)
 
 UiRenderer::~UiRenderer() {
   renderer_->destroy_texture(white_);
-  for (const auto& [size, entry] : atlases_) {
-    if (entry.texture) {
-      renderer_->destroy_texture(*entry.texture);
-    }
+  if (atlas_texture_) {
+    renderer_->destroy_texture(*atlas_texture_);
   }
   for (const auto& [name, texture] : images_) {
     if (texture) {
@@ -60,7 +62,7 @@ UiRenderer::~UiRenderer() {
 }
 
 const TextLayout& UiRenderer::layout(const UiNode& node, float wrap_width) {
-  auto key = std::make_tuple(node.text, node.style.text_size, wrap_width);
+  auto key = std::make_tuple(node.text, node.markup, node.style.text_size, wrap_width);
   const auto found = layouts_.find(key);
   if (found != layouts_.end()) {
     return found->second;
@@ -68,12 +70,14 @@ const TextLayout& UiRenderer::layout(const UiNode& node, float wrap_width) {
   if (layouts_.size() >= kMaxCachedLayouts) {
     layouts_.clear();
   }
-  TextLayout laid_out = layout_text(*font_, node.text, node.style.text_size, wrap_width);
+  StyledText styled;
+  try {
+    styled = node.markup ? parse_markup(node.text) : plain_text(node.text);
+  } catch (const MarkupError&) {
+    styled = plain_text(node.text);
+  }
+  TextLayout laid_out = layout_text(fonts_, styled, node.style.text_size, wrap_width);
   return layouts_.emplace(std::move(key), std::move(laid_out)).first->second;
-}
-
-UiRenderer::SizeAtlas& UiRenderer::atlas_for(float text_size) {
-  return atlases_.try_emplace(text_size, *font_).first->second;
 }
 
 TextMeasure UiRenderer::text_measure() {
@@ -82,8 +86,8 @@ TextMeasure UiRenderer::text_measure() {
       return MeasuredSize{};
     }
     const TextLayout& text = layout(node, std::max(max_width, kMinWrapWidth));
-    return MeasuredSize{.width = widest_line(text),
-                        .height = static_cast<float>(text.lines.size()) * text.line_height};
+    const float height = text.lines.empty() ? 0 : text.lines.back().top + text.lines.back().height;
+    return MeasuredSize{.width = widest_line(text), .height = height};
   };
 }
 
@@ -114,13 +118,12 @@ std::optional<TextureId> UiRenderer::image_texture(const std::string& name) {
 void UiRenderer::prepare(const UiNode& root, float scale) {
   if (shows_text(root)) {
     const TextLayout& text = layout(root, content_width(root));
-    SizeAtlas& entry = atlas_for(root.style.text_size);
-    if (text.glyph_count > 0 && (entry.atlas.prepare(text, scale) || !entry.texture)) {
-      if (entry.texture) {
-        renderer_->destroy_texture(*entry.texture);
-        entry.texture.reset();
+    if (text.glyph_count > 0 && (atlas_.prepare(text, scale) || !atlas_texture_)) {
+      if (atlas_texture_) {
+        renderer_->destroy_texture(*atlas_texture_);
+        atlas_texture_.reset();
       }
-      entry.texture = renderer_->create_texture(entry.atlas.image(), TextureFilter::kNearest);
+      atlas_texture_ = renderer_->create_texture(atlas_.image(), TextureFilter::kNearest);
     }
   }
   if (root.kind == NodeKind::kImage) {
@@ -138,8 +141,7 @@ void UiRenderer::draw_fill(RectF rect, Color color) {
 
 void UiRenderer::draw_text(const UiNode& node, float scale, PointF origin) {
   const TextLayout& text = layout(node, content_width(node));
-  const SizeAtlas& entry = atlas_for(node.style.text_size);
-  if (text.glyph_count == 0 || !entry.texture) {
+  if (text.glyph_count == 0 || !atlas_texture_) {
     return;
   }
   float indent = 0;
@@ -149,9 +151,9 @@ void UiRenderer::draw_text(const UiNode& node, float scale, PointF origin) {
   const PointF at{.x = origin.x + ((node.rect.x + node.style.padding + indent) * scale),
                   .y = origin.y + ((node.rect.y + node.style.padding) * scale)};
   const std::size_t visible = node.visible_glyphs.value_or(text.glyph_count);
-  const std::vector<Quad> quads = text_quads(text, entry.atlas, at, visible, node.style.color);
+  const std::vector<Quad> quads = text_quads(text, atlas_, at, visible, node.style.color);
   if (!quads.empty()) {
-    renderer_->draw(quads, {.texture = *entry.texture});
+    renderer_->draw(quads, {.texture = *atlas_texture_});
   }
 }
 

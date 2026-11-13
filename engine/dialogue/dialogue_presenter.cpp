@@ -10,9 +10,10 @@
 namespace vnmaki {
 
 DialoguePresenter::DialoguePresenter(ScriptRuntime& runtime, GlyphCounter counter,
-                                     double characters_per_second)
+                                     double characters_per_second, Reveal reveal)
     : runtime_(&runtime),
       counter_(std::move(counter)),
+      reveal_(std::move(reveal)),
       characters_per_second_(characters_per_second) {
   sync();
 }
@@ -21,8 +22,11 @@ std::size_t DialoguePresenter::visible_glyphs() const {
   if (!line_) {
     return 0;
   }
-  return completed_ ? glyph_count_
-                    : revealed_glyphs(glyph_count_, characters_per_second_, elapsed_);
+  if (completed_) {
+    return glyph_count_;
+  }
+  return reveal_ ? reveal_(*line_, characters_per_second_, elapsed_)
+                 : revealed_glyphs(glyph_count_, characters_per_second_, elapsed_);
 }
 
 bool DialoguePresenter::revealing() const { return line_ && visible_glyphs() < glyph_count_; }

@@ -18,6 +18,7 @@
 
 #include "engine/render/image.hpp"
 #include "engine/render/renderer.hpp"
+#include "engine/text/markup.hpp"
 #include "engine/text/text.hpp"
 
 namespace {
@@ -25,6 +26,8 @@ namespace {
 // Two paragraphs: Latin with spaces, and Japanese with marks the kinsoku rules hold back.
 constexpr std::string_view kText = "Fuzz, a VN font.\nこんにちは、世界。";
 constexpr std::size_t kParagraphs = 2;
+constexpr std::string_view kMarkup =
+    "{b}Fuzz{/b}, {size=18}a{/size} {ruby=かな}世界{/ruby} אבג {link=x}font{/link}.";
 constexpr float kWrapWidth = 90;
 constexpr std::array<float, 2> kPixelSizes{12, 33.5F};
 
@@ -144,6 +147,46 @@ void check_font(const vnmaki::Font& font, float pixel_size) {
   check_quads(wrapped, atlas);
 }
 
+/// Text with tags, two directions and ruby, with the font also as its own fallback: layout is
+/// deterministic and finite, and the atlas takes glyphs of more than one size.
+void check_styled(const vnmaki::Font& font, float pixel_size) {
+  const vnmaki::StyledText text = vnmaki::parse_markup(kMarkup);
+  vnmaki::FontSet fonts;
+  fonts.base.regular = &font;
+  fonts.fallbacks = {&font};
+  const vnmaki::TextLayout layout = vnmaki::layout_text(fonts, text, pixel_size, kWrapWidth);
+  require(layout == vnmaki::layout_text(fonts, text, pixel_size, kWrapWidth));
+  std::size_t glyphs = 0;
+  for (const vnmaki::TextLine& line : layout.lines) {
+    glyphs += line.glyphs.size();
+    require(std::isfinite(line.top) && std::isfinite(line.height) && std::isfinite(line.width));
+    for (const vnmaki::LayoutGlyph& glyph : line.glyphs) {
+      require(glyph.text_offset < text.text.size());
+      require(glyph.font < layout.fonts.size());
+      require(std::isfinite(glyph.origin.x) && std::isfinite(glyph.origin.y));
+    }
+    for (const vnmaki::RubyText& ruby : line.ruby) {
+      require(ruby.base_glyph < line.glyphs.size());
+    }
+  }
+  require(glyphs == layout.glyph_count);
+  require(vnmaki::revealed_glyphs(layout, 1, 0) == 0);
+
+  vnmaki::GlyphAtlas atlas;
+  try {
+    require(atlas.prepare(layout));
+  } catch (const vnmaki::FontError&) {
+    return;
+  }
+  require(!atlas.prepare(layout));
+  for (const vnmaki::Quad& quad :
+       vnmaki::text_quads(layout, atlas, vnmaki::PointF{}, layout.glyph_count)) {
+    for (const vnmaki::PointF& corner : quad.corners) {
+      require(std::isfinite(corner.x) && std::isfinite(corner.y));
+    }
+  }
+}
+
 }  // namespace
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
@@ -152,6 +195,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     const vnmaki::Font font{std::vector<std::byte>(bytes.begin(), bytes.end())};
     for (const float pixel_size : kPixelSizes) {
       check_font(font, pixel_size);
+      check_styled(font, pixel_size);
     }
   } catch (const vnmaki::FontError&) {
     return 0;  // Rejecting bad data is the expected outcome for most inputs.

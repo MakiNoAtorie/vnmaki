@@ -7,6 +7,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -50,6 +51,21 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
   try {
     // Everything that needs no window comes first, so a broken project fails before one opens.
     const Font font = load_font(vfs, kDefaultFontPath);
+    // The fallback chain of the source language (the first in project.toml).
+    std::vector<Font> fallback_fonts;
+    if (!config.languages.empty()) {
+      if (const auto chain = config.font_fallbacks.find(config.languages.front());
+          chain != config.font_fallbacks.end()) {
+        fallback_fonts.reserve(chain->second.size());
+        for (const std::string& path : chain->second) {
+          fallback_fonts.push_back(load_font(vfs, path));
+        }
+      }
+    }
+    FontSet fonts{.base = {.regular = &font}};
+    for (const Font& fallback : fallback_fonts) {
+      fonts.fallbacks.push_back(&fallback);
+    }
     Scene scene{vfs, virtual_size};
     UiHost ui{virtual_size};
     ScriptRuntime runtime{vfs, {.scene_state = &scene, .scene = &scene, .screens = &ui}};
@@ -59,14 +75,19 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     const std::unique_ptr<SdlGpuRenderer> renderer = SdlGpuRenderer::create_for_window(platform);
     JobSystem jobs;
     const TextureId canvas = renderer->create_render_target(virtual_size, TextureFilter::kLinear);
-    SayBoxView say_box{*renderer, font, SayBoxStyle::for_resolution(virtual_size)};
-    UiRenderer ui_renderer{*renderer, font, &vfs};
+    UiRenderer ui_renderer{*renderer, fonts, &vfs};
     ui.set_text_measure(ui_renderer.text_measure());
+    SayBoxView say_box{*renderer, std::move(fonts), SayBoxStyle::for_resolution(virtual_size)};
 
     runtime.start("start");
     ScreenPresenter screens{runtime, ui};
     DialoguePresenter presenter{
-        runtime, [&](const DialogueLine& line) { return say_box.glyph_count(line); }};
+        runtime,
+        [&](const DialogueLine& line) { return say_box.glyph_count(line); },
+        kDefaultCharactersPerSecond,
+        [&](const DialogueLine& line, double speed, double elapsed) {
+          return say_box.revealed(line, speed, elapsed);
+        }};
 
     SteadyClock clock;
     MainLoop loop{platform, clock, {.min_frame_time = kFrameTime}};
@@ -91,7 +112,12 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       } else if (const auto* click = std::get_if<PointerButtonEvent>(&event)) {
         if (click->pressed && click->button == MouseButton::kLeft &&
             inside_canvas(click->position)) {
-          presenter.advance();
+          const std::optional<DialogueLine>& line = presenter.line();
+          const std::string link =
+              line ? say_box.link_at(*line, window_to_virtual(viewport(), click->position)) : "";
+          if (link.empty() || !runtime.activate_link(link)) {
+            presenter.advance();
+          }
         }
       } else if (const auto* button = std::get_if<GamepadButtonEvent>(&event)) {
         if (button->pressed && button->button == GamepadButton::kSouth) {
@@ -131,8 +157,10 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
         say_box.draw(*line, presenter.visible_glyphs(), placed.scale,
                      {.x = placed.rect.x, .y = placed.rect.y});
       }
-      for (const UiNode* root : screen_roots) {
-        ui_renderer.draw(*root, placed.scale, {.x = placed.rect.x, .y = placed.rect.y});
+      if (placed.scale > 0) {
+        for (const UiNode* root : screen_roots) {
+          ui_renderer.draw(*root, placed.scale, {.x = placed.rect.x, .y = placed.rect.y});
+        }
       }
       static_cast<void>(renderer->end_frame());
     };

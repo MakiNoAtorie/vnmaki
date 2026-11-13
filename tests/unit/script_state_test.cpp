@@ -643,3 +643,86 @@ TEST_CASE("replay: a label that cannot reach the step fails the runtime") {
     CHECK(game.runtime.error() == "replay: the store snapshot of label 'start' is malformed");
   }
 }
+
+// --- CompositeSceneState -----------------------------------------------------------------------
+
+namespace {
+
+// A scene that only takes states that start with the byte it was made with.
+class PickyScene final : public vnmaki::SceneState {
+ public:
+  explicit PickyScene(std::byte first) : first_(first) {}
+
+  [[nodiscard]] Bytes capture() const override { return state; }
+  void restore(std::span<const std::byte> bytes) override {
+    if (!bytes.empty() && bytes.front() != first_) {
+      throw std::invalid_argument{"picky scene: not my state"};
+    }
+    state.assign(bytes.begin(), bytes.end());
+  }
+
+  Bytes state;
+
+ private:
+  std::byte first_;
+};
+
+constexpr std::byte kA{0xA};
+constexpr std::byte kB{0xB};
+
+}  // namespace
+
+TEST_CASE("composite scene state: a snapshot holds every part and gives each its bytes back") {
+  PickyScene first{kA};
+  PickyScene second{kB};
+  vnmaki::CompositeSceneState both{{&first, &second}};
+  first.state = Bytes{kA, kA};
+  second.state = Bytes{kB};
+  const Bytes snapshot = both.capture();
+
+  first.state.clear();
+  second.state = Bytes{kB, kB, kB};
+  both.restore(snapshot);
+
+  CHECK(first.state == Bytes{kA, kA});
+  CHECK(second.state == Bytes{kB});
+  CHECK(both.capture() == snapshot);
+}
+
+TEST_CASE("composite scene state: a snapshot with no bytes empties every part") {
+  PickyScene first{kA};
+  PickyScene second{kB};
+  vnmaki::CompositeSceneState both{{&first, &second}};
+  first.state = Bytes{kA};
+  second.state = Bytes{kB};
+
+  both.restore({});
+
+  CHECK(first.state.empty());
+  CHECK(second.state.empty());
+}
+
+TEST_CASE("composite scene state: a snapshot one part rejects changes no part") {
+  PickyScene first{kA};
+  PickyScene second{kB};
+  vnmaki::CompositeSceneState both{{&first, &second}};
+  first.state = Bytes{kA};
+  second.state = Bytes{kB};
+  const Bytes before = both.capture();
+
+  // The parts the other way round: `first` takes its bytes, then `second` refuses.
+  PickyScene other_first{kA};
+  PickyScene other_second{kA};
+  vnmaki::CompositeSceneState other{{&other_first, &other_second}};
+  other_first.state = Bytes{kA, kA, kA};
+  other_second.state = Bytes{kA};
+  CHECK_THROWS_AS(both.restore(other.capture()), std::invalid_argument);
+  CHECK(both.capture() == before);
+
+  Bytes cut = before;
+  cut.pop_back();
+  CHECK_THROWS_AS(both.restore(cut), std::invalid_argument);
+  vnmaki::CompositeSceneState one{{&first}};
+  CHECK_THROWS_AS(both.restore(one.capture()), std::invalid_argument);
+  CHECK(both.capture() == before);
+}

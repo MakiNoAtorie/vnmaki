@@ -36,15 +36,19 @@ struct SayBoxStyle {
 
 /// The say box as a screen: a canvas-sized box holding the panel, the speaker's name and the line
 /// (its first `visible_glyphs` glyphs; unset shows all). The nodes sit where `style` says; layout
-/// them with layout_tree() and draw them with UiRenderer.
+/// them with layout_tree() and draw them with UiRenderer. The line has text tags.
 [[nodiscard]] UiNode make_say_screen(const SayBoxStyle& style, const DialogueLine& line,
                                      std::optional<std::size_t> visible_glyphs = std::nullopt);
 
-/// Draws the say box screen with one font. Owns the textures it makes; `renderer` and `font` must
-/// outlive it. Use it from the thread that owns the renderer and the font.
+/// Draws the say box screen. The line may have text tags (docs/TEXT_TAGS.md); the speaker's name
+/// is plain text. Owns the textures it makes; `renderer` and the fonts must outlive it. Use it
+/// from the thread that owns the renderer and the fonts.
 class SayBoxView {
  public:
+  /// One font, no fallbacks.
   SayBoxView(IRenderer& renderer, const Font& font, SayBoxStyle style);
+  /// `fonts` is the base family, the `font` tag families and the fallback chain.
+  SayBoxView(IRenderer& renderer, FontSet fonts, SayBoxStyle style);
   SayBoxView(const SayBoxView&) = delete;
   SayBoxView& operator=(const SayBoxView&) = delete;
   SayBoxView(SayBoxView&&) = delete;
@@ -53,6 +57,14 @@ class SayBoxView {
 
   /// Lays `line` out and returns its glyph count (what DialoguePresenter needs).
   [[nodiscard]] std::size_t glyph_count(const DialogueLine& line);
+
+  /// How many glyphs of `line` show `elapsed_seconds` after it started, with the `speed` and
+  /// `pause` tags of its text (see revealed_glyphs).
+  [[nodiscard]] std::size_t revealed(const DialogueLine& line, double characters_per_second,
+                                     double elapsed_seconds);
+
+  /// The id of the `link` tag of `line` at `point` (virtual pixels), or an empty string.
+  [[nodiscard]] std::string link_at(const DialogueLine& line, PointF point);
 
   /// Rasterizes the glyphs of `line` at `scale` pixels per virtual pixel and uploads them. draw()
   /// does this too, but uploading inside a frame is slow: call prepare() before begin_frame().
@@ -66,10 +78,11 @@ class SayBoxView {
   void draw(const DialogueLine& line, std::size_t visible_glyphs, float scale, PointF origin = {});
 
  private:
+  void layout(const DialogueLine& line);
   [[nodiscard]] UiNode laid_out_screen(const DialogueLine& line,
                                        std::optional<std::size_t> visible_glyphs);
 
-  const Font* font_;
+  FontSet fonts_;
   SayBoxStyle style_;
   UiRenderer ui_;
   std::string laid_out_text_;

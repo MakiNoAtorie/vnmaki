@@ -164,6 +164,23 @@ class SceneState {
   virtual void restore(std::span<const std::byte> state) = 0;
 };
 
+/// Several SceneStates snapshotted as one, so every subsystem with state takes part in the
+/// label-entry snapshot: put one of these in ScriptRuntimeOptions::scene_state. The parts must
+/// outlive it. A snapshot keeps the parts in the order given here, so that order is part of the
+/// save format.
+class CompositeSceneState final : public SceneState {
+ public:
+  explicit CompositeSceneState(std::vector<SceneState*> parts);
+
+  [[nodiscard]] std::vector<std::byte> capture() const override;
+  /// Empty `state` (a snapshot taken without scene state) restores every part from empty bytes.
+  /// If a part rejects its bytes, the parts restored before it are put back.
+  void restore(std::span<const std::byte> state) override;
+
+ private:
+  std::vector<SceneState*> parts_;
+};
+
 /// `show(tag, options)`. Fields the script left out are empty.
 struct ShowRequest {
   std::string tag{};
@@ -216,6 +233,43 @@ class ScreenCommands {
   virtual void hide_screen(std::string_view name) = 0;
 };
 
+/// `music(name, options)`: `name` loops on `channel`, replacing the music there.
+struct MusicRequest {
+  std::string name{};
+  std::string channel{"music"};
+  double fade = 0;                     ///< Seconds the old and new music cross-fade.
+  std::optional<double> loop_start{};  ///< Seconds into the file; overrides the file's tags.
+  std::optional<double> loop_end{};    ///< Seconds into the file; overrides the file's tags.
+};
+
+/// `sound(name, options)`: `name` plays once on `channel`, over whatever plays there.
+struct SoundRequest {
+  std::string name{};
+  std::string channel{"sound"};
+};
+
+/// What `music`, `sound`, `voice`, `stop` and `volume` do to the engine (engine/audio/audio.hpp
+/// implements it). As for SceneCommands, a call that cannot be done returns why and the runtime
+/// raises that at the calling script line.
+///
+/// `music`, `stop` and `volume` change snapshotted state, so they arrive during a replay too.
+/// `sound` and `voice` are one-shots: the runtime does not call them while replaying.
+class AudioCommands {
+ public:
+  AudioCommands() = default;
+  AudioCommands(const AudioCommands&) = default;
+  AudioCommands(AudioCommands&&) = default;
+  AudioCommands& operator=(const AudioCommands&) = default;
+  AudioCommands& operator=(AudioCommands&&) = default;
+  virtual ~AudioCommands() = default;
+
+  [[nodiscard]] virtual std::string music(const MusicRequest& request) = 0;
+  [[nodiscard]] virtual std::string sound(const SoundRequest& request) = 0;
+  [[nodiscard]] virtual std::string voice(std::string_view name) = 0;
+  [[nodiscard]] virtual std::string stop(std::string_view channel, double fade) = 0;
+  [[nodiscard]] virtual std::string volume(std::string_view channel, double volume) = 0;
+};
+
 /// Where a script is: the running label and how many yield points it has
 /// reached since it was entered (docs/SPEC.md section 8, "Position and
 /// replay"). While waiting at the first `say` of a label, step is 1.
@@ -262,6 +316,15 @@ class ScriptObserver {
   /// options given, in this order: " image <name>", " at <position>",
   /// " x <number>", " y <number>", " layer <name>".
   virtual void on_scene_command(std::string_view /*command*/) {}
+  /// A `music`, `sound`, `voice`, `stop` or `volume` call was done. `command` is its transcript
+  /// form, with the options given in this order:
+  ///   "music <name>" " channel <name>" " fade <seconds>" " loop_start <seconds>"
+  ///       " loop_end <seconds>"
+  ///   "sound <name>" " channel <name>"
+  ///   "voice <name>"
+  ///   "stop <channel>" " fade <seconds>"
+  ///   "volume <channel> <number>"
+  virtual void on_audio_command(std::string_view /*command*/) {}
   /// A script called `print`.
   virtual void on_print(std::string_view /*text*/) {}
   /// A dev-mode warning, e.g. a new global outside `store`.
@@ -288,7 +351,7 @@ struct ScriptRuntimeOptions {
   /// ScriptRuntime::replaying().
   ScriptObserver* observer = nullptr;
   /// Snapshotted and restored with `store`; may be null. Must outlive the
-  /// runtime.
+  /// runtime. Use a CompositeSceneState for more than one subsystem.
   SceneState* scene_state = nullptr;
   /// Carries out `scene`, `show` and `hide`; may be null, and then those
   /// calls only reach the observer. Must outlive the runtime. A Scene goes
@@ -297,6 +360,10 @@ struct ScriptRuntimeOptions {
   /// Carries out `show_screen` and `hide_screen`; may be null, and then those calls do nothing
   /// and no screen is checked. Must outlive the runtime.
   ScreenCommands* screens = nullptr;
+  /// Carries out `music`, `sound`, `voice`, `stop` and `volume`; may be null, and then those
+  /// calls only reach the observer. Must outlive the runtime. An Audio goes here, and in
+  /// `scene_state` (inside a CompositeSceneState when there is a Scene too).
+  AudioCommands* audio = nullptr;
   /// The first state of the script RNG (`rand`, `math.random`). The same seed,
   /// scripts and inputs always give the same story.
   std::uint64_t random_seed = kDefaultRandomSeed;
@@ -317,7 +384,14 @@ struct ScriptRuntimeOptions {
 /// (returns the number of the chosen option, from 1), `rand` (the same function as `math.random`)
 /// and the `store` table. Visuals: `scene(image)`, `show(tag, { image =, at =, x =, y =, layer =
 /// })` and `hide(tag)`; option keys they do not know are ignored (later tickets add `with`,
-/// `outfit`...). Screens: `screen "name" { node... }` (or a function of the arguments that
+/// `outfit`...).
+/// Text: `say` and `narrate` take inline tags (docs/TEXT_TAGS.md), and a bad
+/// tag is a script error at that line. `on_link(fn)` sets the function that
+/// activate_link() calls.
+/// Audio: `music(name, { channel =, fade =, loop_start =, loop_end = })`,
+/// `sound(name, { channel = })`, `voice(name)`, `stop(channel, { fade = })` and
+/// `volume(channel, number)`; times are in seconds.
+/// Screens: `screen "name" { node... }` (or a function of the arguments that
 /// returns nodes), the node constructors `box`, `hbox`, `vbox`, `text`, `image` and `button`,
 /// `show_screen(name, args)`, `hide_screen(name)` and `call_screen(name, args)`, which waits for
 /// the screen to return a value (a button's `returns` option).
@@ -365,6 +439,13 @@ class ScriptRuntime {
   /// std::monostate). Logs the answer and runs the label to its next yield point. Does nothing
   /// unless kWaiting at a call_screen.
   void return_screen(ScreenValue value);
+  /// The player activated the part of the text on screen that has the tag
+  /// `{link=id}` (find it with link_at in engine/text/text.hpp). Calls the
+  /// function the script gave to `on_link` with `id` and returns true, or
+  /// returns false if there is none or the runtime is not kWaiting. The
+  /// function runs outside the labels: an error in it, or a blocking call,
+  /// fails the runtime. A replay does not call it again.
+  bool activate_link(std::string_view id);
 
   /// Restores `snapshot` (store and scene state) and runs its label again
   /// from the start, answering menus from `inputs`, until that label waits at

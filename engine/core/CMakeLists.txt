@@ -1,4 +1,4 @@
-target_sources(vnmaki_engine PRIVATE version.cpp version.hpp)
+target_sources(vnmaki_engine PRIVATE byte_stream.hpp version.cpp version.hpp)
 
 # project() in the top-level CMakeLists.txt is the single source of the version.
 set_property(

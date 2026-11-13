@@ -253,7 +253,7 @@ def main() -> int:
     for project in FONT_PROJECTS:
         path = out / project / "fonts" / "default.ttf"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(text_fixtures.build_font())
+        path.write_bytes(text_fixtures.build_font(text_fixtures.SHAPES))
     for project, text in TRANSCRIPTS.items():
         (out / f"{project}.transcript").write_bytes(text.encode("utf-8"))
     return 0

@@ -4,8 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
 
+#include "engine/text/markup.hpp"
 #include "engine/ui/ui_layout.hpp"
 
 namespace vnmaki {
@@ -62,6 +64,9 @@ SayBoxStyle SayBoxStyle::for_resolution(Size virtual_size) {
   };
 }
 
+SayBoxView::SayBoxView(IRenderer& renderer, const Font& font, SayBoxStyle style)
+    : SayBoxView(renderer, FontSet{.base = {.regular = &font}}, style) {}
+
 UiNode make_say_screen(const SayBoxStyle& style, const DialogueLine& line,
                        std::optional<std::size_t> visible_glyphs) {
   UiNode name = make_node(NodeKind::kText);
@@ -74,6 +79,7 @@ UiNode make_say_screen(const SayBoxStyle& style, const DialogueLine& line,
   UiNode text = make_node(NodeKind::kText);
   text.text = line.text;
   text.label = line.text;
+  text.markup = true;
   text.style.position = style.text_offset;
   text.style.width = style.wrap_width;
   text.style.text_size = style.text_size;
@@ -93,8 +99,23 @@ UiNode make_say_screen(const SayBoxStyle& style, const DialogueLine& line,
   return root;
 }
 
-SayBoxView::SayBoxView(IRenderer& renderer, const Font& font, SayBoxStyle style)
-    : font_(&font), style_(style), ui_(renderer, font) {}
+SayBoxView::SayBoxView(IRenderer& renderer, FontSet fonts, SayBoxStyle style)
+    : fonts_(fonts), style_(style), ui_(renderer, std::move(fonts)) {}
+
+void SayBoxView::layout(const DialogueLine& line) {
+  if (has_layout_ && line.text == laid_out_text_) {
+    return;
+  }
+  StyledText styled;
+  try {
+    styled = parse_markup(line.text);
+  } catch (const MarkupError&) {
+    styled = plain_text(line.text);  // The runtime rejects bad tags; this is for other callers.
+  }
+  text_layout_ = layout_text(fonts_, styled, style_.text_size, style_.wrap_width);
+  laid_out_text_ = line.text;
+  has_layout_ = true;
+}
 
 UiNode SayBoxView::laid_out_screen(const DialogueLine& line,
                                    std::optional<std::size_t> visible_glyphs) {
@@ -106,12 +127,22 @@ UiNode SayBoxView::laid_out_screen(const DialogueLine& line,
 }
 
 std::size_t SayBoxView::glyph_count(const DialogueLine& line) {
-  if (!has_layout_ || line.text != laid_out_text_) {
-    text_layout_ = layout_text(*font_, line.text, style_.text_size, style_.wrap_width);
-    laid_out_text_ = line.text;
-    has_layout_ = true;
-  }
+  layout(line);
   return text_layout_.glyph_count;
+}
+
+std::size_t SayBoxView::revealed(const DialogueLine& line, double characters_per_second,
+                                 double elapsed_seconds) {
+  layout(line);
+  return revealed_glyphs(text_layout_, characters_per_second, elapsed_seconds);
+}
+
+std::string SayBoxView::link_at(const DialogueLine& line, PointF point) {
+  layout(line);
+  const PointF origin{.x = style_.box.x + style_.text_offset.x,
+                      .y = style_.box.y + style_.text_offset.y};
+  return std::string{
+      vnmaki::link_at(text_layout_, {.x = point.x - origin.x, .y = point.y - origin.y})};
 }
 
 void SayBoxView::prepare(const DialogueLine& line, float scale) {
