@@ -18,6 +18,8 @@ namespace vnmaki {
 namespace {
 
 constexpr std::int64_t kMaxResolution = 16384;
+// Each rollback step keeps a snapshot, so the depth has a limit.
+constexpr std::int64_t kMaxRollbackDepth = 10000;
 constexpr Resolution kDefaultResolution{.width = 1920, .height = 1080};
 
 std::string at(const toml::source_position& position) {
@@ -144,6 +146,15 @@ std::vector<AutoSaveEvent> read_auto_save(const toml::node& node) {
   return events;
 }
 
+std::size_t read_rollback_depth(const toml::node& node) {
+  const std::optional<std::int64_t> depth = node.value_exact<std::int64_t>();
+  if (!depth || *depth < 0 || *depth > kMaxRollbackDepth) {
+    fail_at(node, "'rollback_depth' must be a whole number from 0 to " +
+                      std::to_string(kMaxRollbackDepth));
+  }
+  return static_cast<std::size_t>(*depth);
+}
+
 }  // namespace
 
 ProjectConfig parse_project_config(std::string_view toml_text) {
@@ -182,6 +193,9 @@ ProjectConfig parse_project_config(std::string_view toml_text) {
   }
   if (const toml::node* auto_save = table.get("auto_save")) {
     config.auto_save = read_auto_save(*auto_save);
+  }
+  if (const toml::node* depth = table.get("rollback_depth")) {
+    config.rollback_depth = read_rollback_depth(*depth);
   }
   return config;
 }

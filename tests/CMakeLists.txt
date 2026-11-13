@@ -85,3 +85,6 @@ target_sources(vnmaki_unit_tests PRIVATE unit/saves_test.cpp)
 
 # Persistent store, seen text, skip and auto-advance (ticket 14).
 target_sources(vnmaki_unit_tests PRIVATE unit/playback_test.cpp)
+
+# Rollback: history, labels, menus, depth, the inputs (ticket 13).
+target_sources(vnmaki_unit_tests PRIVATE unit/rollback_test.cpp)
