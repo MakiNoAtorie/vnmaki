@@ -9,12 +9,37 @@ target_sources(
           image.hpp
           renderer.cpp
           renderer.hpp
-          shader.hpp)
+          shader.hpp
+          shader_compiler.hpp
+          shader_headers.hpp)
 
 # SDL GPU backend. Only files named sdl_* may include SDL (lint.no_sdl_outside_platform).
 find_package(SDL3 CONFIG REQUIRED COMPONENTS SDL3)
 target_sources(vnmaki_engine PRIVATE sdl_gpu_renderer.cpp sdl_gpu_renderer.hpp)
 target_link_libraries(vnmaki_engine PRIVATE SDL3::SDL3)
+
+# Run-time compiler for a game's shaders (sdl_shader_compiler.cpp). macOS has no vcpkg port of the
+# library (vcpkg.json), so there the compiler is a stub that throws.
+find_package(SDL3_shadercross CONFIG)
+set(vnmaki_runtime_shaders 0)
+if(TARGET SDL3_shadercross::SDL3_shadercross)
+  set(vnmaki_runtime_shaders 1)
+  target_link_libraries(vnmaki_engine PRIVATE SDL3_shadercross::SDL3_shadercross)
+endif()
+target_sources(vnmaki_engine PRIVATE sdl_shader_compiler.cpp)
+target_compile_definitions(vnmaki_engine PRIVATE VNMAKI_RUNTIME_SHADERS=${vnmaki_runtime_shaders})
+
+# The headers a game shader includes, embedded as text for the run-time compiler.
+foreach(header IN ITEMS vnmaki sprite_fragment)
+  set(header_path "${PROJECT_SOURCE_DIR}/shaders/${header}.hlsli")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${header_path}")
+  string(TOUPPER "${header}" header_upper)
+  file(READ "${header_path}" VNMAKI_${header_upper}_HLSLI)
+endforeach()
+configure_file(shader_headers.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/shader_headers.cpp" @ONLY)
+target_sources(vnmaki_engine PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/shader_headers.cpp")
+set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/shader_headers.cpp" TARGET_DIRECTORY
+                            vnmaki_engine PROPERTIES SKIP_LINTING ON)
 
 # The engine's HLSL shaders, compiled to SPIR-V, MSL and DXIL at build time and embedded.
 include(VnmakiShaders)

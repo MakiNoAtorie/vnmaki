@@ -19,7 +19,6 @@
     },
     {
       "name": "sdl3-shadercross",
-      "host": true,
       "platform": "!osx"
     },
     { "name": "freetype", "default-features": false },

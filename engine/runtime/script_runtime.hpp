@@ -203,6 +203,20 @@ struct ShowRequest {
   std::optional<std::string> layer{};
 };
 
+/// A uniform of a shader by name and its value.
+using UniformValue = std::pair<std::string, double>;
+
+/// `show(tag, { shader =, uniforms = })` or `layer(name, { shader =, uniforms = })`. Fields the
+/// script left out are empty.
+struct ShaderRequest {
+  /// A displayable's tag, or with `layer` the name of a layer.
+  std::string target{};
+  bool layer = false;
+  /// The shader's name; an empty name removes the shader. Without it the target keeps its shader.
+  std::optional<std::string> shader{};
+  std::vector<UniformValue> uniforms{};
+};
+
 /// `tween(tag, options)`, or the group `sequence{...}` or `parallel{...}` of tweens. Fields the
 /// script left out are empty. Positions are fractions of the virtual resolution, as for `show`;
 /// `anchor` and `crop` are fractions of the displayable.
@@ -224,6 +238,8 @@ struct TweenRequest {
   std::optional<double> crop_y{};
   std::optional<double> crop_width{};
   std::optional<double> crop_height{};
+  /// Shader uniforms by name, of the shader the displayable has.
+  std::vector<UniformValue> uniforms{};
   double duration = 0.5;  ///< Seconds.
   double delay = 0;       ///< Seconds.
   std::string ease{"linear"};
@@ -260,6 +276,18 @@ class SceneCommands {
   virtual void finish_tweens(std::string_view /*tag*/) {}
   /// True while a tween that ends changes `tag` (any tag when empty): what `wait` waits for.
   [[nodiscard]] virtual bool tweening(std::string_view /*tag*/) const { return false; }
+
+  /// `shader(name, { "uniform", ... })`: declares the game shader `shaders/<name>.frag.hlsl` and
+  /// the floats of its constant buffer, in order. Declaring a shader again with the same uniforms
+  /// does nothing. Returns why it cannot (a missing file, a compile error with its file and
+  /// line). The default does nothing, for implementations that cannot draw shaders.
+  [[nodiscard]] virtual std::string declare_shader(std::string_view /*name*/,
+                                                   std::span<const std::string> /*uniforms*/) {
+    return {};
+  }
+  /// Sets the shader and uniform values of a displayable or a layer. Returns why it cannot (an
+  /// unknown tag, shader or uniform).
+  [[nodiscard]] virtual std::string set_shader(const ShaderRequest& /*request*/) { return {}; }
 };
 
 /// What `show_screen`, `hide_screen` and `call_screen` need from the engine (engine/ui/ui_host.hpp

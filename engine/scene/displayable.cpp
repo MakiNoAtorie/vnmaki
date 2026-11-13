@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <numbers>
+#include <span>
 
 namespace vnmaki {
 
@@ -29,6 +30,13 @@ std::array<PointF, 4> place_corners(const DisplayProperties& properties, Size si
 
 }  // namespace
 
+DrawState Displayable::draw_state(TextureId texture) const {
+  return DrawState{
+      .texture = texture,
+      .shader = shader_,
+      .uniforms = std::as_bytes(std::span{properties_.uniforms}.first(uniform_floats_))};
+}
+
 void ImageDisplayable::set_texture(TextureId texture, Size size) {
   texture_ = texture;
   size_ = size;
@@ -42,7 +50,7 @@ void ImageDisplayable::draw(IRenderer& renderer) const {
   tint.a *= properties().alpha;
   renderer.draw(
       Quad{.corners = place_corners(properties(), size_), .uv = properties().crop, .tint = tint},
-      DrawState{.texture = texture_});
+      draw_state(texture_));
 }
 
 RectF ImageDisplayable::bounds() const {

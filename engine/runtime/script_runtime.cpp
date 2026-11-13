@@ -293,6 +293,7 @@ function show(tag, options)
   if layer then
     command = command .. " layer " .. layer
   end
+  command = command .. engine.shader_options("show", tag, false, options)
   engine.scene_command(command)
 end
 
@@ -584,6 +585,7 @@ local function tween_node(fname, tag, options, level)
   node.ease = typed(fname, options, "ease", "string", level)
   node.loop = typed(fname, options, "loop", "boolean", level)
   node.yoyo = typed(fname, options, "yoyo", "boolean", level)
+  node.uniforms = typed(fname, options, "uniforms", "table", level)
   number_table(fname, options, "anchor", { "x", "y" }, node, level + 1)
   number_table(fname, options, "crop", { "x", "y", "width", "height" }, node, level + 1)
   if type(options.scale) == "number" then
@@ -681,6 +683,64 @@ end
 function wait_all()
   require_label("wait_all")
   engine.wait("")
+end
+)lua" R"lua(
+-- Shaders (docs/SPEC.md section 9). shader(name, { "uniform", ... }) declares the game shader
+-- shaders/<name>.frag.hlsl and the floats of its constant buffer. `show` and `layer` set a shader
+-- and uniform values; `tween` changes the values.
+local function is_identifier(value)
+  return type(value) == "string" and value:match("^[%a_][%w_]*$") ~= nil
+end
+
+function shader(name, uniforms)
+  if not is_identifier(name) then
+    error("bad argument #1 to 'shader' (a name of letters, digits and _ expected)", 2)
+  end
+  if uniforms == nil then
+    uniforms = {}
+  elseif type(uniforms) ~= "table" then
+    bad_argument("shader", 2, "table or nil", uniforms)
+  end
+  for i = 1, #uniforms do
+    if not is_identifier(uniforms[i]) then
+      error(format("bad uniform #%d to 'shader' (a name of letters, digits and _ expected)", i), 2)
+    end
+  end
+  local problem = engine.declare_shader(name, uniforms)
+  if problem then
+    error(problem, 2)
+  end
+end
+
+-- The `shader` and `uniforms` options of `show` (a displayable) and `layer` (a layer). Returns the
+-- text that the scene command of the call gets. Errors reach the script that called `fname`.
+function engine.shader_options(fname, target, is_layer, options)
+  local shader_name, uniforms = options.shader, options.uniforms
+  if not is_layer and shader_name == nil and uniforms == nil then
+    return ""
+  end
+  if shader_name ~= nil and type(shader_name) ~= "string" then
+    error(format("bad option 'shader' to '%s' (string expected, got %s)", fname,
+                 type(shader_name)), 3)
+  end
+  if uniforms ~= nil and type(uniforms) ~= "table" then
+    error(format("bad option 'uniforms' to '%s' (table expected, got %s)", fname, type(uniforms)),
+          3)
+  end
+  local problem = engine.set_shader(target, is_layer, shader_name, uniforms)
+  if problem then
+    error(problem, 3)
+  end
+  return shader_name and (" shader " .. shader_name) or ""
+end
+
+function layer(name, options)
+  if type(name) ~= "string" then
+    bad_argument("layer", 1, "string", name)
+  end
+  options = options_argument("layer", options)
+  require_label("layer")
+  engine.scene_command("layer " .. name .. engine.shader_options("layer", name, true, options))
 end
 )lua" R"lua(
 
@@ -1069,6 +1129,19 @@ std::string read_screen_node(const sol::table& table, int depth, ScreenNodeDef& 
 // How deep a tween group may nest; the prelude allows far less.
 constexpr int kMaxTweenDepth = 64;
 
+// Reads a table of uniform names and numbers, in the order of the names. Returns why it cannot,
+// or an empty string.
+std::string read_uniforms(const sol::table& table, std::vector<UniformValue>& uniforms) {
+  for (const auto& [key, value] : table) {
+    if (key.get_type() != sol::type::string || value.get_type() != sol::type::number) {
+      return "uniforms must be a table of uniform names and numbers";
+    }
+    uniforms.emplace_back(key.as<std::string>(), value.as<double>());
+  }
+  std::ranges::sort(uniforms);
+  return {};
+}
+
 // Copies a tween node table built by the prelude into `request`. Returns why it cannot, or an
 // empty string.
 std::string read_tween(const sol::table& table, int depth, TweenRequest& request) {
@@ -1104,6 +1177,11 @@ std::string read_tween(const sol::table& table, int depth, TweenRequest& request
   request.crop_y = number("crop_y");
   request.crop_width = number("crop_width");
   request.crop_height = number("crop_height");
+  if (const auto uniforms = table.get<sol::optional<sol::table>>("uniforms")) {
+    if (std::string problem = read_uniforms(*uniforms, request.uniforms); !problem.empty()) {
+      return problem;
+    }
+  }
   request.duration = number("duration").value_or(request.duration);
   request.delay = number("delay").value_or(request.delay);
   request.ease = table.get_or<std::string>("ease", request.ease);
@@ -1516,6 +1594,40 @@ void ScriptRuntime::Impl::bind_engine() {
       problem = options_.scene->tween(request);
     }
     return problem_or_nil(state, problem);
+  };
+  engine_["declare_shader"] = [this, problem_or_nil](sol::this_state state,
+                                                     const std::string& name,
+                                                     const sol::table& uniforms) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    std::vector<std::string> names;
+    names.reserve(uniforms.size());
+    for (std::size_t i = 1; i <= uniforms.size(); ++i) {
+      names.push_back(uniforms.get<std::string>(i));
+    }
+    return problem_or_nil(state, options_.scene->declare_shader(name, names));
+  };
+  // Shader state changes during a replay too.
+  engine_["set_shader"] = [this, problem_or_nil](sol::this_state state, const std::string& target,
+                                                 bool layer,
+                                                 const sol::optional<std::string>& shader,
+                                                 const sol::optional<sol::table>& uniforms) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    ShaderRequest request{.target = target, .layer = layer};
+    if (shader) {
+      request.shader = *shader;
+    }
+    if (uniforms) {
+      if (std::string problem = read_uniforms(*uniforms, request.uniforms); !problem.empty()) {
+        return problem_or_nil(state, problem);
+      }
+    }
+    return problem_or_nil(state, options_.scene->set_shader(request));
   };
   engine_["wait"] = sol::yielding([this](sol::this_state state, const std::string& tag) {
     yield_at(state, WaitRequest{.tag = tag});

@@ -159,7 +159,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       }
       renderer->begin_frame();
       renderer->begin_pass({.target = canvas, .clear = rgba8(0, 0, 0)});
-      scene.draw(*renderer);
+      scene.draw(*renderer, canvas);
       renderer->begin_pass({.target = kScreen, .clear = rgba8(0, 0, 0)});
       renderer->draw(quad_from_rect(placed.rect), {.texture = canvas});
       if (line && placed.scale > 0) {

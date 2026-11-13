@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -19,6 +21,7 @@
 #include "engine/anim/timeline.hpp"
 #include "engine/core/byte_stream.hpp"
 #include "engine/render/image.hpp"
+#include "engine/render/shader_compiler.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki {
@@ -112,10 +115,20 @@ std::string quoted(std::string_view prefix, std::string_view name, std::string_v
 // layer, tag, image path (each a u32 length and the bytes) and the properties as 16 f32:
 // position, anchor, scale, rotation, alpha, tint, crop.
 // "tweens": Timeline::capture().
+// "shaders", only when a shader is set: a u32 count of displayables, then for each: tag, shader
+// name and the 16 f32 uniform values; then a u32 count of layers, then for each: u8 layer, shader
+// name and the 16 f32 uniform values.
 
 constexpr std::uint32_t kFormatVersion = 2;
 constexpr std::string_view kDisplayablesPart = "displayables";
 constexpr std::string_view kTweensPart = "tweens";
+constexpr std::string_view kShadersPart = "shaders";
+
+constexpr std::string_view kShaderDirectory = "shaders/";
+constexpr std::string_view kShaderExtension = ".frag.hlsl";
+// HLSL packs a constant buffer in rows of four floats.
+constexpr std::size_t kFloatsPerRow = 4;
+constexpr Color kTransparent{.r = 0, .g = 0, .b = 0, .a = 0};
 
 class Writer : public ByteWriter {
  public:
@@ -137,6 +150,11 @@ class Writer : public ByteWriter {
     f32(value.crop.y);
     f32(value.crop.width);
     f32(value.crop.height);
+  }
+  void uniforms(const std::array<float, kMaxUniforms>& values) {
+    for (const float value : values) {
+      f32(value);
+    }
   }
 };
 
@@ -167,6 +185,13 @@ class Reader : public ByteReader {
     value.crop.height = f32();
     return value;
   }
+  std::array<float, kMaxUniforms> uniforms() {
+    std::array<float, kMaxUniforms> values{};
+    for (float& value : values) {
+      value = f32();
+    }
+    return values;
+  }
 };
 
 // --- Tweens ----------------------------------------------------------------------------------
@@ -187,9 +212,14 @@ std::string out_of_time(std::string_view option) {
   return message;
 }
 
+// The index of the uniform `name` of the shader that `tag` has, if it has one.
+using UniformIndex =
+    std::function<std::optional<std::size_t>(std::string_view tag, std::string_view name)>;
+
 // Fills `node` from `request`, or returns why that cannot be done. Positions are fractions of the
 // virtual resolution.
-std::string tween_node(const TweenRequest& request, Size virtual_size, TweenNode& node) {
+std::string tween_node(const TweenRequest& request, Size virtual_size,
+                       const UniformIndex& uniform_index, TweenNode& node) {
   if (!(request.delay >= 0 && request.delay <= kMaxTweenSeconds)) {
     return out_of_time("delay");
   }
@@ -200,7 +230,8 @@ std::string tween_node(const TweenRequest& request, Size virtual_size, TweenNode
                                                               : TweenNode::Kind::kParallel;
     node.children.reserve(request.children.size());
     for (const TweenRequest& child : request.children) {
-      if (std::string problem = tween_node(child, virtual_size, node.children.emplace_back());
+      if (std::string problem =
+              tween_node(child, virtual_size, uniform_index, node.children.emplace_back());
           !problem.empty()) {
         return problem;
       }
@@ -251,6 +282,17 @@ std::string tween_node(const TweenRequest& request, Size virtual_size, TweenNode
     node.to.at(slot(Channel::kTintG)) = tint_channel(*request.tint, kGreenShift);
     node.to.at(slot(Channel::kTintB)) = tint_channel(*request.tint, 0);
   }
+  for (const auto& [name, value] : request.uniforms) {
+    const std::optional<std::size_t> index = uniform_index(request.tag, name);
+    if (!index.has_value()) {
+      return quoted("'", request.tag,
+                    "' has no uniform '" + name + "' (set a shader that declares it)");
+    }
+    if (!(std::abs(value) <= static_cast<double>(std::numeric_limits<float>::max()))) {
+      return out_of_range("uniforms." + name);
+    }
+    node.to.at(uniform_slot(*index)) = static_cast<float>(value);
+  }
   return problem;
 }
 
@@ -289,21 +331,56 @@ std::optional<Scene::Slot> Scene::locate(std::string_view tag) const {
 }
 
 Timeline::Lookup Scene::lookup() {
-  return [this](std::string_view tag) -> DisplayProperties* {
-    Displayable* shown = find(tag);
-    return shown != nullptr ? &shown->properties() : nullptr;
-  };
+  return [this](std::string_view tag) { return properties_in(layers_, layer_state_, tag); };
 }
 
-Displayable* Scene::find_in(Layers& layers, std::string_view tag) {
+DisplayProperties* Scene::properties_in(Layers& layers, LayerState& layer_state,
+                                        std::string_view tag) {
+  if (tag.starts_with(kLayerTagPrefix)) {
+    const std::optional<Layer> layer = layer_from_name(tag.substr(kLayerTagPrefix.size()));
+    return layer.has_value() ? &layer_state.at(static_cast<std::size_t>(*layer)) : nullptr;
+  }
   for (std::vector<Entry>& shown : layers) {
     for (Entry& entry : shown) {
       if (entry.tag == tag) {
-        return entry.displayable.get();
+        return &entry.displayable->properties();
       }
     }
   }
   return nullptr;
+}
+
+const DisplayProperties* Scene::properties_of(std::string_view tag) const {
+  if (tag.starts_with(kLayerTagPrefix)) {
+    const std::optional<Layer> layer = layer_from_name(tag.substr(kLayerTagPrefix.size()));
+    return layer.has_value() ? &layer_state_.at(static_cast<std::size_t>(*layer)) : nullptr;
+  }
+  const Displayable* shown = find(tag);
+  return shown != nullptr ? &shown->properties() : nullptr;
+}
+
+std::optional<std::size_t> Scene::uniform_index(std::string_view tag,
+                                                std::string_view name) const {
+  const DisplayProperties* properties = properties_of(tag);
+  const GameShader* shader = properties != nullptr ? shader_by_id(properties->shader) : nullptr;
+  if (shader == nullptr) {
+    return std::nullopt;
+  }
+  const std::vector<std::string>& names = shader->uniforms;
+  const auto found = std::ranges::find(names, name);
+  if (found == names.end()) {
+    return std::nullopt;
+  }
+  return static_cast<std::size_t>(found - names.begin());
+}
+
+std::uint32_t Scene::shader_id(std::string_view name) const {
+  const auto found = std::ranges::find(shaders_, name, &GameShader::name);
+  return found == shaders_.end() ? 0 : static_cast<std::uint32_t>(found - shaders_.begin()) + 1;
+}
+
+const Scene::GameShader* Scene::shader_by_id(std::uint32_t id) const {
+  return id >= 1 && id <= shaders_.size() ? &shaders_.at(id - 1) : nullptr;
 }
 
 std::string Scene::scene(std::string_view image) {
@@ -326,6 +403,9 @@ std::string Scene::show(const ShowRequest& request) {
   std::optional<std::string> path = resolve_image(*vfs_, request.image);
   if (!path.has_value()) {
     return missing_image(request.image);
+  }
+  if (request.tag.starts_with(kLayerTagPrefix)) {
+    return quoted("tags that start with '", kLayerTagPrefix, "' are reserved for layers");
   }
   const auto width = static_cast<float>(virtual_size_.width);
   const auto height = static_cast<float>(virtual_size_.height);
@@ -391,7 +471,11 @@ void Scene::hide(std::string_view tag) {
 
 std::string Scene::tween(const TweenRequest& request) {
   TweenNode node;
-  if (std::string problem = tween_node(request, virtual_size_, node); !problem.empty()) {
+  const UniformIndex uniform_index = [this](std::string_view tag, std::string_view name) {
+    return this->uniform_index(tag, name);
+  };
+  if (std::string problem = tween_node(request, virtual_size_, uniform_index, node);
+      !problem.empty()) {
     return problem;
   }
   return timeline_.start(node, lookup(), request.replaying);
@@ -401,13 +485,119 @@ void Scene::finish_tweens(std::string_view tag) { timeline_.finish(tag, lookup()
 
 bool Scene::tweening(std::string_view tag) const { return timeline_.busy(tag); }
 
+std::string Scene::declare_shader(std::string_view name, std::span<const std::string> uniforms) {
+  const std::string label = quoted("shader '", name, "'");
+  if (uniforms.size() > kMaxUniforms) {
+    return label + " declares more than " + std::to_string(kMaxUniforms) + " uniforms";
+  }
+  for (std::size_t i = 0; i < uniforms.size(); ++i) {
+    if (std::ranges::find(uniforms.first(i), uniforms[i]) != uniforms.first(i).end()) {
+      return label + " declares the uniform '" + uniforms[i] + "' twice";
+    }
+  }
+  GameShader shader{.name = std::string{name}, .uniforms = {uniforms.begin(), uniforms.end()}};
+  const std::uint32_t existing = shader_id(name);
+  if (existing != 0 && shaders_.at(existing - 1).uniforms == shader.uniforms) {
+    return {};
+  }
+
+  std::string path{kShaderDirectory};
+  path += name;
+  path += kShaderExtension;
+  const std::optional<std::vector<std::byte>> bytes = vfs_->read(path);
+  if (!bytes.has_value()) {
+    return label + " not found (no " + path + ")";
+  }
+  std::string source;
+  source.reserve(bytes->size());
+  for (const std::byte byte : *bytes) {
+    source.push_back(static_cast<char>(byte));
+  }
+  try {
+    shader.compiled = compile_fragment_shader(path, source);
+  } catch (const ShaderCompileError& error) {
+    return error.what();
+  }
+  if (shader.compiled.samplers > 1 || shader.compiled.uniform_buffers > 1) {
+    return path + ": a shader may use one texture and one constant buffer (see vnmaki.hlsli)";
+  }
+  if (!shader.uniforms.empty() && shader.compiled.uniform_buffers == 0) {
+    return path + ": the shader has uniforms but no constant buffer at register(b0, space3)";
+  }
+  if (shader.compiled.uniform_buffers == 1) {
+    const std::size_t count = std::max<std::size_t>(shader.uniforms.size(), 1);
+    shader.uniform_floats = (count + kFloatsPerRow - 1) / kFloatsPerRow * kFloatsPerRow;
+  }
+  if (existing == 0) {
+    shaders_.push_back(std::move(shader));
+  } else {
+    GameShader& old = shaders_.at(existing - 1);
+    if (old.gpu.has_value()) {
+      retired_shaders_.push_back(*old.gpu);
+    }
+    old = std::move(shader);
+  }
+  return {};
+}
+
+std::string Scene::set_shader(const ShaderRequest& request) {
+  DisplayProperties* properties = nullptr;
+  if (request.layer) {
+    const std::optional<Layer> layer = layer_from_name(request.target);
+    if (!layer.has_value()) {
+      return quoted("unknown layer '", request.target,
+                    "' (the layers are background, master, characters, 3d, overlay, ui and "
+                    "transient)");
+    }
+    properties = &layer_state_.at(static_cast<std::size_t>(*layer));
+  } else {
+    Displayable* shown = find(request.target);
+    if (shown == nullptr) {
+      return quoted("no displayable '", request.target, "' is shown");
+    }
+    properties = &shown->properties();
+  }
+
+  // The values are worked out first, so a bad name changes nothing.
+  std::uint32_t id = properties->shader;
+  if (request.shader.has_value()) {
+    id = shader_id(*request.shader);
+    if (id == 0 && !request.shader->empty()) {
+      return quoted("shader '", *request.shader,
+                    "' is not declared (use shader(name, { uniforms }) first)");
+    }
+  }
+  const GameShader* shader = shader_by_id(id);
+  std::array<float, kMaxUniforms> values{};
+  if (id == properties->shader) {
+    values = properties->uniforms;
+  }
+  for (const auto& [uniform, value] : request.uniforms) {
+    if (shader == nullptr) {
+      return "uniforms need a shader";
+    }
+    const std::vector<std::string>& names = shader->uniforms;
+    const auto found = std::ranges::find(names, uniform);
+    if (found == names.end()) {
+      return quoted("shader '", shader->name, "' has no uniform '" + uniform + "'");
+    }
+    if (!(std::abs(value) <= static_cast<double>(std::numeric_limits<float>::max()))) {
+      return out_of_range("uniforms." + uniform);
+    }
+    values.at(static_cast<std::size_t>(found - names.begin())) = static_cast<float>(value);
+  }
+  properties->shader = id;
+  properties->uniforms = values;
+  return {};
+}
+
 std::vector<std::byte> Scene::capture() const {
   // The properties as a replay would leave them (see the class comment), worked out on copies.
   Timeline settled = timeline_;
   std::map<std::string, DisplayProperties, std::less<>> resting;
   for (const std::string& tag : settled.tags()) {
-    if (const Displayable* shown = find(tag)) {
-      resting.emplace(tag, shown->properties());
+    if (const DisplayProperties* properties = properties_of(tag)) {
+      resting.emplace(tag, *properties);
     }
   }
   settled.settle([&resting](std::string_view tag) -> DisplayProperties* {
@@ -427,6 +617,7 @@ std::vector<std::byte> Scene::capture() const {
   }
   Writer displayables;
   displayables.u32(count);
+  std::vector<std::pair<std::string_view, const DisplayProperties*>> shaded;
   for (const Layer layer : kLayerOrder) {
     for (const Entry& entry : entries(layer)) {
       if (const ImageDisplayable* image = image_of(entry)) {
@@ -434,15 +625,47 @@ std::vector<std::byte> Scene::capture() const {
         displayables.string(entry.tag);
         displayables.string(image->path());
         const auto adjusted = resting.find(entry.tag);
-        displayables.properties(adjusted != resting.end() ? adjusted->second : image->properties());
+        const DisplayProperties& properties =
+            adjusted != resting.end() ? adjusted->second : image->properties();
+        displayables.properties(properties);
+        if (properties.shader != 0) {
+          shaded.emplace_back(entry.tag, &properties);
+        }
       }
     }
   }
+  std::vector<std::pair<Layer, const DisplayProperties*>> shaded_layers;
+  for (const Layer layer : kLayerOrder) {
+    const auto adjusted =
+        resting.find(std::string{kLayerTagPrefix} + std::string{layer_name(layer)});
+    const DisplayProperties& state = adjusted != resting.end()
+                                         ? adjusted->second
+                                         : layer_state_.at(static_cast<std::size_t>(layer));
+    if (state.shader != 0) {
+      shaded_layers.emplace_back(layer, &state);
+    }
+  }
 
-  const std::map<std::string, std::vector<std::byte>> parts{
+  std::map<std::string, std::vector<std::byte>> parts{
       {std::string{kDisplayablesPart}, displayables.take()},
       {std::string{kTweensPart}, timeline_.capture()},
   };
+  if (!shaded.empty() || !shaded_layers.empty()) {
+    Writer shaders;
+    shaders.u32(static_cast<std::uint32_t>(shaded.size()));
+    for (const auto& [tag, properties] : shaded) {
+      shaders.string(tag);
+      shaders.string(shader_by_id(properties->shader)->name);
+      shaders.uniforms(properties->uniforms);
+    }
+    shaders.u32(static_cast<std::uint32_t>(shaded_layers.size()));
+    for (const auto& [layer, state] : shaded_layers) {
+      shaders.u8(static_cast<std::uint8_t>(layer));
+      shaders.string(shader_by_id(state->shader)->name);
+      shaders.uniforms(state->uniforms);
+    }
+    parts.emplace(std::string{kShadersPart}, shaders.take());
+  }
   Writer writer;
   writer.u32(kFormatVersion);
   writer.u32(static_cast<std::uint32_t>(parts.size()));
@@ -474,8 +697,36 @@ Scene::Layers Scene::read_displayables(std::span<const std::byte> bytes) {
   return layers;
 }
 
+void Scene::read_shaders(std::span<const std::byte> bytes, Layers& layers,
+                         LayerState& layer_state) const {
+  Reader reader{bytes};
+  const std::uint32_t count = reader.u32();
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const std::string tag = reader.string();
+    const std::uint32_t id = shader_id(reader.string());
+    const std::array<float, kMaxUniforms> values = reader.uniforms();
+    if (DisplayProperties* properties = properties_in(layers, layer_state, tag)) {
+      properties->shader = id;
+      properties->uniforms = values;
+    }
+  }
+  const std::uint32_t layer_count = reader.u32();
+  for (std::uint32_t i = 0; i < layer_count; ++i) {
+    const std::size_t layer = reader.u8();
+    if (layer >= layer_state.size()) {
+      throw std::invalid_argument{"scene state: unknown layer"};
+    }
+    layer_state.at(layer).shader = shader_id(reader.string());
+    layer_state.at(layer).uniforms = reader.uniforms();
+  }
+  if (!reader.at_end()) {
+    throw std::invalid_argument{"scene state: unexpected data after the last shader"};
+  }
+}
+
 void Scene::restore(std::span<const std::byte> state) {
   Layers layers;
+  LayerState layer_state;
   Timeline tweens;
   // A snapshot taken without a scene has no bytes: nothing was shown.
   if (!state.empty()) {
@@ -499,14 +750,17 @@ void Scene::restore(std::span<const std::byte> state) {
     if (const auto found = parts.find(kDisplayablesPart); found != parts.end()) {
       layers = read_displayables(found->second);
     }
+    if (const auto found = parts.find(kShadersPart); found != parts.end()) {
+      read_shaders(found->second, layers, layer_state);
+    }
     if (const auto found = parts.find(kTweensPart); found != parts.end()) {
-      tweens.restore(found->second, [&layers](std::string_view tag) -> DisplayProperties* {
-        Displayable* shown = find_in(layers, tag);
-        return shown != nullptr ? &shown->properties() : nullptr;
+      tweens.restore(found->second, [&layers, &layer_state](std::string_view tag) {
+        return properties_in(layers, layer_state, tag);
       });
     }
   }
   layers_ = std::move(layers);
+  layer_state_ = std::move(layer_state);
   timeline_ = std::move(tweens);
 }
 
@@ -566,12 +820,68 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
       image->set_texture(found->second.id, found->second.size);
     }
   }
+  prepare_shaders(renderer);
 }
 
-void Scene::draw(IRenderer& renderer) const {
+void Scene::prepare_shaders(IRenderer& renderer) {
+  for (const ShaderId retired : retired_shaders_) {
+    renderer.destroy_shader(retired);
+  }
+  retired_shaders_.clear();
+  // The declared shader of that name with its GPU shader made, or null when it is not declared.
+  const auto gpu_shader = [this, &renderer](std::uint32_t id) -> const GameShader* {
+    if (shader_by_id(id) == nullptr) {
+      return nullptr;
+    }
+    GameShader& shader = shaders_.at(id - 1);
+    if (!shader.gpu.has_value()) {
+      shader.gpu = renderer.create_shader(shader.compiled.bytecode());
+    }
+    return &shader;
+  };
+  for (std::vector<Entry>& shown : layers_) {
+    for (Entry& entry : shown) {
+      const GameShader* shader = gpu_shader(entry.displayable->properties().shader);
+      entry.displayable->set_shader(shader != nullptr ? *shader->gpu : kSpriteShader,
+                                    shader != nullptr ? shader->uniform_floats : 0);
+    }
+  }
   for (const Layer layer : kLayerOrder) {
+    const auto index = static_cast<std::size_t>(layer);
+    if (!entries(layer).empty() && gpu_shader(layer_state_.at(index).shader) != nullptr &&
+        layer_targets_.at(index) == TextureId{}) {
+      layer_targets_.at(index) =
+          renderer.create_render_target(virtual_size_, TextureFilter::kNearest);
+    }
+  }
+}
+
+void Scene::draw(IRenderer& renderer, TextureId target) const {
+  const RectF whole{.x = 0,
+                    .y = 0,
+                    .width = static_cast<float>(virtual_size_.width),
+                    .height = static_cast<float>(virtual_size_.height)};
+  for (const Layer layer : kLayerOrder) {
+    const auto index = static_cast<std::size_t>(layer);
+    const DisplayProperties& state = layer_state_.at(index);
+    const GameShader* shader = shader_by_id(state.shader);
+    const TextureId buffer = layer_targets_.at(index);
+    // A layer with a shader draws into its own target, which then draws with the shader.
+    const bool shaded = shader != nullptr && shader->gpu.has_value() && buffer != TextureId{} &&
+                        !entries(layer).empty();
+    if (shaded) {
+      renderer.begin_pass({.target = buffer, .clear = kTransparent});
+    }
     for (const Entry& entry : entries(layer)) {
       entry.displayable->draw(renderer);
+    }
+    if (shaded) {
+      renderer.begin_pass({.target = target});
+      renderer.draw(quad_from_rect(whole),
+                    DrawState{.texture = buffer,
+                              .shader = *shader->gpu,
+                              .uniforms = std::as_bytes(
+                                  std::span{state.uniforms}.first(shader->uniform_floats))});
     }
   }
 }

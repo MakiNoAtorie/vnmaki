@@ -1,0 +1,21 @@
+// Generated from shaders/*.hlsli by engine/render/CMakeLists.txt. Do not edit.
+
+#include "engine/render/shader_headers.hpp"
+
+#include <string_view>
+
+// NOLINTBEGIN
+namespace vnmaki {
+
+std::string_view hlsl_header(std::string_view name) {
+  if (name == "vnmaki.hlsli") {
+    return R"hlsl(@VNMAKI_VNMAKI_HLSLI@)hlsl";
+  }
+  if (name == "sprite_fragment.hlsli") {
+    return R"hlsl(@VNMAKI_SPRITE_FRAGMENT_HLSLI@)hlsl";
+  }
+  return {};
+}
+
+}  // namespace vnmaki
+// NOLINTEND

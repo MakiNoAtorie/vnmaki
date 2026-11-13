@@ -3,6 +3,9 @@
 // The displayable interface (docs/SPEC.md section 6): everything visible implements it, so the
 // scene and the animation system treat images, text, video and the rest the same way.
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -10,6 +13,9 @@
 #include "engine/render/renderer.hpp"
 
 namespace vnmaki {
+
+/// The most uniforms a game shader may declare.
+inline constexpr std::size_t kMaxUniforms = 16;
 
 /// The properties every displayable has. The animation system changes them over time; they are
 /// plain values so a tween can read, interpolate and write each one.
@@ -29,6 +35,10 @@ struct DisplayProperties {
   /// The part of the displayable to show, as fractions of its full size. The shown part is what
   /// `anchor`, `scale` and bounds() measure.
   RectF crop = kWholeTexture;
+  /// The game shader that draws the displayable (the number Scene gives it, from 1), or 0 for the
+  /// default one, and the values of its uniforms in the order `shader(name, {...})` declared them.
+  std::uint32_t shader = 0;
+  std::array<float, kMaxUniforms> uniforms{};
 
   bool operator==(const DisplayProperties&) const = default;
 };
@@ -55,8 +65,22 @@ class Displayable {
   /// applied.
   [[nodiscard]] virtual RectF bounds() const = 0;
 
+  /// Sets the GPU shader that draw() uses. `uniform_floats` of the uniform values go to its
+  /// constant buffer (0 for a shader without one). Scene::prepare() calls it.
+  void set_shader(ShaderId shader, std::size_t uniform_floats) {
+    shader_ = shader;
+    uniform_floats_ = uniform_floats;
+  }
+
+ protected:
+  /// What a draw of `texture` needs: the shader and its uniform values as the properties have
+  /// them now.
+  [[nodiscard]] DrawState draw_state(TextureId texture) const;
+
  private:
   DisplayProperties properties_{};
+  ShaderId shader_{};
+  std::size_t uniform_floats_ = 0;
 };
 
 /// One image file. It draws nothing and has an empty size until set_texture() gives it the
