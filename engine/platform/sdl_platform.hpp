@@ -61,6 +61,8 @@ class SdlPlatform final : public Platform {
   [[nodiscard]] WindowMetrics window_metrics() const override;
   std::optional<InputEvent> poll_event() override;
   void set_text_input(bool enabled) override;
+  void set_fullscreen(bool fullscreen) override;
+  void set_window_opacity(float opacity) override;
 
   /// The SDL window, for the SDL GPU renderer backend. Never null.
   [[nodiscard]] SDL_Window* sdl_window() const;

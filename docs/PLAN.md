@@ -92,12 +92,12 @@ Do not do these tasks in parallel, because they change the same files:
 
 ### 18: Preferences and default screens (SPEC §15, §17)
 
-- [ ] `bind(table, key)` connects a node to `store`, `persistent` or `prefs` in two directions.
-- [ ] Nodes: toggle, slider, bar, grid.
-- [ ] Preferences in `persistent`: text speed, auto delay, volumes, fullscreen, skip mode, window opacity.
-- [ ] Screens: title, say, choice, save, load, preferences, backlog, quick menu, confirm. NVL and gallery are placeholders.
-- [ ] Mouse, keyboard and gamepad operate all screens. A game can replace a Lua screen by name.
-- [ ] Headless tests: save and load through the screens, a preference change.
+- [x] `bind(table, key)` connects a node to `store`, `persistent` or `prefs` in two directions.
+- [x] Nodes: toggle, slider, bar, grid.
+- [x] Preferences in `persistent`: text speed, auto delay, volumes, fullscreen, skip mode, window opacity. Also `reduce_motion` for task 23.
+- [x] Screens: title, say, choice, save, load, preferences, backlog, quick menu, confirm. NVL and gallery are placeholders.
+- [x] Mouse, keyboard and gamepad operate all screens. A game can replace a Lua screen by name.
+- [x] Headless tests: save and load through the screens, a preference change.
 
 ### 19: `vnmaki new` and template (SPEC §19)
 

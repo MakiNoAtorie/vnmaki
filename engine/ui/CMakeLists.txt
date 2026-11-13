@@ -6,6 +6,10 @@ target_sources(
           backlog_screen.hpp
           playback_indicator.cpp
           playback_indicator.hpp
+          preferences.cpp
+          preferences.hpp
+          screen_actions.cpp
+          screen_actions.hpp
           screen_presenter.cpp
           screen_presenter.hpp
           ui_build.cpp

@@ -39,6 +39,10 @@ class Playback {
 
   void set_skip(SkipMode mode) { skip_ = mode; }
   void set_auto(bool on);
+  /// The player's auto delay preference: the seconds auto-advance waits whatever the length.
+  void set_auto_base_delay(double seconds) { options_.auto_base_delay = seconds; }
+  /// The skip key or button: turns skip off if it is on, else on in `mode`.
+  void toggle_skip(SkipMode mode) { skip_ = skip_ == SkipMode::kOff ? mode : SkipMode::kOff; }
   [[nodiscard]] SkipMode skip() const { return skip_; }
   [[nodiscard]] bool automatic() const { return auto_; }
 

@@ -36,6 +36,13 @@ class Platform {
   /// Turns TextInputEvents on or off (and, on some systems, the on-screen keyboard or input
   /// method). Off by default; turn it on only while a text field has focus.
   virtual void set_text_input(bool enabled) = 0;
+
+  /// Switches the window between fullscreen (on the desktop it is on) and windowed.
+  virtual void set_fullscreen(bool fullscreen) = 0;
+
+  /// Makes the whole window translucent: 1 is opaque, 0 invisible. A system that cannot do it
+  /// ignores the call.
+  virtual void set_window_opacity(float opacity) = 0;
 };
 
 /// A Platform with no window: nothing is drawn and the OS is never touched. Tests and CI inject
@@ -48,6 +55,12 @@ class HeadlessPlatform final : public Platform {
   [[nodiscard]] WindowMetrics window_metrics() const override;
   std::optional<InputEvent> poll_event() override;
   void set_text_input(bool enabled) override;
+  void set_fullscreen(bool fullscreen) override { fullscreen_ = fullscreen; }
+  void set_window_opacity(float opacity) override { opacity_ = opacity; }
+
+  /// What the last set_fullscreen() and set_window_opacity() asked for (the defaults before).
+  [[nodiscard]] bool fullscreen() const { return fullscreen_; }
+  [[nodiscard]] float window_opacity() const { return opacity_; }
 
   /// Queues an event for poll_event(). A WindowResizedEvent also resizes the simulated window.
   void push_event(InputEvent event);
@@ -58,6 +71,8 @@ class HeadlessPlatform final : public Platform {
   WindowMetrics metrics_;
   std::deque<InputEvent> events_;
   bool text_input_ = false;
+  bool fullscreen_ = false;
+  float opacity_ = 1;
 };
 
 }  // namespace vnmaki

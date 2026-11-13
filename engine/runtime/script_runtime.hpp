@@ -67,8 +67,9 @@ struct MenuRequest {
 using ScreenValue = std::variant<std::monostate, bool, std::int64_t, double, std::string>;
 
 /// One node of a screen tree, as the scripts wrote it (docs/SPEC.md section 15). `kind` is
-/// `box`, `hbox`, `vbox`, `text`, `image` or `button`; `text` is the content a node was given
-/// first (a caption, an image name); `props` are the named options. engine/ui/ interprets them.
+/// `box`, `hbox`, `vbox`, `grid`, `text`, `image`, `button`, `toggle`, `slider` or `bar`; `text` is
+/// the content a node was given first (a caption, an image name); `props` are the named options.
+/// engine/ui/ interprets them.
 struct ScreenNodeDef {
   std::string kind{};
   std::string text{};
@@ -576,6 +577,10 @@ struct ScriptRuntimeOptions {
   /// calls only reach the observer. Must outlive the runtime. An Audio goes here, and in
   /// `scene_state` (inside a CompositeSceneState when there is a Scene too).
   AudioCommands* audio = nullptr;
+  /// The virtual resolution, as the read-only global `canvas` (`canvas.width`, `canvas.height`)
+  /// that screens size themselves by.
+  int canvas_width = 1920;
+  int canvas_height = 1080;
   /// The first state of the script RNG (`rand`, `math.random`). The same seed,
   /// scripts and inputs always give the same story.
   std::uint64_t random_seed = kDefaultRandomSeed;
@@ -628,6 +633,18 @@ struct ScriptRuntimeOptions {
 /// Playback: `skip("seen")`, `skip("all")` and `skip(false)` (also `"off"`) set the skip mode;
 /// `auto(true)` and `auto(false)` turn auto-advance on and off. They queue a PlaybackRequest.
 /// `character { auto_multiplier = }` scales the auto-advance time of that character's lines.
+///
+/// Bindings and preferences: `bind(table, key)` is a node option that follows `store`,
+/// `persistent` or `prefs` and writes it back (`toggle`, `slider`, `bar`; `grid { columns = n }`
+/// lays children out in rows). `prefs` is `persistent.prefs` with defaults: text_speed (characters
+/// a second, 40), auto_delay (seconds, 1), volume_music, volume_sound, volume_voice,
+/// volume_ambient and volume_ui (0 to 1, 1), fullscreen (false), skip_unseen (false: the skip
+/// key stops at unread text), window_opacity (0.3 to 1, 1) and reduce_motion (false). The engine
+/// applies them.
+///
+/// `load_scripts()` loads the engine's default screens first (engine/runtime/default_screens.cpp:
+/// title, say, choice, save, load, preferences, quick_menu, confirm, nvl, gallery), so a game
+/// replaces one by defining a screen of that name.
 ///
 /// `persistent` is a second table like `store`, but for data that outlives a playthrough (seen
 /// text, unlocks, preferences). Snapshots, saves, rollback and load never change it; the host
@@ -728,6 +745,20 @@ class ScriptRuntime {
 
   /// The `skip` and `auto` requests scripts made since the last call, in order.
   [[nodiscard]] std::vector<PlaybackRequest> take_playback_requests();
+  /// The boolean, number or string in field `key` of `table` ("store", "persistent" or "prefs");
+  /// nil (std::monostate) for anything else. `prefs` reads give the default of a key the player
+  /// never set.
+  [[nodiscard]] ScreenValue binding(std::string_view table, std::string_view key) const;
+  /// Writes `value` (nil removes the key) to field `key` of `table`. Returns why it cannot (an
+  /// unknown table, a value of the wrong type for a pref), or an empty string. A write to `store`
+  /// is not in the input log, so a rollback or a load takes it back like any other change.
+  [[nodiscard]] std::string set_binding(std::string_view table, std::string_view key,
+                                        ScreenValue value);
+  /// Builds screen `name` for the arguments `args` (the table the screen function gets: `props`
+  /// are its named fields, `children` its list, each a table of the same form) into `tree`.
+  /// Returns why it cannot, or an empty string. Runs the screen's Lua function.
+  [[nodiscard]] std::string build_screen(std::string_view name, const ScreenNodeDef& args,
+                                         ScreenNodeDef& tree);
   /// A copy of `persistent` as it is now. Throws ScriptError like store_snapshot().
   [[nodiscard]] StoreSnapshot persistent_snapshot() const;
   /// Makes `persistent` equal to `snapshot`. Call it before load_scripts() so that scripts that
