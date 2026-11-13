@@ -308,3 +308,14 @@ vnmaki_add_fixture_generator(
   DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
+
+# Plugins (task 48): version ranges, Lua plugins, the C++ plugin context and the example plugin
+# of plugins/example/. The generator writes the projects of the CLI tests and the project and
+# golden of the GPU test (tests/render/plugin_render_test.cpp).
+target_sources(vnmaki_unit_tests PRIVATE unit/plugin_test.cpp)
+target_link_libraries(vnmaki_unit_tests PRIVATE vnmaki_plugin_example)
+vnmaki_add_fixture_generator(
+  plugin SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/plugin_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)

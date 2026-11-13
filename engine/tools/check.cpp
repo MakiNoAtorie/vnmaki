@@ -117,7 +117,8 @@ bool show_names_a_file(const ScanCall& call, const std::set<std::string>& define
   const auto is_option = [&call](std::string_view key) {
     return std::ranges::find(call.option_keys, key) != call.option_keys.end();
   };
-  return !is_option("image") && !is_option("movie") && !defined.contains(*call.arguments.front());
+  return !is_option("image") && !is_option("movie") && !is_option("displayable") &&
+         !defined.contains(*call.arguments.front());
 }
 
 void add_asset_finding(std::vector<Finding>& findings, const Vfs& vfs, const ScriptSource& script,

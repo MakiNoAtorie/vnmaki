@@ -16,6 +16,9 @@
 //   backlog_length = 100          # how many lines the backlog shows at most, 0 to 10000; it
 //                                 # cannot hold more than rollback_depth; default 100
 //
+//   plugins = ["flash"]           # the Lua plugins (plugins/<name>/, docs/plugins.md), loaded in
+//                                 # this order before scripts/; default []
+//
 //   [fonts.fallback]              # for a language: the fonts (virtual paths)
 //   ja = ["fonts/jp.otf"]         # that supply characters the text's font
 //                                 # lacks, in the order to try; default none
@@ -29,7 +32,7 @@
 //   [styles]                      # for a language: the style override file, run after the
 //   ja = "styles/ja_look.lua"     # game's styles; default styles/<language>.lua if it exists
 //
-// Other keys (platforms, plugins, build options) belong to later features and
+// Other keys (platforms, build options) belong to later features and
 // are ignored for now.
 
 #include <cstddef>
@@ -78,6 +81,8 @@ struct ProjectConfig {
   std::vector<std::string> gallery{};
   std::size_t rollback_depth = kDefaultRollbackDepth;
   std::size_t backlog_length = kDefaultBacklogLength;
+  /// The Lua plugins (plugins/<name>/) that load before `scripts/`, in this order.
+  std::vector<std::string> plugins{};
 };
 
 /// project.toml is missing, is not valid TOML, or breaks the schema above.

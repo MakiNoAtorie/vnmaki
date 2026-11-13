@@ -22,7 +22,11 @@
 #include <sol/sol.hpp>
 
 #include "engine/core/byte_stream.hpp"
+#include "engine/core/version.hpp"
+#include "engine/plugin/lua_plugin.hpp"
+#include "engine/plugin/plugin.hpp"
 #include "engine/runtime/default_screens.hpp"
+#include "engine/runtime/project_config.hpp"
 #include "engine/text/markup.hpp"
 #include "engine/vfs/vfs.hpp"
 
@@ -301,10 +305,13 @@ function show(tag, options)
   local layer = option("show", options, "layer", "string")
   local movie = option("show", options, "movie", "string")
   local loop = option("show", options, "loop", "boolean")
+  local displayable = option("show", options, "displayable", "string")
+  local params = option("show", options, "params", "table")
   local attributes, attribute_text = layered_attributes(options, image or tag)
   require_label("show")
   local with = begin_with("show", options, 3)
-  local problem = engine.show(tag, image or tag, at, x, y, layer, movie, loop, attributes)
+  local problem = engine.show(tag, image or tag, at, x, y, layer, movie, loop, displayable, params,
+                              attributes)
   if problem then
     error(problem, 2)
   end
@@ -327,6 +334,9 @@ function show(tag, options)
   end
   if movie then
     command = command .. " movie " .. movie .. (loop and " loop" or "")
+  end
+  if displayable then
+    command = command .. " displayable " .. displayable
   end
   command = command .. engine.shader_options("show", tag, false, options)
   engine.scene_command(command .. attribute_text)
@@ -1077,18 +1087,51 @@ end
 -- stays, so a replay counts the same steps.
 local reduced_transition_seconds = 0.2
 
+-- define_transition(name, base, options) makes `name` a transition that runs the transition `base`
+-- (a built-in one, or a game shader that declares "progress") with these options as its defaults.
+-- A Lua plugin (docs/plugins.md) adds transitions with it.
+local transition_aliases = {}
+function define_transition(name, base, options)
+  if type(name) ~= "string" then
+    bad_argument("define_transition", 1, "string", name)
+  end
+  if type(base) ~= "string" then
+    bad_argument("define_transition", 2, "string", base)
+  end
+  if transition_aliases[base] ~= nil then
+    error(format("bad argument #2 to 'define_transition' ('%s' is itself defined by define_transition)",
+                 base), 2)
+  end
+  transition_aliases[name] = { base = base, options = options_argument("define_transition", options) }
+end
+
 -- `level` is the error() level that reaches the script from this function. Returns the name of
 -- the transition that runs.
 local function start_transition(fname, name, options, level)
+  local given = name
+  local alias = transition_aliases[name]
+  if alias then
+    local merged = {}
+    for key, value in pairs(alias.options) do
+      merged[key] = value
+    end
+    for key, value in pairs(options) do
+      if type(key) == "string" then
+        merged[key] = value
+      end
+    end
+    name, options = alias.base, merged
+  end
   local spec = transition_request(fname, options, level + 1)
   if engine.reduce_motion() then
-    name, spec = "dissolve", { duration = math.min(spec.duration or 0.5, reduced_transition_seconds) }
+    name, given = "dissolve", "dissolve"
+    spec = { duration = math.min(spec.duration or 0.5, reduced_transition_seconds) }
   end
   local problem = engine.transition(name, spec)
   if problem then
     error(problem, level)
   end
-  return name
+  return given
 end
 
 local function finish_transition(name)
@@ -1400,7 +1443,8 @@ end
 local pairs, ipairs, sort = pairs, ipairs, table.sort
 local layered_defs = {}
 local show_options = { image = true, at = true, x = true, y = true, layer = true,
-                       shader = true, uniforms = true, movie = true, loop = true, with = true }
+                       shader = true, uniforms = true, movie = true, loop = true, with = true,
+                       displayable = true, params = true }
 
 -- `level` is the error() level of the caller of this function.
 local function layered_option(key, expected, value, level)
@@ -1958,6 +2002,18 @@ function bridge.build(name, args)
   return screen_root(nil, name, args)
 end
 )lua" R"lua(
+-- A function of a C++ plugin (engine/plugin/plugin.hpp): the error it throws is a script error at
+-- the line of the call.
+function engine.plugin_function(name, raw)
+  return function(...)
+    local ok, result = pcall(raw, ...)
+    if not ok then
+      error(format("%s: %s", name, tostring(result)), 2)
+    end
+    return result
+  end
+end
+
 local reserved = { store = store, persistent = persistent, prefs = prefs, canvas = canvas }
 do
   local warned = {}
@@ -1968,7 +2024,7 @@ do
         error(format("'%s' is owned by the engine and cannot be replaced (change its fields)",
                      tostring(key)), 2)
       end
-      if dev_mode and not warned[key] then
+      if dev_mode and not warned[key] and not engine.plugin_loading() then
         warned[key] = true
         engine.warn(format("%s: new global '%s' (keep game state in store, or use a local)",
                            where(2), tostring(key)))
@@ -2363,6 +2419,51 @@ std::vector<std::pair<std::string, std::string>> read_pairs(const sol::table& ta
   return pairs;
 }
 
+// A Lua value as a PluginValue. Throws PluginError for a table, a function and the rest.
+PluginValue read_plugin_value(const sol::object& value) {
+  switch (value.get_type()) {
+    case sol::type::lua_nil:
+    case sol::type::none:
+      return std::monostate{};
+    case sol::type::boolean:
+      return value.as<bool>();
+    case sol::type::number:
+      if (value.is<std::int64_t>()) {
+        return value.as<std::int64_t>();
+      }
+      return value.as<double>();
+    case sol::type::string:
+      return value.as<std::string>();
+    default:
+      throw PluginError{"only nil, booleans, numbers and strings can be given to a plugin"};
+  }
+}
+
+sol::object push_plugin_value(sol::this_state state, const PluginValue& value) {
+  return std::visit(
+      [&state](const auto& held) -> sol::object {
+        if constexpr (std::is_same_v<std::decay_t<decltype(held)>, std::monostate>) {
+          return sol::make_object(state, sol::lua_nil);
+        } else {
+          return sol::make_object(state, held);
+        }
+      },
+      value);
+}
+
+// The `params` table of `show(tag, { displayable = type, params = { ... } })`, sorted by name.
+PluginParams read_plugin_params(const sol::table& table) {
+  PluginParams params;
+  for (const auto& [key, value] : table) {
+    if (key.get_type() != sol::type::string) {
+      throw PluginError{"the keys of 'params' must be strings"};
+    }
+    params.emplace_back(key.as<std::string>(), read_plugin_value(value));
+  }
+  std::ranges::sort(params, {}, &PluginParams::value_type::first);
+  return params;
+}
+
 // Copies the definition table that the prelude's `layered` built into `request`.
 void read_layered(const sol::table& table, LayeredRequest& request) {
   request.crossfade = table.get_or("crossfade", 0.0);
@@ -2455,6 +2556,8 @@ class ScriptRuntime::Impl {
   void load_script(std::string_view path);
   void run_chunk(std::string_view source, const std::string& chunk_name);
   void load_scripts();
+  // The functions of the C++ plugins, as globals.
+  void install_plugin_functions();
   [[nodiscard]] bool has_label(std::string_view name) const { return labels_.contains(name); }
   [[nodiscard]] std::vector<std::string> label_names() const {
     std::vector<std::string> names;
@@ -2658,6 +2761,7 @@ class ScriptRuntime::Impl {
   std::vector<RollbackStep> held_rollback_;
   std::optional<std::variant<BlockingRequest, Transfer>> pending_;
   bool started_ = false;
+  bool plugin_loading_ = false;  // a Lua plugin's script runs: its new globals are API
   bool scripts_loaded_ = false;
   std::string language_style_path_;
   bool language_vertical_ = false;
@@ -2927,7 +3031,10 @@ void ScriptRuntime::Impl::bind_engine() {
                         const sol::optional<std::string>& at, sol::optional<double> x,
                         sol::optional<double> y, const sol::optional<std::string>& layer,
                         const sol::optional<std::string>& movie, sol::optional<bool> loop,
-                        const sol::optional<sol::table>& attributes) {
+                        const sol::optional<std::string>& displayable,
+                        // An absent table takes no place in the arguments of sol2, so the one that
+                        // may be nil comes last, and `params` is an object.
+                        const sol::object& params, const sol::optional<sol::table>& attributes) {
     if (options_.scene == nullptr) {
       return problem_or_nil(state, {});
     }
@@ -2935,6 +3042,17 @@ void ScriptRuntime::Impl::bind_engine() {
     if (movie) {
       request.movie = *movie;
       request.loop = loop.value_or(false);
+    }
+    if (displayable) {
+      request.displayable = *displayable;
+      if (params.get_type() == sol::type::table) {
+        const MemoryLimitScope unlimited{allocator_, false};
+        try {
+          request.plugin_params = read_plugin_params(params.as<sol::table>());
+        } catch (const PluginError& error) {
+          return problem_or_nil(state, error.what());
+        }
+      }
     }
     if (attributes) {
       const MemoryLimitScope unlimited{allocator_, false};
@@ -3216,6 +3334,7 @@ void ScriptRuntime::Impl::bind_engine() {
       observer_->on_print(text);
     }
   };
+  engine_["plugin_loading"] = [this] { return plugin_loading_; };
   engine_["warn"] = [this](const std::string& message) {
     if (!replaying_) {
       observer_->on_warning(message);
@@ -3548,9 +3667,62 @@ void ScriptRuntime::Impl::run_chunk(std::string_view source, const std::string& 
   }
 }
 
+void ScriptRuntime::Impl::install_plugin_functions() {
+  const PluginContext& plugins =
+      options_.plugins != nullptr ? *options_.plugins : PluginContext::linked();
+  sol::table globals = lua_.globals();
+  const sol::protected_function wrap = engine_["plugin_function"];
+  for (const auto& entry : plugins.functions()) {
+    const std::string& name = entry.first;
+    if (globals.raw_get<sol::object>(name).get_type() != sol::type::lua_nil) {
+      throw ScriptError("plugin function '" + name + "' would replace a global of the engine");
+    }
+    const PluginFunction* function = &entry.second;
+    const sol::object raw = sol::make_object(
+        lua_.lua_state(),
+        [function](sol::this_state state, sol::variadic_args args) -> sol::object {
+          std::vector<PluginValue> values;
+          values.reserve(args.size());
+          for (const auto& arg : args) {
+            values.push_back(read_plugin_value(sol::object{arg}));
+          }
+          return push_plugin_value(state, (*function)(values));
+        });
+    const sol::protected_function_result wrapped = wrap(name, raw);
+    globals.raw_set(name, wrapped.get<sol::object>());
+  }
+}
+
 void ScriptRuntime::Impl::load_scripts() {
   if (!started_) {
     run_chunk(default_screens_source(), "=engine/screens.lua");  // a game's screens come later
+    install_plugin_functions();
+    // The Lua plugins that project.toml lists run before the scripts of the game. A project.toml
+    // that does not parse is reported by whoever loads the config, not here.
+    std::vector<std::string> plugin_names;
+    if (vfs_->exists(kProjectConfigPath)) {
+      try {
+        plugin_names = load_project_config(*vfs_).plugins;
+      } catch (const ProjectConfigError&) {
+        plugin_names.clear();
+      }
+    }
+    std::vector<std::string> plugin_scripts;
+    try {
+      plugin_scripts = lua_plugin_scripts(*vfs_, plugin_names, engine_version());
+    } catch (const PluginError& error) {
+      throw ScriptError(error.what());
+    }
+    plugin_loading_ = true;
+    try {
+      for (const std::string& path : plugin_scripts) {
+        load_script(path);
+      }
+    } catch (...) {
+      plugin_loading_ = false;
+      throw;
+    }
+    plugin_loading_ = false;
   }
   std::vector<std::string> paths;
   std::vector<std::string> directories{"scripts"};

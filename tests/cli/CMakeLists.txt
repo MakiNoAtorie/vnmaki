@@ -773,6 +773,40 @@ vnmaki_add_cli_test(
   NO_STDOUT
   STDERR_REGEX "no runner at .*no_such_runner.exe")
 
+# Plugins (task 48), on the projects tools/generators/plugin_fixtures.py writes. lua_ok has the
+# Lua plugin "flash": a transition and an API function. lua_mismatch has one for a later engine.
+set(vnmaki_plugin_fixtures "${VNMAKI_FIXTURES_DIR}/plugin")
+vnmaki_add_cli_stdout_file_test(
+  plugin_lua_adds_a_transition_and_a_function
+  ARGS run "${vnmaki_plugin_fixtures}/lua_ok" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_plugin_fixtures}/lua_ok.txt")
+vnmaki_add_cli_test(
+  plugin_version_mismatch_stops_the_start
+  ARGS run "${vnmaki_plugin_fixtures}/lua_mismatch" --headless
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "vnmaki: plugin 'flash' needs vnmaki >=9.0.0, but this is vnmaki ${PROJECT_VERSION} \\(plugins/flash/plugin.toml\\)")
+add_test(
+  NAME cli.plugin_lua_works_from_packs
+  COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> -DGAME=${vnmaki_plugin_fixtures}/lua_ok
+          -DWORK=${CMAKE_CURRENT_BINARY_DIR}/work/plugin_packs -P
+          "${CMAKE_CURRENT_SOURCE_DIR}/run_plugin_packs.cmake")
+set_tests_properties(cli.plugin_lua_adds_a_transition_and_a_function
+                     cli.plugin_version_mismatch_stops_the_start PROPERTIES TIMEOUT 60)
+set_tests_properties(cli.plugin_lua_works_from_packs PROPERTIES TIMEOUT 180)
+# A runner built with -DVNMAKI_PLUGINS=example has the C++ plugin; one without it has no such
+# functions, so these run only there.
+if("example" IN_LIST VNMAKI_PLUGINS)
+  vnmaki_add_cli_stdout_file_test(
+    plugin_cpp_adds_functions_a_displayable_and_a_format
+    ARGS run "${vnmaki_plugin_fixtures}/cpp" --headless
+    EXIT 0
+    STDOUT_FILE "${vnmaki_plugin_fixtures}/cpp.txt")
+  set_tests_properties(cli.plugin_cpp_adds_functions_a_displayable_and_a_format PROPERTIES TIMEOUT
+                                                                                             60)
+endif()
+
 
 # vnmaki launcher (task 51): the window opens on the GPU, runs a few frames and ends. --data-dir
 # keeps the recent-project file out of the user's data. The actions are in the unit tests.

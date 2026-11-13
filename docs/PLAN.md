@@ -486,11 +486,11 @@ Files: `engine/model3d/`, `engine/audio/` (voice level from task 26), runtime.
 
 Files: new `engine/plugin/`, `cmake/VnmakiPlugins.cmake`, runtime, `plugins/example/`.
 
-- [ ] C++ plugins are static libraries. `vnmaki_add_plugin(name SOURCES ...)` registers one. Build a runner with plugins through `-DVNMAKI_PLUGINS=...`.
-- [ ] A plugin gets a `PluginContext`: register a displayable type, a file format loader, and Lua functions. Public headers do not include sol2.
-- [ ] Lua plugins are `plugins/<name>/` with `plugin.toml` and `.lua` files. They load before `scripts/` and can add API functions, screens, transitions and effects.
-- [ ] `plugin.toml` declares the engine version range. A mismatch stops the start with a clear error. `project.toml` lists the active plugins.
-- [ ] Tests: an example C++ plugin displayable (GPU golden), an example Lua plugin transition, and a version mismatch CLI test.
+- [x] C++ plugins are static libraries. `vnmaki_add_plugin(name SOURCES ...)` registers one. Build a runner with plugins through `-DVNMAKI_PLUGINS=...`.
+- [x] A plugin gets a `PluginContext`: register a displayable type, a file format loader, and Lua functions. Public headers do not include sol2.
+- [x] Lua plugins are `plugins/<name>/` with `plugin.toml` and `.lua` files. They load before `scripts/` and can add API functions, screens, transitions and effects.
+- [x] `plugin.toml` declares the engine version range. A mismatch stops the start with a clear error. `project.toml` lists the active plugins.
+- [x] Tests: an example C++ plugin displayable (GPU golden), an example Lua plugin transition, and a version mismatch CLI test.
 
 ### 49: Content demo (SPEC §22)
 
