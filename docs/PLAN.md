@@ -220,10 +220,10 @@ Files: `engine/audio/` (voice level), `engine/scene/layered_sprite.*`, runtime.
 
 Files: new `engine/scene/frame_animation.*`, `engine/scene/scene.cpp`, runtime, a fixture generator.
 
-- [ ] `animation(name, { frames = { "a", "b" }, fps, loop })` makes an animation from images. `animation(name, { sheet = "x", columns, rows, count, fps })` makes one from a sprite sheet.
-- [ ] `show` accepts an animation name as it accepts an image name. A layered sprite group value can be an animation, for example a blink.
-- [ ] `loop = false` holds the last frame, and `wait(tag)` waits for that last frame. After a load, the animation restarts at frame 1.
-- [ ] Tests: the frame index at fixed times, and a GPU golden of one sheet frame.
+- [x] `animation(name, { frames = { "a", "b" }, fps, loop })` makes an animation from images. `animation(name, { sheet = "x", columns, rows, count, fps })` makes one from a sprite sheet.
+- [x] `show` accepts an animation name as it accepts an image name. A layered sprite group value can be an animation, for example a blink.
+- [x] `loop = false` holds the last frame, and `wait(tag)` waits for that last frame. After a load, the animation restarts at frame 1.
+- [x] Tests: the frame index at fixed times, and a GPU golden of one sheet frame.
 
 ### 28: Presentation demo (SPEC §22)
 

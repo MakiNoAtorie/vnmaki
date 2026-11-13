@@ -65,6 +65,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Register it with `vnmaki_add_fixture_generator(<name> SCRIPT ... TEST_TARGETS ...)`.
   - Tests read the fixtures from `VNMAKI_FIXTURES_DIR "/<name>"`.
 - Script tests use `vnmaki::test::memory_vfs({{path, text}...})` from `tests/support/memory_vfs.hpp`.
+- `RecordingRenderer` (`tests/support/recording_renderer.hpp`) is an `IRenderer` that records the quads of each draw. Use it to test what a displayable draws, without a GPU.
 - Fuzz targets use `vnmaki_add_fuzzer(<name> <sources>)`. ctest gives each target a smoke test of 10,000 runs.
   - A fuzz target checks properties of the output, for example idempotence or an independent oracle. If a property is false, it calls `std::abort()`.
   - To check a new fuzz target, add a bug and make sure that the smoke test finds it.
@@ -74,7 +75,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - If there is no device, it prints `VNMAKI_SKIP:` and ctest skips the test. `VNMAKI_REQUIRE_GPU=1` stops the skip. Linux CI sets it, because it has lavapipe.
   - Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png`.
   - `tools/generators/render_fixtures.py` makes the golden images with a reference rasterizer.
-  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Example: `layered_fixtures.py`.
+  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `frame_anim_fixtures.py`.
 
 ## Module contracts
 
@@ -150,14 +151,14 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Anchor and crop are fractions.
   - Rotation is in degrees, clockwise.
 - `Scene` keeps `std::unique_ptr<Displayable>`. `find(tag)` returns a `Displayable*`. Use `dynamic_cast` to get an `ImageDisplayable`.
-- The snapshot is a map from a part name to bytes: `displayables` (images), `layered` and `tweens`. A new feature adds a part. `restore()` ignores a part that it does not know and reads a missing part as empty.
+- The snapshot is a map from a part name to bytes: `displayables` (images), `layered`, `animations` and `tweens`. A new feature adds a part. `restore()` ignores a part that it does not know and reads a missing part as empty.
 - The snapshot keeps the properties as a replay leaves them. A tween that ends is at its end value. A loop is at the value where it started.
 - Tweens write through `Scene::find(tag)->properties()`. `Scene::update(seconds)` moves them. `hide` and `scene` end the tweens of the displayables that they remove.
 - `Scene::show` of a tag that is shown does not end its tweens.
 - For each frame, call `scene.prepare(renderer, jobs)` on the main thread. Then call `scene.draw(renderer)` in a pass on the virtual-resolution target.
 - `SceneCommands` calls return an error string. The prelude raises it at the script line.
 - `SceneCommands` calls also run during replay.
-- `SceneCommands` has `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
+- `SceneCommands` has `animation`, `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
 - A displayable draws its quads with `draw_state(texture)` (`Displayable`, protected). What a displayable adds to its draws, for example a shader, goes there, so it applies to every kind of displayable.
 - `place_corners(properties, size, part)` and `bounding_box(corners)` (`displayable.hpp`) place a box with the properties. Use them in a new displayable.
 
@@ -171,6 +172,16 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - A changed group fades its new image in over its old image. The old image stays at full alpha. The fade runs on `Scene::update(seconds)`, the same clock as tweens. A replay, a restore and a definition without `crossfade` cut at once. `finish_tweens` does not end a fade.
 - The snapshot part `layered` has the definition name, the layer position, the properties and the (group, value) of each sprite. It has no definition. `restore()` throws if the scene does not know the definition, so the scripts must load first. A fade that runs is saved as its end.
 - `Scene::prepare` loads the images that a sprite shows now. `LayeredSprite::missing_paths()` and `set_texture(path, ...)` do this.
+
+### Frame animation (`engine/scene/frame_animation.*`)
+
+- Script API: `animation(name, { frames = { "a", "b" }, fps = 12, loop = true })` or `animation(name, { sheet = "x", columns = 4, rows = 2, count = 7, fps = 12, loop = true })`. The images are image names, as for `show`. `fps` is required, from above 0 to 1000. `loop` is true by default. A sheet is read row by row. `count` is the number of cells that are frames (all by default). There are at most 4096 frames. A bad definition or a missing image gives an error at the script line.
+- `SceneCommands::animation(AnimationRequest)` makes the definition. `show(tag, { image = name })` (or `show(name)`) shows it, as for an image. A layered sprite takes the place of an animation, and an animation takes the place of an image of the same name. Define an animation before the layered sprite that uses it.
+- A `FrameAnimation` is a `Displayable`. It draws one frame through `draw_state`: a whole image, or a cell of a sheet (the uv of the frame, cropped by `crop`). The frame size is the image size, or the cell size. `Scene::prepare` loads all the images of an animation (`missing_paths()` and `set_texture(path, ...)`).
+- `Scene::update(seconds)` is its only clock. The frame is `floor(time * fps)`, and it wraps when `loop` is true. If `loop` is false, the last frame stays. `AnimationDefinition::frame_at` has the rule.
+- A value of a layered group can be an animation: `eyes = { open = "eyes_open", blink = "blink" }`. It plays from frame 1 when the value is chosen, and a group that keeps its value keeps playing. In a crossfade, the old value shows the frame that it had when it left.
+- `wait(tag)` and `wait_all()` wait for an animation that does not loop: `Scene::tweening(tag)` is true until its last frame has played for its full time. A loop never blocks a wait. `finish_tweens` (a click, skip mode) puts the animation at its last frame. The same is true for the animation values of a layered sprite (`LayeredSprite::animating()` and `finish_animations()`).
+- The snapshot part `animations` has the layer position, the tag, the definition name and the properties. It has no definition and no time. `restore()` throws if the scene does not know the definition, so the scripts must load first. After a restore (a load, a rollback), an animation restarts at frame 1.
 
 ### Anim (`engine/anim/`)
 
