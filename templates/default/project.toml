@@ -4,6 +4,8 @@ resolution = [1280, 720]
 languages = ["en", "ja"]
 # The story writes the "auto" save slot at each label and each menu.
 auto_save = ["label", "menu"]
+# The Lua plugins of plugins/ that are on. The content demo uses the transition of "flash".
+plugins = ["flash"]
 
 # Japanese text runs in columns from the right. translations/ja.po has one sample line. The pixel
 # font has no Japanese letters (see ASSETS.txt), so the text shows as boxes until you add a font.

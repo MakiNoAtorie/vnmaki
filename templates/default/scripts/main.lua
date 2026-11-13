@@ -44,6 +44,7 @@ label("classroom", function()
     "Of course I did.",
     "I forgot my bag.",
     "Never mind that. What can you do?",
+    "Show me the rest: languages, captions, 3D.",
   }
 
   if c == 1 then
@@ -51,8 +52,10 @@ label("classroom", function()
     jump("warm")
   elseif c == 2 then
     jump("cold")
-  else
+  elseif c == 3 then
     jump("presentation")
+  else
+    jump("content")
   end
 end)
 
