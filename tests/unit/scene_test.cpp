@@ -314,7 +314,7 @@ TEST_CASE("scene: a bad argument or option fails the story at its script line") 
 TEST_CASE("scene: option keys the engine does not know yet are ignored") {
   const Stage stage{R"(
 label("start", function()
-  scene("bg/classroom", { with = "dissolve" })
+  scene("bg/classroom", { zorder = 1 })
   show("eileen", { outfit = "school", face = "smile", at = "right" })
   narrate("shown")
 end)

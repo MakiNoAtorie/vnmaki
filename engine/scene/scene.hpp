@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "engine/anim/timeline.hpp"
+#include "engine/anim/transition.hpp"
 #include "engine/jobs/job_system.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
@@ -91,6 +92,16 @@ inline constexpr std::string_view kLayerTagPrefix = "@layer.";
 /// with its shader. A layer with a shader draws into a render target of the virtual resolution,
 /// and then that target draws with the shader. prepare() makes the GPU shaders and the targets.
 ///
+/// `transition(request)` (engine/anim/transition.hpp) blends the frame as it was before the changes
+/// of the step into the frame after them. The layers from the background to the overlay draw into
+/// two render targets, the old frame (frozen) and the new one (live), and a shader mixes them in
+/// the pass of draw()'s target; the UI and transient layers draw over the result. Nothing is
+/// drawn in an extra pass without a transition. The old frame is drawn at the first change after
+/// a draw(), from the state before it, so prepare() must have seen the renderer (it keeps a
+/// pointer: the renderer must outlive the changes). A transition is not part of the snapshot and
+/// a replay (ShowRequest::replaying, restore()) does not start one. It runs on update() and
+/// ends at once with finish_tweens(kTransitionTag).
+///
 /// The snapshot is a map from a part's name to its bytes, so a later feature adds a part without
 /// changing the others: "displayables" (the images), "layered" (the layered sprites), "tweens"
 /// (the loops) and "shaders" (the shader and uniform values of displayables and layers; left out
@@ -112,6 +123,7 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] std::string declare_shader(std::string_view name,
                                            std::span<const std::string> uniforms) override;
   [[nodiscard]] std::string set_shader(const ShaderRequest& request) override;
+  [[nodiscard]] std::string transition(const TransitionRequest& request) override;
 
   [[nodiscard]] std::vector<std::byte> capture() const override;
   void restore(std::span<const std::byte> state) override;
@@ -159,6 +171,18 @@ class Scene final : public SceneState, public SceneCommands {
     std::size_t uniform_floats = 0;  // what a draw gives the constant buffer; 0 without one
     std::optional<ShaderId> gpu;     // made by prepare()
   };
+  // The transition that runs, with what the shader needs besides its clock.
+  struct ActiveTransition {
+    Transition clock;
+    std::string mask_path;                     // the resolved mask image, or empty
+    std::uint32_t shader = 0;                  // a custom transition: the number of its game shader
+    std::array<float, kMaxUniforms> values{};  // a custom transition: its uniforms but "progress"
+    std::size_t progress_slot = 0;             // a custom transition: the index of "progress"
+    bool blank_from = false;                   // there was no frame before: the old frame is empty
+  };
+  // What frames_[0] holds. draw() makes it kPending: the scene is as the last frame showed it,
+  // and the first change draws that frame into frames_[0] (kTaken).
+  enum class OldFrame : std::uint8_t { kNone, kPending, kTaken };
   using Layers = std::array<std::vector<Entry>, kLayerOrder.size()>;
   // The shader and uniform values of each layer, as DisplayProperties so that tweens reach them.
   using LayerState = std::array<DisplayProperties, kLayerOrder.size()>;
@@ -184,6 +208,13 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] const GameShader* shader_by_id(std::uint32_t id) const;
   // Gives displayables their GPU shaders and creates the targets of layers with a shader.
   void prepare_shaders(IRenderer& renderer);
+  // Draws the layers [first, last) of kLayerOrder in the renderer's current pass, whose target is
+  // `target`.
+  void draw_layers(IRenderer& renderer, std::size_t first, std::size_t last,
+                   TextureId target) const;
+  // Draws the old frame (the scene before the first change since the last draw()) into
+  // frames_[0], in a frame of its own. It does nothing unless that is due.
+  void capture_old_frame();
   // Reads the "layered" part into `layers`. Throws std::invalid_argument.
   void read_layered(std::span<const std::byte> bytes, Layers& layers) const;
 
@@ -200,6 +231,11 @@ class Scene final : public SceneState, public SceneCommands {
   std::map<std::string, Texture, std::less<>> textures_;
   std::map<std::string, std::shared_ptr<const LayeredDefinition>, std::less<>> definitions_;
   Timeline timeline_;
+  std::optional<ActiveTransition> transition_;
+  TransitionShaders transition_shaders_;
+  std::array<TextureId, 2> frames_{};  // the old frame and the new frame, made by prepare()
+  IRenderer* renderer_ = nullptr;      // the renderer of prepare()
+  mutable OldFrame old_frame_ = OldFrame::kNone;
 };
 
 }  // namespace vnmaki

@@ -257,18 +257,22 @@ end
 
 -- Defined with the layered sprites below: the attributes `show` gives a layered sprite.
 local layered_attributes
+-- Defined with the transitions below: the `with` option of scene, show and hide.
+local begin_with, end_with
 
 function scene(image, options)
   if type(image) ~= "string" then
     bad_argument("scene", 1, "string", image)
   end
-  options_argument("scene", options)
+  options = options_argument("scene", options)
   require_label("scene")
+  local with = begin_with("scene", options, 3)
   local problem = engine.scene(image)
   if problem then
     error(problem, 2)
   end
   engine.scene_command("scene " .. image)
+  end_with(with)
 end
 
 function show(tag, options)
@@ -283,6 +287,7 @@ function show(tag, options)
   local layer = option("show", options, "layer", "string")
   local attributes, attribute_text = layered_attributes(options, image or tag)
   require_label("show")
+  local with = begin_with("show", options, 3)
   local problem = engine.show(tag, image or tag, at, x, y, layer, attributes)
   if problem then
     error(problem, 2)
@@ -305,15 +310,19 @@ function show(tag, options)
   end
   command = command .. engine.shader_options("show", tag, false, options)
   engine.scene_command(command .. attribute_text)
+  end_with(with)
 end
 
-function hide(tag)
+function hide(tag, options)
   if type(tag) ~= "string" then
     bad_argument("hide", 1, "string", tag)
   end
+  options = options_argument("hide", options)
   require_label("hide")
+  local with = begin_with("hide", options, 3)
   engine.hide(tag)
   engine.scene_command("hide " .. tag)
+  end_with(with)
 end
 
 -- Audio. Times are in seconds.
@@ -757,13 +766,79 @@ function layer(name, options)
   engine.scene_command("layer " .. name .. engine.shader_options("layer", name, true, options))
 end
 )lua" R"lua(
+-- Transitions (docs/SPEC.md section 10). transition(name, options) mixes the frame from before
+-- the changes of this step into the frame after them, and blocks like `wait` until it ends: the
+-- script waits for the tag "@transition". The `with` option of scene, show and hide does the same
+-- after its own change: with = "dissolve", or with = { "wipe_left", duration = 1 }.
+-- The options are duration, color ("#rrggbb"), mask (an image name), softness and uniforms.
+local function transition_request(fname, options, level)
+  local spec = {}
+  spec.duration = typed(fname, options, "duration", "number", level)
+  spec.softness = typed(fname, options, "softness", "number", level)
+  spec.mask = typed(fname, options, "mask", "string", level)
+  spec.uniforms = typed(fname, options, "uniforms", "table", level)
+  local color = typed(fname, options, "color", "string", level)
+  if color ~= nil then
+    if not color:match("^#%x%x%x%x%x%x$") then
+      error(format("bad option 'color' to '%s' (\"#rrggbb\" expected)", fname), level)
+    end
+    spec.color = tonumber(color:sub(2), 16)
+  end
+  return spec
+end
+
+-- `level` is the error() level that reaches the script from this function.
+local function start_transition(fname, name, options, level)
+  local spec = transition_request(fname, options, level + 1)
+  local problem = engine.transition(name, spec)
+  if problem then
+    error(problem, level)
+  end
+end
+
+local function finish_transition(name)
+  engine.scene_command("transition " .. name)
+  engine.wait("@transition")
+end
+
+function transition(name, options)
+  if type(name) ~= "string" then
+    bad_argument("transition", 1, "string", name)
+  end
+  options = options_argument("transition", options)
+  require_label("transition")
+  start_transition("transition", name, options, 3)
+  finish_transition(name)
+end
+
+-- Starts the transition of a `with` option before the change, so that a bad name changes nothing,
+-- and returns its name. end_with(name) then blocks for it.
+begin_with = function(fname, options, level)
+  local with = options.with
+  if with == nil then
+    return nil
+  end
+  local name = type(with) == "table" and with[1] or with
+  if type(name) ~= "string" then
+    error(format("bad option 'with' to '%s' (a transition name, or a table { name, ... } expected)",
+                 fname), level)
+  end
+  start_transition(fname, name, type(with) == "table" and with or {}, level + 1)
+  return name
+end
+end_with = function(name)
+  if name ~= nil then
+    finish_transition(name)
+  end
+end
+)lua" R"lua(
 -- Layered sprites: layered(name, { order = { group, ... }, <group> = "image" or
 -- { value = "image", ... }, default = { group = value }, crossfade = seconds }).
 -- `show` of the name then takes a value for each group: show("eileen", { face = "smile" }).
 local pairs, ipairs, sort = pairs, ipairs, table.sort
 local layered_defs = {}
 local show_options = { image = true, at = true, x = true, y = true, layer = true,
-                       shader = true, uniforms = true }
+                       shader = true, uniforms = true, with = true }
 
 -- `level` is the error() level of the caller of this function.
 local function layered_option(key, expected, value, level)
@@ -1863,6 +1938,33 @@ void ScriptRuntime::Impl::bind_engine() {
       }
     }
     return problem_or_nil(state, options_.scene->set_shader(request));
+  };
+  // A transition is checked during a replay too, and not shown.
+  engine_["transition"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
+                                                 const sol::table& spec) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    TransitionRequest request{.name = name, .replaying = replaying_};
+    if (const auto duration = spec.get<sol::optional<double>>("duration")) {
+      request.duration = *duration;
+    }
+    if (const auto softness = spec.get<sol::optional<double>>("softness")) {
+      request.softness = *softness;
+    }
+    if (const auto mask = spec.get<sol::optional<std::string>>("mask")) {
+      request.mask = *mask;
+    }
+    if (const auto color = spec.get<sol::optional<std::int64_t>>("color")) {
+      request.color = static_cast<std::uint32_t>(*color);
+    }
+    if (const auto uniforms = spec.get<sol::optional<sol::table>>("uniforms")) {
+      if (std::string problem = read_uniforms(*uniforms, request.uniforms); !problem.empty()) {
+        return problem_or_nil(state, problem);
+      }
+    }
+    return problem_or_nil(state, options_.scene->transition(request));
   };
   engine_["wait"] = sol::yielding([this](sol::this_state state, const std::string& tag) {
     yield_at(state, WaitRequest{.tag = tag});

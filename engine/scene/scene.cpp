@@ -129,10 +129,14 @@ constexpr std::string_view kTweensPart = "tweens";
 constexpr std::string_view kShadersPart = "shaders";
 
 constexpr std::string_view kShaderDirectory = "shaders/";
+// The uniform that a custom transition declares and the engine sets.
+constexpr std::string_view kProgressUniform = "progress";
 constexpr std::string_view kShaderExtension = ".frag.hlsl";
 // HLSL packs a constant buffer in rows of four floats.
 constexpr std::size_t kFloatsPerRow = 4;
 constexpr Color kTransparent{.r = 0, .g = 0, .b = 0, .a = 0};
+// A transition mixes the layers before this one; the layers from it on draw over the result.
+constexpr auto kUiLayer = static_cast<std::size_t>(Layer::kUi);
 
 class Writer : public ByteWriter {
  public:
@@ -387,6 +391,7 @@ const Scene::GameShader* Scene::shader_by_id(std::uint32_t id) const {
 }
 
 std::string Scene::scene(std::string_view image) {
+  capture_old_frame();
   std::optional<std::string> path = resolve_image(*vfs_, image);
   if (!path.has_value()) {
     return missing_image(image);
@@ -445,6 +450,7 @@ std::string Scene::layered(const LayeredRequest& request) {
 }
 
 std::string Scene::show(const ShowRequest& request) {
+  capture_old_frame();
   const auto definition = definitions_.find(request.image);
   std::optional<std::string> path;
   if (definition == definitions_.end()) {
@@ -530,6 +536,7 @@ std::string Scene::show(const ShowRequest& request) {
 }
 
 void Scene::hide(std::string_view tag) {
+  capture_old_frame();
   for (std::vector<Entry>& shown : layers_) {
     std::erase_if(shown, [tag](const Entry& entry) { return entry.tag == tag; });
   }
@@ -548,9 +555,17 @@ std::string Scene::tween(const TweenRequest& request) {
   return timeline_.start(node, lookup(), request.replaying);
 }
 
-void Scene::finish_tweens(std::string_view tag) { timeline_.finish(tag, lookup()); }
+void Scene::finish_tweens(std::string_view tag) {
+  if (tag.empty() || tag == kTransitionTag) {
+    transition_.reset();
+  }
+  timeline_.finish(tag, lookup());
+}
 
-bool Scene::tweening(std::string_view tag) const { return timeline_.busy(tag); }
+bool Scene::tweening(std::string_view tag) const {
+  return timeline_.busy(tag) ||
+         (tag == kTransitionTag && transition_.has_value() && !transition_->clock.finished());
+}
 
 std::string Scene::declare_shader(std::string_view name, std::span<const std::string> uniforms) {
   const std::string label = quoted("shader '", name, "'");
@@ -656,6 +671,57 @@ std::string Scene::set_shader(const ShaderRequest& request) {
   }
   properties->shader = id;
   properties->uniforms = values;
+  return {};
+}
+
+std::string Scene::transition(const TransitionRequest& request) {
+  TransitionSpec spec;
+  if (std::string problem = make_transition_spec(request, spec); !problem.empty()) {
+    return problem;
+  }
+  ActiveTransition next{.clock = Transition{spec}};
+  if (spec.kind == TransitionKind::kMask) {
+    std::optional<std::string> path = resolve_image(*vfs_, spec.mask);
+    if (!path.has_value()) {
+      return missing_image(spec.mask);
+    }
+    next.mask_path = std::move(*path);
+  } else if (spec.kind == TransitionKind::kCustom) {
+    next.shader = shader_id(spec.name);
+    if (next.shader == 0) {
+      std::string message = quoted("unknown transition '", spec.name, "' (the built-in ones are ");
+      message += kBuiltinTransitions;
+      message += "; or declare a shader with shader(name, { \"progress\" }))";
+      return message;
+    }
+    const GameShader& shader = *shader_by_id(next.shader);
+    const std::vector<std::string>& names = shader.uniforms;
+    const auto progress = std::ranges::find(names, std::string{kProgressUniform});
+    if (progress == names.end()) {
+      return quoted("shader '", spec.name, "' needs the uniform 'progress' to be a transition");
+    }
+    next.progress_slot = static_cast<std::size_t>(progress - names.begin());
+    for (const auto& [uniform, value] : request.uniforms) {
+      const auto found = std::ranges::find(names, uniform);
+      if (found == names.end()) {
+        return quoted("shader '", spec.name, "' has no uniform '" + uniform + "'");
+      }
+      if (uniform == kProgressUniform) {
+        return "the uniform 'progress' is set by the engine";
+      }
+      if (!(std::abs(value) <= static_cast<double>(std::numeric_limits<float>::max()))) {
+        return out_of_range("uniforms." + uniform);
+      }
+      next.values.at(static_cast<std::size_t>(found - names.begin())) = static_cast<float>(value);
+    }
+  }
+  // A replay checks the transition and does not show it. With no time, the change is a cut.
+  if (request.replaying || spec.duration <= 0) {
+    return {};
+  }
+  capture_old_frame();
+  next.blank_from = old_frame_ == OldFrame::kNone;
+  transition_ = std::move(next);
   return {};
 }
 
@@ -910,6 +976,9 @@ void Scene::restore(std::span<const std::byte> state) {
   layers_ = std::move(layers);
   layer_state_ = std::move(layer_state);
   timeline_ = std::move(tweens);
+  // A transition is not in the snapshot, and what was drawn is gone until the next draw().
+  transition_.reset();
+  old_frame_ = OldFrame::kNone;
 }
 
 std::vector<std::string> Scene::tags(Layer layer) const {
@@ -941,6 +1010,14 @@ const Displayable* Scene::find(std::string_view tag) const {
 }
 
 void Scene::update(double seconds) {
+  // A finished transition is drawn once more at its end, and ends at the next update.
+  if (transition_.has_value()) {
+    if (transition_->clock.finished()) {
+      transition_.reset();
+    } else {
+      transition_->clock.advance(seconds);
+    }
+  }
   timeline_.update(seconds, lookup());
   for (std::vector<Entry>& shown : layers_) {
     for (Entry& entry : shown) {
@@ -950,6 +1027,12 @@ void Scene::update(double seconds) {
 }
 
 void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
+  renderer_ = &renderer;
+  for (TextureId& frame : frames_) {
+    if (frame == TextureId{}) {
+      frame = renderer.create_render_target(virtual_size_, TextureFilter::kNearest);
+    }
+  }
   const auto texture_of = [&](const std::string& path) -> const Texture& {
     auto found = textures_.find(path);
     if (found == textures_.end()) {
@@ -977,6 +1060,9 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
       const Texture& texture = texture_of(image->path());
       image->set_texture(texture.id, texture.size);
     }
+  }
+  if (transition_.has_value() && !transition_->mask_path.empty()) {
+    static_cast<void>(texture_of(transition_->mask_path));
   }
   prepare_shaders(renderer);
 }
@@ -1012,14 +1098,22 @@ void Scene::prepare_shaders(IRenderer& renderer) {
           renderer.create_render_target(virtual_size_, TextureFilter::kNearest);
     }
   }
+  if (transition_.has_value()) {
+    if (transition_->shader != 0) {
+      static_cast<void>(gpu_shader(transition_->shader));
+    } else {
+      static_cast<void>(transition_shaders_.get(renderer, transition_->clock.spec().kind));
+    }
+  }
 }
 
-void Scene::draw(IRenderer& renderer, TextureId target) const {
+void Scene::draw_layers(IRenderer& renderer, std::size_t first, std::size_t last,
+                        TextureId target) const {
   const RectF whole{.x = 0,
                     .y = 0,
                     .width = static_cast<float>(virtual_size_.width),
                     .height = static_cast<float>(virtual_size_.height)};
-  for (const Layer layer : kLayerOrder) {
+  for (const Layer layer : std::span{kLayerOrder}.subspan(first, last - first)) {
     const auto index = static_cast<std::size_t>(layer);
     const DisplayProperties& state = layer_state_.at(index);
     const GameShader* shader = shader_by_id(state.shader);
@@ -1042,6 +1136,79 @@ void Scene::draw(IRenderer& renderer, TextureId target) const {
                                   std::span{state.uniforms}.first(shader->uniform_floats))});
     }
   }
+}
+
+void Scene::capture_old_frame() {
+  if (old_frame_ != OldFrame::kPending || renderer_ == nullptr || frames_.front() == TextureId{}) {
+    return;
+  }
+  const TextureId frame = frames_.front();
+  renderer_->begin_frame();
+  renderer_->begin_pass({.target = frame, .clear = kTransparent});
+  draw_layers(*renderer_, 0, kUiLayer, frame);
+  static_cast<void>(renderer_->end_frame());
+  old_frame_ = OldFrame::kTaken;
+}
+
+void Scene::draw(IRenderer& renderer, TextureId target) const {
+  old_frame_ = OldFrame::kPending;
+  const auto [old_frame, new_frame] = frames_;
+
+  // The shader and constant buffer of the transition, if one can draw: prepare() makes the shaders.
+  ShaderId shader{};
+  std::array<float, kMaxUniforms> values{};
+  TransitionUniforms builtin_values;
+  std::span<const std::byte> uniforms;
+  bool mixing = transition_.has_value() && old_frame != TextureId{};
+  if (mixing) {
+    const ActiveTransition& active = *transition_;
+    const TransitionKind kind = active.clock.spec().kind;
+    if (kind == TransitionKind::kCustom) {
+      const GameShader* custom = shader_by_id(active.shader);
+      mixing = custom != nullptr && custom->gpu.has_value();
+      if (mixing) {
+        shader = *custom->gpu;
+        values = active.values;
+        values.at(active.progress_slot) = static_cast<float>(active.clock.progress());
+        uniforms = std::as_bytes(std::span{values}.first(custom->uniform_floats));
+      }
+    } else if (const std::optional<ShaderId> made = transition_shaders_.find(kind)) {
+      shader = *made;
+      builtin_values = active.clock.uniforms();
+      uniforms = std::as_bytes(std::span{&builtin_values, 1});
+    } else {
+      mixing = false;
+    }
+  }
+  // Without a transition the layers draw straight into the pass of the caller.
+  if (!mixing) {
+    draw_layers(renderer, 0, kLayerOrder.size(), target);
+    return;
+  }
+
+  // The old frame is frames_[0], drawn at the change; it is empty if nothing had been drawn.
+  if (transition_->blank_from) {
+    renderer.begin_pass({.target = old_frame, .clear = kTransparent});
+  }
+  renderer.begin_pass({.target = new_frame, .clear = kTransparent});
+  draw_layers(renderer, 0, kUiLayer, new_frame);
+  TextureId mask = new_frame;
+  if (!transition_->mask_path.empty()) {
+    const auto found = textures_.find(transition_->mask_path);
+    if (found != textures_.end()) {
+      mask = found->second.id;
+    }
+  }
+  renderer.begin_pass({.target = target});
+  const RectF whole{.x = 0,
+                    .y = 0,
+                    .width = static_cast<float>(virtual_size_.width),
+                    .height = static_cast<float>(virtual_size_.height)};
+  renderer.draw(quad_from_rect(whole), DrawState{.texture = old_frame,
+                                                 .shader = shader,
+                                                 .uniforms = uniforms,
+                                                 .more_textures = {new_frame, mask}});
+  draw_layers(renderer, kUiLayer, kLayerOrder.size(), target);
 }
 
 }  // namespace vnmaki
