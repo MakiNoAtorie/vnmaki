@@ -167,9 +167,7 @@ bool VersionRange::contains(const Version& version) const {
   });
 }
 
-std::string lua_plugin_directory(std::string_view name) {
-  return "plugins/" + std::string{name};
-}
+std::string lua_plugin_directory(std::string_view name) { return "plugins/" + std::string{name}; }
 
 LuaPluginManifest parse_plugin_manifest(std::string_view toml_text,
                                         std::string_view directory_name) {

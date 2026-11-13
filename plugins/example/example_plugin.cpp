@@ -29,6 +29,7 @@ constexpr int kHexBase = 16;
 constexpr float kMaxChannel = 255.0F;
 constexpr std::size_t kChannels = 3;
 constexpr int kPpmMaxValue = 255;
+constexpr int kDecimalBase = 10;
 
 // "#rrggbb" as a colour; throws PluginError.
 Color parse_color(std::string_view text) {
@@ -39,7 +40,8 @@ Color parse_color(std::string_view text) {
   for (std::size_t i = 0; i < kChannels; ++i) {
     unsigned value = 0;
     const std::string_view pair = text.substr(1 + (i * 2), 2);
-    const auto [stop, error] = std::from_chars(pair.data(), pair.data() + pair.size(), value, kHexBase);
+    const auto [stop, error] =
+        std::from_chars(pair.data(), pair.data() + pair.size(), value, kHexBase);
     if (error != std::errc{} || stop != pair.data() + pair.size()) {
       throw PluginError{"param 'color' must be \"#rrggbb\""};
     }
@@ -61,10 +63,9 @@ class BadgeDisplayable final : public PluginDisplayable {
     }
     Color tint = color_;
     tint.a *= properties().alpha;
-    renderer.draw(Quad{.corners = place_corners(properties(), box()),
-                       .uv = kWholeTexture,
-                       .tint = tint},
-                  draw_state(white_texture()));
+    renderer.draw(
+        Quad{.corners = place_corners(properties(), box()), .uv = kWholeTexture, .tint = tint},
+        draw_state(white_texture()));
   }
 
   [[nodiscard]] RectF bounds() const override {
@@ -134,7 +135,8 @@ class PpmReader {
       throw PluginError{"PPM: only a maximum value of 255 is supported"};
     }
     ++at_;  // the one white space byte after the header
-    const auto pixels = static_cast<std::size_t>(image.width) * static_cast<std::size_t>(image.height);
+    const auto pixels =
+        static_cast<std::size_t>(image.width) * static_cast<std::size_t>(image.height);
     if (bytes_.size() < at_ || bytes_.size() - at_ != pixels * kChannels) {
       throw PluginError{"PPM: the pixel data has the wrong size"};
     }
@@ -167,7 +169,7 @@ class PpmReader {
     int value = 0;
     bool any = false;
     while (at_ < bytes_.size() && std::isdigit(static_cast<unsigned char>(bytes_[at_])) != 0) {
-      value = (value * 10) + (static_cast<char>(bytes_[at_]) - '0');
+      value = (value * kDecimalBase) + (static_cast<char>(bytes_[at_]) - '0');
       any = true;
       ++at_;
       if (value > kMaxImageDimension) {
@@ -190,9 +192,8 @@ void register_plugin_example(PluginContext& context) {
   context.add_function("example_add", example_add);
   context.add_function("example_greet", example_greet);
   context.add_displayable("example_badge", make_badge);
-  context.add_image_loader(".ppm", [](std::span<const std::byte> bytes) {
-    return PpmReader{bytes}.read();
-  });
+  context.add_image_loader(
+      ".ppm", [](std::span<const std::byte> bytes) { return PpmReader{bytes}.read(); });
 }
 
 }  // namespace vnmaki

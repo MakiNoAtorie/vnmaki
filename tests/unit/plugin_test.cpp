@@ -4,15 +4,15 @@
 // and its snapshot, an image format). The frame of the displayable is checked on a GPU in
 // tests/render/plugin_render_test.cpp; the CLI tests are in tests/cli/CMakeLists.txt.
 
-#include "engine/plugin/lua_plugin.hpp"
+#include "engine/plugin/plugin.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <span>
-#include <stdexcept>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -24,7 +24,7 @@
 #include "engine/anim/transition.hpp"
 #include "engine/core/version.hpp"
 #include "engine/jobs/job_system.hpp"
-#include "engine/plugin/plugin.hpp"
+#include "engine/plugin/lua_plugin.hpp"
 #include "engine/render/image.hpp"
 #include "engine/runtime/project_config.hpp"
 #include "engine/runtime/script_runtime.hpp"
@@ -47,6 +47,9 @@ using vnmaki::VersionRange;
 
 constexpr vnmaki::Size kVirtualSize{.width = 64, .height = 64};
 constexpr vnmaki::Version kEngine{.major = 1, .minor = 4, .patch = 2};
+constexpr float kBadgeSize = 10;
+constexpr float kHalf = 0.5F;
+constexpr float kQuarterOfWidth = 16;  // 0.25 of 64
 constexpr double kShortFlash = 0.3;  // past the 0.25 s of "flash", short of the 0.5 s of "fade"
 constexpr std::size_t kPpmSide = 2;
 constexpr std::uint8_t kOpaqueAlpha = 255;
@@ -140,9 +143,9 @@ TEST_CASE("plugin: a manifest needs an engine range and a matching name") {
   CHECK(manifest.version == "1.0.0");
   CHECK(manifest.engine.contains(kEngine));
 
-  CHECK_THROWS_WITH_AS(static_cast<void>(vnmaki::parse_plugin_manifest("", "flash")),
-                       doctest::Contains("plugins/flash/plugin.toml: missing required key 'engine'"),
-                       PluginError);
+  CHECK_THROWS_WITH_AS(
+      static_cast<void>(vnmaki::parse_plugin_manifest("", "flash")),
+      doctest::Contains("plugins/flash/plugin.toml: missing required key 'engine'"), PluginError);
   CHECK_THROWS_WITH_AS(
       static_cast<void>(vnmaki::parse_plugin_manifest("name = \"x\"\nengine = \"1\"\n", "flash")),
       doctest::Contains("plugin.toml:1:"), PluginError);
@@ -158,12 +161,12 @@ TEST_CASE("plugin: project.toml lists the plugins") {
   const vnmaki::ProjectConfig config =
       vnmaki::parse_project_config("title = \"T\"\nplugins = [\"flash\", \"b_2-x\"]\n");
   CHECK(config.plugins == std::vector<std::string>{"flash", "b_2-x"});
-  for (const char* bad : {"plugins = \"flash\"", "plugins = [1]", "plugins = [\"\"]",
-                          "plugins = [\"../x\"]", "plugins = [\"A\"]",
-                          "plugins = [\"a\", \"a\"]"}) {
+  for (const char* bad :
+       {"plugins = \"flash\"", "plugins = [1]", "plugins = [\"\"]", "plugins = [\"../x\"]",
+        "plugins = [\"A\"]", "plugins = [\"a\", \"a\"]"}) {
     INFO(bad);
-    CHECK_THROWS_AS(static_cast<void>(vnmaki::parse_project_config(
-                        std::string{"title = \"T\"\n"} + bad + "\n")),
+    CHECK_THROWS_AS(static_cast<void>(
+                        vnmaki::parse_project_config(std::string{"title = \"T\"\n"} + bad + "\n")),
                     vnmaki::ProjectConfigError);
   }
 }
@@ -171,11 +174,11 @@ TEST_CASE("plugin: project.toml lists the plugins") {
 // --- Lua plugins ------------------------------------------------------------------------------
 
 TEST_CASE("plugin: a Lua plugin loads before scripts/ and adds API functions") {
-  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(flash_game(
-      "label('start', function()\n"
-      "  narrate(shout('hi') .. (order or '?'))\n"
-      "end)\n"
-      "order = (order or '') .. 's'\n"));
+  const vnmaki::Vfs vfs =
+      vnmaki::test::memory_vfs(flash_game("label('start', function()\n"
+                                          "  narrate(shout('hi') .. (order or '?'))\n"
+                                          "end)\n"
+                                          "order = (order or '') .. 's'\n"));
   ScriptRuntime runtime{vfs};
   runtime.load_scripts();
   runtime.start("start");
@@ -197,11 +200,11 @@ TEST_CASE("plugin: a plugin's new globals give no warning, a game's do") {
 }
 
 TEST_CASE("plugin: a transition defined by a plugin runs its base with its defaults") {
-  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(flash_game(
-      "label('start', function() transition('flash') end)\n"
-      "label('slow', function() transition('flash', { duration = 1 }) end)\n"
-      "label('plain', function() transition('fade') end)\n"
-      "label('bad', function() transition('fade', { duration = 'x' }) end)\n"));
+  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
+      flash_game("label('start', function() transition('flash') end)\n"
+                 "label('slow', function() transition('flash', { duration = 1 }) end)\n"
+                 "label('plain', function() transition('fade') end)\n"
+                 "label('bad', function() transition('fade', { duration = 'x' }) end)\n"));
   const auto elapsed = [&](const char* label) {
     vnmaki::Scene scene{vfs, kVirtualSize};
     ScriptRuntime runtime{vfs, {.scene_state = &scene, .scene = &scene}};
@@ -218,7 +221,8 @@ TEST_CASE("plugin: a transition defined by a plugin runs its base with its defau
 
 TEST_CASE("plugin: a name of define_transition cannot stand on another alias") {
   const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
-      {{"scripts/main.lua", "define_transition('a', 'fade', {})\ndefine_transition('b', 'a', {})"}});
+      {{"scripts/main.lua",
+        "define_transition('a', 'fade', {})\ndefine_transition('b', 'a', {})"}});
   CHECK(load_error(vfs).find("itself defined by define_transition") != std::string::npos);
 }
 
@@ -248,7 +252,8 @@ TEST_CASE("plugin: a Lua plugin works from a .vnpak") {
   std::ostringstream stream;
   {
     vnmaki::PakWriter pak{stream};
-    for (const auto& [path, text] : flash_game("label('start', function() narrate(shout('go')) end)")) {
+    for (const auto& [path, text] :
+         flash_game("label('start', function() narrate(shout('go')) end)")) {
       pak.add(path, bytes_of(text));
     }
     pak.finish();
@@ -264,15 +269,14 @@ TEST_CASE("plugin: a Lua plugin works from a .vnpak") {
 }
 
 TEST_CASE("plugin: vnmaki check does not flag what a plugin defines") {
-  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(flash_game(
-      "label('start', function()\n"
-      "  transition('flash')\n"
-      "  show('badge', { displayable = 'example_badge' })\n"
-      "  local line = shout('hi')\n"
-      "  narrate('done')\n"
-      "end, { ending = true })\n"));
-  CHECK(vnmaki::findings_to_csv(vnmaki::check_project(vfs)) ==
-        "file,line,severity,code,message\n");
+  const vnmaki::Vfs vfs =
+      vnmaki::test::memory_vfs(flash_game("label('start', function()\n"
+                                          "  transition('flash')\n"
+                                          "  show('badge', { displayable = 'example_badge' })\n"
+                                          "  local line = shout('hi')\n"
+                                          "  narrate('done')\n"
+                                          "end, { ending = true })\n"));
+  CHECK(vnmaki::findings_to_csv(vnmaki::check_project(vfs)) == "file,line,severity,code,message\n");
 }
 
 // --- C++ plugins ------------------------------------------------------------------------------
@@ -290,13 +294,11 @@ TEST_CASE("plugin: the context refuses a name that is taken or not a Lua name") 
   CHECK_THROWS_AS(context.add_image_loader(".x", nullptr), PluginError);
   const FormatGuard formats;
   context.add_image_loader(".x", [](std::span<const std::byte>) { return vnmaki::PluginImage{}; });
-  CHECK_THROWS_AS(context.add_image_loader(".x", [](std::span<const std::byte>) {
-                    return vnmaki::PluginImage{};
-                  }),
+  CHECK_THROWS_AS(context.add_image_loader(
+                      ".x", [](std::span<const std::byte>) { return vnmaki::PluginImage{}; }),
                   PluginError);
-  CHECK_THROWS_AS(context.add_image_loader(".png", [](std::span<const std::byte>) {
-                    return vnmaki::PluginImage{};
-                  }),
+  CHECK_THROWS_AS(context.add_image_loader(
+                      ".png", [](std::span<const std::byte>) { return vnmaki::PluginImage{}; }),
                   PluginError);
 }
 
@@ -304,17 +306,18 @@ TEST_CASE("plugin: Lua calls a function of a C++ plugin") {
   const FormatGuard formats;
   PluginContext context;
   vnmaki::register_plugin_example(context);
-  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
-      {{"scripts/main.lua",
-        "label('start', function()\n"
-        "  narrate(example_greet('Maki') .. ' ' .. example_add(2, 3) .. ' ' .. example_add(1.5, 2))\n"
-        "end)\n"
-        "label('bad', function()\n"
-        "  narrate(example_add('a', 1))\n"
-        "end)\n"
-        "label('table', function()\n"
-        "  narrate(example_greet({}))\n"
-        "end)\n"}});
+  const vnmaki::Vfs vfs =
+      vnmaki::test::memory_vfs({{"scripts/main.lua",
+                                 "label('start', function()\n"
+                                 "  narrate(example_greet('Maki') .. ' ' .. example_add(2, 3) .. ' "
+                                 "' .. example_add(1.5, 2))\n"
+                                 "end)\n"
+                                 "label('bad', function()\n"
+                                 "  narrate(example_add('a', 1))\n"
+                                 "end)\n"
+                                 "label('table', function()\n"
+                                 "  narrate(example_greet({}))\n"
+                                 "end)\n"}});
   ScriptRuntime runtime{vfs, {.plugins = &context}};
   runtime.load_scripts();
   runtime.start("start");
@@ -338,9 +341,8 @@ TEST_CASE("plugin: Lua calls a function of a C++ plugin") {
 
 TEST_CASE("plugin: a function may not replace a global of the engine") {
   PluginContext context;
-  context.add_function("say", [](std::span<const PluginValue>) -> PluginValue {
-    return std::monostate{};
-  });
+  context.add_function(
+      "say", [](std::span<const PluginValue>) -> PluginValue { return std::monostate{}; });
   const vnmaki::Vfs vfs = vnmaki::test::memory_vfs({{"scripts/main.lua", ""}});
   CHECK(load_error(vfs, {.plugins = &context}) ==
         "plugin function 'say' would replace a global of the engine");
@@ -372,8 +374,8 @@ TEST_CASE("plugin: a displayable of a plugin is shown, tweened, kept in a snapsh
         "end)\n"}});
   const auto play = [&](vnmaki::Scene& scene, const char* label) {
     auto runtime = std::make_unique<ScriptRuntime>(
-        vfs, vnmaki::ScriptRuntimeOptions{
-                 .scene_state = &scene, .scene = &scene, .plugins = &context});
+        vfs,
+        vnmaki::ScriptRuntimeOptions{.scene_state = &scene, .scene = &scene, .plugins = &context});
     runtime->load_scripts();
     runtime->start(label);
     return runtime;
@@ -386,16 +388,16 @@ TEST_CASE("plugin: a displayable of a plugin is shown, tweened, kept in a snapsh
   const auto* badge = dynamic_cast<const vnmaki::PluginDisplayable*>(scene.find("a"));
   REQUIRE(badge != nullptr);
   CHECK(badge->type() == "example_badge");
-  CHECK(vnmaki::number_param(badge->params(), "size", 0) == 10.0);
+  CHECK(vnmaki::number_param(badge->params(), "size", 0) == kBadgeSize);
   CHECK(vnmaki::string_param(badge->params(), "color", "") == "#336699");
-  CHECK(badge->properties().position.x == 16.0F);  // 0.25 of 64
+  CHECK(badge->properties().position.x == kQuarterOfWidth);
   CHECK(scene.layer_of("b") == vnmaki::Layer::kOverlay);
-  CHECK(badge->bounds().width == 10.0F);
+  CHECK(badge->bounds().width == kBadgeSize);
   CHECK(scene.tags(vnmaki::Layer::kCharacters) == std::vector<std::string>{"a", "c"});
 
   // A tween reaches it like any displayable, and a snapshot keeps its type, params and place.
   scene.update(1.0);
-  CHECK(scene.find("a")->properties().alpha == 0.5F);
+  CHECK(scene.find("a")->properties().alpha == kHalf);
   const std::vector<std::byte> snapshot = scene.capture();
   vnmaki::Scene restored{vfs, kVirtualSize};
   restored.set_plugins(&context);
@@ -464,8 +466,8 @@ TEST_CASE("plugin: an image format of a plugin is found, decoded and checked") {
   vnmaki::JobSystem jobs;
   const vnmaki::Image image = vnmaki::load_image(vfs, jobs, "images/pic.ppm").get();
   REQUIRE(image.size == vnmaki::Size{.width = kPpmSide, .height = kPpmSide});
-  const std::vector<std::uint8_t> expected{255, 0,   0,   kOpaqueAlpha, 0,   255, 0,   kOpaqueAlpha,
-                                           0,   0,   255, kOpaqueAlpha, 255, 255, 255, kOpaqueAlpha};
+  const std::vector<std::uint8_t> expected{255, 0, 0,   kOpaqueAlpha, 0,   255, 0,   kOpaqueAlpha,
+                                           0,   0, 255, kOpaqueAlpha, 255, 255, 255, kOpaqueAlpha};
   CHECK(image.pixels == expected);
   CHECK_THROWS_WITH_AS(static_cast<void>(vnmaki::load_image(vfs, jobs, "images/short.ppm").get()),
                        doctest::Contains("cannot decode image 'images/short.ppm': PPM"),

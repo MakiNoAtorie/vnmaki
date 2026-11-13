@@ -12,18 +12,17 @@ namespace vnmaki {
 
 namespace {
 
-constexpr std::array<std::string_view, 22> kLuaKeywords{
-    "and",   "break", "do",  "else",   "elseif", "end",    "false", "for",
-    "function", "goto", "if", "in",    "local",  "nil",    "not",   "or",
-    "repeat", "return", "then", "true", "until",  "while"};
+constexpr auto kLuaKeywords = std::to_array<std::string_view>(
+    {"and",      "break",  "do",   "else", "elseif", "end",  "false", "for",
+     "function", "goto",   "if",   "in",   "local",  "nil",  "not",   "or",
+     "repeat",   "return", "then", "true", "until",  "while"});
 
 bool is_lua_name(std::string_view name) {
   if (name.empty() || std::isdigit(static_cast<unsigned char>(name.front())) != 0) {
     return false;
   }
-  const bool characters = std::ranges::all_of(name, [](char c) {
-    return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
-  });
+  const bool characters = std::ranges::all_of(
+      name, [](char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_'; });
   return characters && std::ranges::find(kLuaKeywords, name) == kLuaKeywords.end();
 }
 
