@@ -21,6 +21,7 @@
 
 #include "engine/audio/audio_decoder.hpp"
 #include "engine/core/byte_stream.hpp"
+#include "engine/core/load_timing.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki {
@@ -350,6 +351,7 @@ std::optional<Track> Audio::Impl::make_track(std::string_view name, const MusicS
     if (!vfs->exists(path)) {
       continue;
     }
+    const LoadTimer timer{path};
     std::optional<std::vector<std::byte>> bytes = vfs->read(path);
     if (!bytes) {
       problem = quoted_audio(name) + ": cannot read " + path;

@@ -14,6 +14,7 @@
 #include <stb_image.h>
 #include <webp/decode.h>
 
+#include "engine/core/load_timing.hpp"
 #include "engine/vfs/vfs.hpp"
 
 namespace vnmaki {
@@ -141,6 +142,7 @@ Image decode_image(std::span<const std::byte> encoded) {
 
 JobHandle<Image> load_image(const Vfs& vfs, JobSystem& jobs, std::string path) {
   return jobs.submit([&vfs, path = std::move(path)]() -> Image {
+    const LoadTimer timer{path};
     const std::optional<std::vector<std::byte>> encoded = vfs.read(path);
     if (!encoded) {
       throw ImageError{"cannot read image '" + path + "'"};
