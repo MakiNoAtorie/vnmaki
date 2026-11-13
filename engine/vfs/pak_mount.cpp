@@ -144,7 +144,8 @@ void PakMount::parse_index(std::uint64_t file_size) {
     while (true) {
       const std::size_t slash = rest.find('/');
       const std::string_view name = rest.substr(0, slash);
-      const std::string path = folder.empty() ? std::string{name} : folder + "/" + std::string{name};
+      const std::string path =
+          folder.empty() ? std::string{name} : folder + "/" + std::string{name};
       if (slash == std::string_view::npos) {
         if (children_.contains(path)) {
           throw PakError{"pak: " + path + " is a file and a folder"};
