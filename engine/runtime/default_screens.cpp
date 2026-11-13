@@ -47,6 +47,11 @@ style("pref_row", { gap = 24 * u, align = "center" })
 style("pref_label", { size = 32 * u, width = 480 * u })
 style("pref_slider", { width = 700 * u })
 style("pref_switch", { size = 32 * u, padding = 10 * u, width = 480 * u })
+style("pref_switches", { gap = 24 * u })
+style("control_label", { size = 32 * u, width = 360 * u })
+style("control_button", { size = 30 * u, padding = 10 * u, width = 760 * u })
+style("caption_bar", { padding = 40 * u, gap = 8 * u })
+style("caption_line", { size = 34 * u, background = "#000000c0", padding = 10 * u })
 style("quick_bar", { align = "end", padding = 12 * u })
 style("quick_row", { gap = 8 * u })
 style("quick_button", { size = 24 * u, padding = 8 * u, background = "#10102099" })
@@ -90,11 +95,14 @@ end)
 
 -- The say box. `args` has speaker, text (with tags) and color ("#rrggbb"). The text node with
 -- `reveal = true` is the one the typewriter shows glyph by glyph.
+-- A text scale above 1 (prefs.text_scale) makes the name line taller and the box grow upward, up to
+-- 60% of the canvas, so the line wraps in a bigger box.
 screen("say", function(args)
   local w = canvas.width
   local margin, pad = w // 16, w // 64
-  local box_height = h * 7 // 24
-  local name_size = h // 32
+  local scale = math.max(prefs.text_scale, 1)
+  local box_height = math.min(h * 7 // 24 * scale, h * 6 // 10)
+  local name_size = h // 32 * scale
   return box {
     box {
       style = "say_box",
@@ -189,12 +197,51 @@ screen("preferences", function()
     range("volume_ambient", 0, 1, 0.05, "Ambient volume"),
     range("volume_ui", 0, 1, 0.05, "Interface volume"),
     range("window_opacity", 0.3, 1, 0.05, "Window opacity"),
-    switch("fullscreen", "Fullscreen"),
-    switch("skip_unseen", "Skip text not read yet"),
-    switch("reduce_motion", "Reduce motion"),
-    switch("self_voicing", "Self-voicing (V key)"),
+    range("text_scale", 0.75, 2, 0.05, "Text size"),
+    hbox { style = "pref_switches", switch("fullscreen", "Fullscreen"),
+           switch("skip_unseen", "Skip text not read yet") },
+    hbox { style = "pref_switches", switch("reduce_motion", "Reduce motion"),
+           switch("high_contrast", "High contrast") },
+    hbox { style = "pref_switches", switch("dyslexia_font", "Dyslexia-friendly font"),
+           switch("captions", "Captions for sounds") },
+    hbox { style = "pref_switches", switch("self_voicing", "Self-voicing") },
+    hbox { style = "pref_switches",
+           button { "Controls", returns = "@open:controls", style = "back_button" },
+           button { "Back", returns = "@close", style = "back_button" } },
+  }
+end)
+
+-- The keys and buttons of the story actions. `args` has `waiting` (the action that waits for a
+-- key or button, or nothing) and one entry for each action: action, label and text (what it is
+-- bound to now). A button starts the change (@rebind:<action>): the next key or gamepad button
+-- replaces the keys or the buttons of the action, and Esc cancels.
+screen("controls", function(args)
+  local rows = { text { "Controls", style = "panel_title" } }
+  for _, entry in ipairs(args) do
+    local waiting = args.waiting == entry.action
+    rows[#rows + 1] = hbox {
+      style = "pref_row",
+      text { entry.label, style = "control_label" },
+      button { waiting and "Press a key or button (Esc cancels)" or entry.text,
+               returns = "@rebind:" .. entry.action, label = entry.label,
+               style = "control_button" },
+    }
+  end
+  rows[#rows + 1] = hbox {
+    style = "pref_switches",
+    button { "Reset to defaults", returns = "@controls_reset", style = "back_button" },
     button { "Back", returns = "@close", style = "back_button" },
   }
+  return vbox { style = "prefs_panel", modal = true, cancel = "@close", table.unpack(rows) }
+end)
+
+-- The captions of sounds and music (prefs.captions), top left. `args` is a list of { text }.
+screen("captions", function(args)
+  local lines = {}
+  for i, line in ipairs(args) do
+    lines[i] = text { "[" .. line.text .. "]", style = "caption_line" }
+  end
+  return vbox { style = "caption_bar", align = "start", table.unpack(lines) }
 end)
 
 -- Top right, over the story. The engine shows it (the story window does); a game hides it with

@@ -14,6 +14,7 @@
 #include "engine/dialogue/dialogue_presenter.hpp"
 #include "engine/dialogue/playback.hpp"
 #include "engine/platform/input.hpp"
+#include "engine/platform/input_map.hpp"
 #include "engine/platform/tts.hpp"
 #include "engine/platform/viewport.hpp"
 #include "engine/runtime/script_runtime.hpp"
@@ -227,11 +228,24 @@ label("start", function()
 end)
 )"};
   game.voicing->set_enabled(true);
-  // The first focus is the first control; Shift+Tab twice reaches the last toggle (Back is the last control).
+  // The first focus is the first control; Shift+Tab goes back over Back and Controls.
   game.frame();
-  game.press(Key::kTab, true);  // wraps to Back
   game.press(Key::kTab, true);
-  CHECK(game.tts.spoken.back() == "Self-voicing (V key), toggle, off");
+  game.press(Key::kTab, true);
+  game.press(Key::kTab, true);
+  CHECK(game.tts.spoken.back() == "Self-voicing, toggle, off");
   game.press(Key::kEnter);
-  CHECK(game.tts.spoken.back() == "Self-voicing (V key), toggle, on");
+  CHECK(game.tts.spoken.back() == "Self-voicing, toggle, on");
+}
+
+TEST_CASE("self-voicing: V is the default key of the input action, and a preference remaps it") {
+  const vnmaki::InputEvent v = vnmaki::KeyEvent{.key = Key::kV, .pressed = true};
+  const vnmaki::InputEvent f2 = vnmaki::KeyEvent{.key = Key::kF2, .pressed = true};
+  CHECK(vnmaki::InputMap{}.matches(vnmaki::InputAction::kSelfVoicing, v));
+
+  Game game{kSession};
+  CHECK(game.runtime.set_binding("prefs", "input_self_voicing", "key:f2").empty());
+  const vnmaki::InputMap controls = vnmaki::read_preferences(game.runtime).controls;
+  CHECK(controls.matches(vnmaki::InputAction::kSelfVoicing, f2));
+  CHECK_FALSE(controls.matches(vnmaki::InputAction::kSelfVoicing, v));
 }

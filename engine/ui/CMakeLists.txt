@@ -4,6 +4,8 @@ target_sources(
   vnmaki_engine
   PRIVATE backlog_screen.cpp
           backlog_screen.hpp
+          caption_presenter.cpp
+          caption_presenter.hpp
           playback_indicator.cpp
           playback_indicator.hpp
           preferences.cpp

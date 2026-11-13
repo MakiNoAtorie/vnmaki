@@ -368,11 +368,11 @@ Files: new `engine/tools/debugger.*`, `engine/tools/dap.*`, `engine/runtime/scri
 
 This task is the Phase 4 acceptance demo.
 
-- [ ] End-to-end headless test on Windows: start the template, change a say line on disk, and check the new text at the same step.
-- [ ] A DAP session test on the template: a breakpoint in `start`, step, read `store.affection`, goto `warm`.
-- [ ] `vnmaki check` and `vnmaki graph` on the template and on a broken fixture give the expected CSV.
-- [ ] A profile CSV of 120 frames of the template.
-- [ ] Write `docs/tools.md`: the overlay keys, hot reload rules, a VS Code `launch.json` for `vnmaki debug`, and the check codes.
+- [x] End-to-end test: start the template, change a say line on disk, and check the new text at the same step (`tests/unit/tools_demo_test.cpp`; on Windows the batch comes from a real `FileWatcher`).
+- [x] A DAP session test on the template: a breakpoint in `start`, step, read `store.affection`, goto `warm` (`cli.debug_template`, `tools/generators/debug_fixtures.py`).
+- [x] `vnmaki check` and `vnmaki graph` on the template and on a broken fixture give the expected CSV (`cli.check_template_has_no_findings`, `cli.check_mixed`, `cli.graph_prints_the_csv_of_the_template`, `cli.graph_prints_the_csv_of_a_project`).
+- [x] A profile CSV of 120 frames of the template (`cli.run_profile_of_the_template_has_120_frames`, a window test that needs a GPU).
+- [x] Write `docs/tools.md`: the overlay keys, hot reload rules, a VS Code extension and `launch.json` for `vnmaki debug`, the check codes, `extract-strings` and the profile CSV columns.
 
 ### Deferred
 
@@ -424,12 +424,12 @@ Files: `engine/l10n/`, `engine/runtime/`, `engine/vfs/` (language lookup), `engi
 
 Files: `engine/ui/`, `engine/text/`, `engine/audio/`, `engine/platform/input.*`, `templates/default/`.
 
-- [ ] `prefs.text_scale` (0.75–2.0) scales the say box and UI text, and the layout reflows.
-- [ ] `prefs.high_contrast` loads `styles/high_contrast.lua`. `prefs.dyslexia_font` puts `fonts/dyslexia.ttf` (an OFL font in the template) first in the chain.
-- [ ] `prefs.reduce_motion` also changes all transitions to a short dissolve (task 23 does shake and camera).
-- [ ] `sound`, `music` and `ambient` accept `caption = "..."`. `prefs.captions` shows them in a caption screen for the sound length.
-- [ ] Input actions (advance, rollback, skip, menu, ...) map to keys and gamepad buttons. A "Controls" screen changes the map, which is saved in `persistent`.
-- [ ] Headless tests for each preference, and a remap test with injected input.
+- [x] `prefs.text_scale` (0.75–2.0) scales the say box and UI text, and the layout reflows.
+- [x] `prefs.high_contrast` loads `styles/high_contrast.lua`. `prefs.dyslexia_font` puts `fonts/dyslexia.ttf` (an OFL font in the template) first in the chain. Open: the template has a generated placeholder font (wider spacing), not a real OFL font. Replace it with OpenDyslexic or similar (`templates/default/ASSETS.txt`).
+- [x] `prefs.reduce_motion` also changes all transitions to a short dissolve (task 23 does shake and camera).
+- [x] `sound`, `music` and `ambient` accept `caption = "..."`. `prefs.captions` shows them in a caption screen for the sound length.
+- [x] Input actions (advance, rollback, skip, menu, ...) map to keys and gamepad buttons. A "Controls" screen changes the map, which is saved in `persistent`.
+- [x] Headless tests for each preference, and a remap test with injected input.
 
 ### 43: Self-voicing (SPEC §17)
 
@@ -465,12 +465,12 @@ Files: new `engine/vfs/pak_mount.*`, `engine/vfs/pak_writer.*`, new `cli/build_c
 
 Files: new `engine/model3d/`, `engine/render/` (depth targets, meshes), `shaders/mesh_*.hlsl`, runtime, `tools/generators/model_fixtures.py`.
 
-- [ ] cgltf loads glTF 2.0 (meshes, materials, textures) from the VFS. Add a fuzz target.
-- [ ] `scene3d(name, { layer = "3d" })` renders into a target with a depth buffer. The 3D layer mixes with 2D layers.
-- [ ] `model(tag, path, { scene, position, rotation, scale })`, `light(...)` (directional, point), and `camera(scene, { position, look_at, fov })`. Tweens and `wait` work on them.
-- [ ] Shaders: unlit, toon, simple PBR, and custom (task 24).
-- [ ] The 3D state is in the snapshot.
-- [ ] Tests: the generator writes a cube glTF with Python `json` and `struct`. GPU golden for unlit. Pixel probes with a tolerance for toon and PBR.
+- [x] cgltf loads glTF 2.0 (meshes, materials, textures) from the VFS. Add a fuzz target.
+- [x] `scene3d(name, { layer = "3d" })` renders into a target with a depth buffer. The 3D layer mixes with 2D layers.
+- [x] `model(tag, path, { scene, position, rotation, scale })`, `light(...)` (directional, point), and `camera(scene, { position, look_at, fov })`. Tweens and `wait` work on them.
+- [x] Shaders: unlit, toon, simple PBR, and custom (task 24).
+- [x] The 3D state is in the snapshot.
+- [x] Tests: the generator writes a cube glTF with Python `json` and `struct`. GPU golden for unlit. Pixel probes with a tolerance for toon and PBR.
 
 ### 47: 3D animation (SPEC §12, §10)
 

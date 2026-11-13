@@ -10,6 +10,8 @@
 
 #include "engine/dialogue/playback.hpp"
 #include "engine/ui/backlog_screen.hpp"
+#include "engine/platform/input.hpp"
+#include "engine/ui/preferences.hpp"
 #include "engine/ui/ui_build.hpp"
 
 namespace vnmaki {
@@ -87,6 +89,71 @@ std::optional<Image> ScreenActions::thumbnail(const std::string& image_name) con
                .pixels = found->second.rgba};
 }
 
+ScreenNodeDef ScreenActions::controls_args() const {
+  ScreenNodeDef args = text_args({});
+  if (rebinding_) {
+    args.props.emplace_back("waiting", std::string{action_id(*rebinding_)});
+  }
+  const InputMap controls = read_preferences(*runtime_).controls;
+  args.children.reserve(kInputActions.size());
+  for (const InputAction action : kInputActions) {
+    args.children.push_back(text_args({{"action", std::string{action_id(action)}},
+                                       {"label", std::string{action_label(action)}},
+                                       {"text", describe_binding(controls.binding(action))}}));
+  }
+  return args;
+}
+
+void ScreenActions::show_controls() { static_cast<void>(open("controls", controls_args(), true)); }
+
+// Only the actions that changed are written, so the others stay at their defaults in `prefs`.
+void ScreenActions::write_controls(const InputMap& before, const InputMap& after) {
+  for (const InputAction action : kInputActions) {
+    if (before.binding(action) == after.binding(action)) {
+      continue;
+    }
+    const std::string problem = runtime_->set_binding("prefs", controls_key(action),
+                                                      format_binding(after.binding(action)));
+    if (!problem.empty()) {
+      warn(problem);
+    }
+  }
+}
+
+bool ScreenActions::capture(const InputEvent& event) {
+  if (!rebinding_) {
+    return false;
+  }
+  const auto* key = std::get_if<KeyEvent>(&event);
+  const auto* pad = std::get_if<GamepadButtonEvent>(&event);
+  if (key == nullptr && pad == nullptr) {
+    return false;
+  }
+  const bool pressed = key != nullptr ? key->pressed && !key->repeat : pad->pressed;
+  if (!pressed) {
+    return true;  // the release of the key that started the change, or a repeat
+  }
+  const InputAction action = *rebinding_;
+  const InputMap before = read_preferences(*runtime_).controls;
+  InputMap after = before;
+  if (key != nullptr && key->key == Key::kEscape) {
+    rebinding_.reset();
+  } else if (pad != nullptr && pad->button == GamepadButton::kEast) {
+    rebinding_.reset();
+  } else if (key != nullptr && !is_reserved(key->key)) {
+    after.bind_key(action, key->key);
+    rebinding_.reset();
+  } else if (pad != nullptr && !is_reserved(pad->button)) {
+    after.bind_button(action, pad->button);
+    rebinding_.reset();
+  } else {
+    return true;  // a key or button that the UI keeps: go on waiting
+  }
+  write_controls(before, after);
+  show_controls();
+  return true;
+}
+
 std::string ScreenActions::open(std::string_view name, const ScreenNodeDef& args, bool modal) {
   ScreenNodeDef tree;
   std::string problem = runtime_->build_screen(name, args, tree);
@@ -139,12 +206,25 @@ bool ScreenActions::handle(const ScreenActivation& activation) {
   const std::size_t split = action.find_first_of(":!");
   const std::string_view verb = action.substr(0, split);
   const bool confirmed = split != std::string_view::npos && action[split] == '!';
+  if (verb != "rebind") {
+    rebinding_.reset();  // any other button ends the wait for a key
+  }
   const std::string argument{split == std::string_view::npos ? std::string_view{}
                                                              : action.substr(split + 1)};
   if (verb == "open") {
-    static_cast<void>(open(argument, argument == "save" || argument == "load"
-                                         ? slot_args(argument == "save")
-                                         : ScreenNodeDef{}));
+    if (argument == "controls") {
+      show_controls();
+    } else {
+      static_cast<void>(open(argument, argument == "save" || argument == "load"
+                                           ? slot_args(argument == "save")
+                                           : ScreenNodeDef{}));
+    }
+  } else if (verb == "rebind") {
+    rebinding_ = action_from_id(argument);
+    show_controls();
+  } else if (verb == "controls_reset") {
+    write_controls(read_preferences(*runtime_).controls, InputMap{});
+    show_controls();
   } else if (verb == "view") {
     static_cast<void>(open("gallery_view", text_args({{"image", argument}}), true));
   } else if (verb == "close") {

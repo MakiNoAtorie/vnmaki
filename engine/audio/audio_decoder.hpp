@@ -62,6 +62,9 @@ class AudioDecoder {
   /// or LOOPEND, in samples of the file.
   [[nodiscard]] std::optional<AudioLoopPoints> loop_points() const;
 
+  /// The length of the file in seconds, when the format says it (used for captions).
+  [[nodiscard]] std::optional<double> seconds() const;
+
   static constexpr std::uint32_t kMaxSourceChannels = 8;
   static constexpr std::uint32_t kMinSourceRate = 8'000;
   static constexpr std::uint32_t kMaxSourceRate = 192'000;

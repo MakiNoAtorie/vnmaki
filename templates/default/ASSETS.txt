@@ -22,6 +22,15 @@ You may use, change and sell them with your game, with no credit. Replace them w
   shaders/sepia.frag.hlsl            a game shader
   movies/clip.webm                   a short movie
   fonts/default.ttf                  5 by 7 pixel font, ASCII only
+  fonts/dyslexia.ttf                 PLACEHOLDER for the dyslexia-friendly font (see below)
+  styles/high_contrast.lua           the look of prefs.high_contrast, written for VNMaki
+
+fonts/dyslexia.ttf is the same pixel font as fonts/default.ttf with wider letter spacing. It is a
+placeholder, not a real dyslexia-friendly font: no such font with a suitable license is in this
+repository. Before you ship a game, replace it with a real font under the SIL Open Font License,
+for example OpenDyslexic (https://opendyslexic.org/), under the same name, and record its license
+here. The engine loads fonts/dyslexia.ttf when it exists and puts it first in the font chain while
+the player has "Dyslexia-friendly font" on.
 
 The font has no accents or non-Latin letters. For a game in another language, use a font that
 has them, and list it under [fonts.fallback] in project.toml.

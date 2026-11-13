@@ -12,11 +12,25 @@ void FrameRecorder::reset() {
   vertices_.clear();
   batches_.clear();
   passes_.clear();
+  meshes_.clear();
   uniform_bytes_.clear();
 }
 
 void FrameRecorder::begin_pass(const RenderPass& pass) {
-  passes_.push_back(RecordedPass{.pass = pass, .first_batch = batches_.size(), .batch_count = 0});
+  passes_.push_back(RecordedPass{.pass = pass,
+                                 .first_batch = batches_.size(),
+                                 .batch_count = 0,
+                                 .first_mesh = meshes_.size(),
+                                 .mesh_count = 0});
+}
+
+void FrameRecorder::add_mesh(const MeshDraw& draw) {
+  MeshRecord record{
+      .draw = draw, .uniform_offset = uniform_bytes_.size(), .uniform_size = draw.uniforms.size()};
+  record.draw.uniforms = {};
+  uniform_bytes_.insert(uniform_bytes_.end(), draw.uniforms.begin(), draw.uniforms.end());
+  meshes_.push_back(record);
+  ++passes_.back().mesh_count;
 }
 
 bool FrameRecorder::joins_last_batch(const DrawState& state) const {
