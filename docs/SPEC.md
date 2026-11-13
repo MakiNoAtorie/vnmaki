@@ -1,26 +1,22 @@
 # VNMaki — Engine Specification
 
-**Status:** Draft 1 — full product spec, to be split into versions later
+**Status:** Draft 1, full product specification. We will divide it into versions later.
 **License:** MIT
-**Purpose:** A public, open-source visual novel engine. Also the tool its author uses to build his own VN.
-
----
+**Purpose:** A public, open-source visual novel engine. The author also uses it to build their own VN.
 
 ## 1. Goals
 
-- A lean, fast, portable VN engine with a native core and no embedded heavy interpreter.
-- Writer-friendly scripting in plain Lua, with full programmatic power when needed.
-- Fix the main gaps people cite in Ren'Py: debugging, story overview, modern UI tooling, web/console portability, localization workflow, accessibility, asset pipeline, 3D and rigged-puppet support.
-- Every bundled dependency is MIT-compatible. Proprietary SDKs (e.g. Steamworks, console SDKs) are bring-your-own optional modules.
+- A portable visual novel (VN) engine with a native core. No heavy embedded interpreter.
+- Plain Lua scripts for writers. Full programmatic power when needed.
+- Fix these Ren'Py gaps: debug tools, story overview, UI tooling, web and console portability, localization workflow, accessibility, asset pipeline, 3D and rigged-puppet support.
+- Every bundled dependency is MIT-compatible. Users supply proprietary SDKs, such as Steamworks and console SDKs, as optional modules.
 
 ## 2. Non-goals
 
 - Ren'Py compatibility or `.rpy` import.
-- Physics, IK, pathfinding, tile maps, or a real-time gameplay framework. (Minigames remain possible through Lua and plugins.)
-- 3D modeling or animation authoring. 3D content is authored in external tools and played back.
+- Physics, IK, pathfinding, tile maps, or a real-time gameplay framework. Minigames can use Lua and plugins.
+- 3D modeling or animation authoring. External tools make 3D content. The engine plays it back.
 - Live2D support.
-
----
 
 ## 3. Platforms
 
@@ -30,13 +26,12 @@
 | Later | Web (Emscripten), Android, iOS |
 | Final | Nintendo Switch, PlayStation, Xbox (via SDL console ports and platform SDKs, under NDA, out of the public repo) |
 
-Design rules that keep the later targets possible from day one:
-- No dynamic code loading required at runtime (consoles forbid it). Plugins can be statically linked.
-- No JIT anywhere.
-- All file access goes through the engine VFS (no direct `fopen` in game-facing code).
-- Renderer and platform services sit behind thin interfaces.
+Design rules for the later targets:
 
----
+- The runtime needs no dynamic code loading. Consoles forbid it.
+- The engine has no JIT.
+- Game code uses the VFS for all file access. It does not call `fopen`.
+- The renderer and platform services use thin interfaces.
 
 ## 4. Tech Stack
 
@@ -70,22 +65,18 @@ Design rules that keep the later targets possible from day one:
 | Accessibility tree | AccessKit (C bindings) | MIT/Apache |
 | File watching | efsw | MIT |
 
----
-
 ## 5. C++ Guardrails
 
-- Warnings as errors: `-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Werror` (Clang/GCC), `/W4 /WX /permissive-` (MSVC).
+- Warnings are errors: `-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Werror` (Clang/GCC), `/W4 /WX /permissive-` (MSVC).
 - Build on at least Clang and MSVC.
-- Hardened standard library in debug builds (`_GLIBCXX_ASSERTIONS` / libc++ hardening mode).
-- clang-tidy: `bugprone-*`, `cppcoreguidelines-*`, `modernize-*`, `performance-*`, `concurrency-*`. cppcheck or MSVC `/analyze` as a second pass.
-- clang-format enforced.
-- ASan + UBSan on debug and CI builds; TSan on threaded subsystems.
+- Debug builds use the hardened standard library (`_GLIBCXX_ASSERTIONS` / libc++ hardening mode).
+- clang-tidy checks: `bugprone-*`, `cppcoreguidelines-*`, `modernize-*`, `performance-*`, `concurrency-*`. Second pass: cppcheck or MSVC `/analyze`.
+- Enforce clang-format.
+- ASan and UBSan in debug and CI builds. TSan for threaded subsystems.
 - Fuzz targets for every loader of untrusted data: saves, scripts, packs, images, glTF, Inochi2D puppets, translation files.
-- Code rules: RAII, no raw `new`/`delete`, `std::unique_ptr` by default, `std::span` / `std::string_view` over pointer + length, Lua C API used only through sol2 wrappers.
-- CI (GitHub Actions): Windows/MSVC, Linux/Clang + sanitizers, macOS/Clang, clang-tidy, format check.
-- Test fixtures are produced by generator scripts, not hand-made files. Benchmark and tool outputs are CSV.
-
----
+- Code rules: RAII. No raw `new` or `delete`. `std::unique_ptr` by default. `std::span` or `std::string_view`, not a pointer and a length. Lua C API only through sol2 wrappers.
+- CI (GitHub Actions): Windows/MSVC, Linux/Clang with sanitizers, macOS/Clang, clang-tidy, format check.
+- Generator scripts make test fixtures. Do not make fixtures by hand. Benchmark and tool outputs use CSV.
 
 ## 6. Architecture
 
@@ -105,6 +96,7 @@ Design rules that keep the later targets possible from day one:
 ```
 
 Core modules:
+
 - **runtime** — Lua VM, script loader, label registry, coroutine scheduler.
 - **state** — store, persistent store, snapshots, saves, rollback, replay.
 - **scene** — layers, displayables, transforms, camera.
@@ -113,24 +105,25 @@ Core modules:
 - **text** — shaping, layout, glyph atlases, text effects.
 - **audio** — channels, mixing, voice, streaming.
 - **video** — AV1/WebM decoding to textures.
-- **model3d** — glTF loading, skinning, morph targets, 3D scenes.
+- **model3d** — glTF loader, skinning, morph targets, 3D scenes.
 - **puppet** — Inochi2D displayable.
 - **render** — renderer interface + SDL GPU backend.
 - **platform** — window, input, platform services (achievements, cloud saves).
 - **vfs** — loose files in dev, `.vnpak` archives in release.
-- **jobs** — thread pool for asset decoding and loading.
+- **jobs** — thread pool for asset decoders and loaders.
 - **tools** — debugger, story graph, hot reload, inspectors (dev builds only).
 
-**Displayable interface:** everything visible (images, layered sprites, text, video, Inochi2D puppets, 3D scenes, UI nodes, plugin content) implements one interface: update, draw, bounds, and tweenable properties. The animation system treats them all the same.
-
----
+**Displayable interface:** Visible items (images, layered sprites, text, video, Inochi2D puppets, 3D scenes, UI nodes, plugin content) implement one interface: update, draw, bounds, tweenable properties.
 
 ## 7. Scripting
 
 ### Model
+
 - Plain Lua 5.4. No custom DSL.
-- Each label is a Lua function run inside a coroutine. Blocking calls (`say`, `menu`, `pause`, `wait`) yield to the engine, so scripts read top to bottom.
-- Game scripts get a curated stdlib: no raw `io`/`os` file access (use the VFS API), `math.random` replaced by the deterministic engine RNG.
+- Each label is a Lua function in a coroutine.
+- Blocking calls (`say`, `menu`, `pause`, `wait`) yield to the engine. Scripts read top to bottom.
+- Curated standard library: no raw `io` or `os` file access. Use the VFS API.
+- The deterministic engine RNG replaces `math.random`.
 
 ### Example
 
@@ -157,6 +150,7 @@ end)
 ```
 
 ### Core API (indicative)
+
 - **Flow:** `label`, `jump`, `call`, `ret`, `menu`, `pause`, `wait`, `wait_all`.
 - **Dialogue:** `character`, `say`, `narrate`, `nvl` mode, text tags (color, speed, pause, ruby).
 - **Visuals:** `scene`, `show`, `hide`, `tween`, `transition`, `camera`, `layer`.
@@ -167,65 +161,71 @@ end)
 - **UI:** `screen`, `call_screen`, `show_screen`, `hide_screen`, `bind`.
 - **Platform:** `achievement`, `stat`, `rich_presence`.
 
----
-
 ## 8. State, Saves, Rollback
 
 ### Rules
-- All game state lives in `store` (engine-owned Lua table). Writing new globals outside `store` warns in dev builds.
-- Cross-playthrough data (seen text, unlocks, gallery, preferences) lives in `persistent` and is never rolled back.
-- Scene state (shown displayables, playing audio, active screens, camera) is engine-side and snapshotted with `store`.
+
+- All game state is in `store`, an engine-owned Lua table. Dev builds warn on new globals outside `store`.
+- `persistent` holds cross-playthrough data: seen text, unlocks, gallery, preferences. Rollback never changes it.
+- Scene state (shown displayables, playing audio, active screens, camera) is engine-side. Snapshots include it with `store`.
 
 ### Position and replay
-- Script position = **label name + step count**. A step is each yield point (`say`, `menu`, `pause`, etc.).
-- On label entry the engine snapshots `store` + scene state and starts an input log (menu choices, input results).
-- To reach any position, the engine restores the label-entry snapshot and **replays** the label silently to step N: `say` returns immediately, menus return logged choices, audio and visuals are suppressed until the target step.
-- Determinism: RNG state lives in `store`; all side effects go through the engine API.
+
+- Script position is a label name and a step count. A step is each yield point (`say`, `menu`, `pause`, etc.).
+- On label entry, the engine snapshots `store` and scene state. It starts an input log (menu choices, input results).
+- To reach a position, the engine restores the label-entry snapshot and **replays** the label silently to step N.
+  - `say` returns at once.
+  - Menus return the logged choices.
+  - Audio and visuals stay off until the target step.
+- RNG state is in `store`. All side effects use the engine API.
 
 ### Rollback
-- Player can scroll back step by step, including back past menus (re-choice allowed; configurable to fixed-choice per menu).
-- Ring buffer of label-entry snapshots + input logs; depth configurable (default 100 steps).
-- Rollback across a label boundary restores the previous label's snapshot and replays.
+
+- The player can move back one step at a time, past menus too, and choose again.
+- A menu can be set to a fixed choice.
+- A ring buffer keeps label-entry snapshots and input logs. Default depth: 100 steps, configurable.
+- Across a label boundary, the engine restores the previous label snapshot and replays.
 
 ### Saves
+
 - Format: zstd-compressed MessagePack.
 - Contents: engine version, game version, label, step, label source hash, label-entry snapshot, input log, persistent pointer, thumbnail, timestamp, user-facing title.
-- **Script-edit safety:** if a label's source hash changed since the save, load falls back to that label's start and shows a dev warning.
-- **Migrations:** `on_load(old_version, store)` hook for renaming or converting variables between releases.
-- Slots, quick save, auto save on configurable events.
+- **Script-edit safety:** If the label source hash changed, the game starts that label from its beginning. It shows a dev warning.
+- **Migrations:** The `on_load(old_version, store)` hook renames or converts variables between releases.
+- Slots, quick save, and auto save on configurable events.
 
 ### Backlog
-- Read-only scrollable dialogue history with voice replay. Separate from rollback but built from the same step log.
+
+- Read-only, scrollable dialogue history with voice replay. It uses the same step log as rollback, but it is separate from rollback.
 
 ### Skip / auto
-- Skip seen text (via persistent seen-step set), skip all, auto-advance with per-character timing and voice-aware delay.
 
----
+- Skip seen text, using the persistent seen-step set.
+- Skip all.
+- Auto-advance with per-character timing and a voice-aware delay.
 
 ## 9. Rendering
 
-- SDL3 GPU behind `IRenderer`: textured quads, batched sprites, render targets, custom shaders, depth buffer for 3D layers.
-- Later backend: WebGPU/WebGL for the web build, slotted behind the same interface.
-- Virtual resolution with scaling modes (fit, fill, integer scale), letterboxing, DPI awareness.
-- Layer stack (background, master, characters, 3D, overlay, UI, transient), ordered and individually shaded.
-- Custom shaders per displayable or per layer (HLSL), with uniforms tweenable from Lua.
-- Texture atlases built by the asset pipeline; streaming of large backgrounds.
-
----
+- SDL3 GPU backend behind `IRenderer`: textured quads, batched sprites, render targets, custom shaders, depth buffer for 3D layers.
+- A later WebGPU or WebGL backend serves the web build. It uses the same interface.
+- Virtual resolution. Scaling modes: fit, fill, integer scale. Letterboxing and DPI awareness.
+- Layers: background, master, characters, 3D, overlay, UI, transient. Ordered, each with its own shading.
+- Custom HLSL shaders apply per displayable or per layer. Lua can tween shader uniforms.
+- The asset pipeline builds texture atlases. Large backgrounds stream.
 
 ## 10. Animation
 
-One timeline system drives everything (2D, UI, puppets, 3D, camera, audio fades).
+One timeline system controls 2D, UI, puppets, 3D, camera, and audio fades.
 
-- **Tweens** on any displayable property: position, anchor, scale, rotation, alpha, tint, crop, shader uniforms.
-- Easing library, sequence / parallel / loop / repeat / yoyo, delays.
-- Awaitable from script (`wait("eileen")`, `wait_all()`), or fire-and-forget.
-- Event hooks: sync to text reveal, voice markers, or named timeline markers.
+- **Tweens** change any displayable property: position, anchor, scale, rotation, alpha, tint, crop, shader uniforms.
+- Easing library, sequence, parallel, loop, repeat, yoyo, and delays.
+- Script can wait with `wait("eileen")` or `wait_all()`, or run a tween without waiting.
+- Event hooks sync to text reveal, voice markers, or named timeline markers.
 - **Transitions:** dissolve, fade, slide, wipes, image-mask transitions, custom shader transitions.
 - **Frame animation:** sprite sheets and image sequences.
-- **Layered characters:** named layers (base, outfit, face, accessories) composed by attributes; attribute changes can crossfade.
+- **Layered characters:** named layers (base, outfit, face, accessories). Attributes compose the layers. An attribute change can crossfade.
 - **Camera:** pan, zoom, rotate, shake, parallax depth per layer.
-- **Lip sync:** amplitude-based mouth flaps from voice audio, usable by layered sprites, Inochi2D, and 3D morph targets.
+- **Lip sync:** amplitude-based mouth flaps from voice audio. Layered sprites, Inochi2D, and 3D morph targets can use them.
 
 ```lua
 show("eileen", { at = "left", alpha = 0 })
@@ -234,28 +234,24 @@ shake("camera", { strength = 8, time = 0.3 })
 wait_all()
 ```
 
----
-
 ## 11. Rigged 2D Puppets (Inochi2D)
 
 - Inochi2D puppets load as displayables.
-- Parameters (head angle, eyes, mouth, breathing, custom) are tweenable from the timeline.
+- The timeline tweens these parameters: head angle, eyes, mouth, breathing, custom parameters.
 - Built-in idle behaviors: blink, breathe, optional sway.
-- Lip sync bound to a mouth parameter.
-- Expressions as named parameter presets.
-
----
+- Lip sync binds to a mouth parameter.
+- Expressions are named parameter presets.
 
 ## 12. 3D Support
 
-Playback and staging, not authoring.
+3D support covers playback and staging only.
 
 - **Format:** glTF 2.0 (`.glb` / `.gltf`).
 - **Playback:** skeletal animation, morph targets, multiple named clips per model.
-- **Timing:** play, crossfade, speed, seek, loop, await. Clips can sync to text/voice events through the timeline.
-- **Compositing:** a 3D scene renders into a layer and mixes freely with 2D (3D background + 2D sprites, 3D character + painted background, etc.).
-- **Camera:** scriptable position, look-at, FOV, all tweenable.
-- **Lighting and shading:** directional and point lights; unlit, toon, and simple PBR shading; custom shaders allowed.
+- **Timing:** play, crossfade, speed, seek, loop, await. Clips can sync to text or voice events through the timeline.
+- **Compositing:** a 3D scene renders into a layer and mixes with 2D. Examples: 3D background with 2D sprites, 3D character with a painted background.
+- **Camera:** scriptable position, look-at, FOV. All tweenable.
+- **Lighting and shading:** directional and point lights. Unlit, toon, simple PBR. Custom shaders allowed.
 - Excluded: physics, IK, model editing, real-time 3D gameplay.
 
 ```lua
@@ -266,40 +262,35 @@ camera(hall):tween({ fov = 35 }, 1.2, "ease_in_out")
 wait("kai")
 ```
 
----
-
 ## 13. Text
 
-- **Shaping:** HarfBuzz. **Rasterizing:** FreeType. **Line breaking:** libunibreak (including Japanese kinsoku rules). **Bidi:** SheenBidi.
-- Glyph atlas rasterized at actual screen resolution, regenerated on resize, for maximum sharpness (especially small text and CJK).
-- SDF glyphs only for effect text (outline, glow, shadow, large animated titles).
+- **Shaping:** HarfBuzz. **Rasterizing:** FreeType. **Line breaking:** libunibreak, with Japanese kinsoku rules. **Bidi:** SheenBidi.
+- The glyph atlas is rasterized at actual screen resolution and rebuilt on resize.
+- SDF glyphs are used only for effect text: outline, glow, shadow, large animated titles.
 - Font fallback chains per language.
-- Ruby text (furigana), vertical text as a later addition.
-- Typewriter reveal per character with speed tags, inline pauses, and per-character animation effects (wave, shake, fade-in).
+- Ruby text (furigana). Vertical text is a later addition.
+- Typewriter reveal per character, with speed tags and inline pauses.
+- Per-character effects: wave, shake, fade-in.
 - Inline tags: color, size, font, bold/italic, speed, pause, ruby, link.
-
----
 
 ## 14. Audio and Video
 
-- **Audio:** miniaudio. Named channels (music, sound, voice, ambient, UI, custom), crossfades, loops with loop points, ducking music under voice, per-channel volume in preferences.
+- **Audio:** miniaudio. Named channels: music, sound, voice, ambient, UI, custom. Crossfades, loops with loop points, ducking music under voice, per-channel volume in preferences.
 - Formats: Opus (recommended), Vorbis, WAV, FLAC.
-- **Video:** AV1 in WebM via dav1d + libwebm, Opus audio track. Fullscreen cutscenes or video as a displayable (looping backgrounds, video sprites). Hardware decode where available later.
-- A recommended encoding preset is documented so authors can convert their videos.
-
----
+- **Video:** AV1 in WebM via dav1d and libwebm, Opus audio track. Fullscreen cutscenes, or video as a displayable (looping backgrounds, video sprites). Hardware decode later, where available.
+- The documentation gives a recommended encoding preset for authors.
 
 ## 15. UI System (Screens)
 
-- Retained, declarative tree defined in Lua tables.
+- A retained, declarative tree in Lua tables.
 - Flexbox layout via Yoga.
-- Styles and themes (style sheets as Lua tables), inheritance, per-language overrides.
-- Data binding to `store`, `persistent`, and preferences; tree updates when bound data changes.
+- Styles and themes are style sheets in Lua tables. They inherit values. Each language can override them.
+- Data binds to `store`, `persistent`, and preferences. The tree updates when bound data changes.
 - Nodes: box, hbox, vbox, grid, text, image, button, toggle, slider, bar, input, viewport (scroll), any displayable.
-- Every node is tweenable and supports enter/exit transitions.
-- Focus navigation for keyboard and gamepad built in.
-- Each node exposes accessibility info (role, label, state) for the accessibility tree.
-- Default screen set shipped with the project template: title, say box, choice menu, NVL, save/load, preferences, backlog, gallery, confirm dialogs, quick menu.
+- Every node can tween and has enter and exit transitions.
+- Built-in focus navigation for keyboard and gamepad.
+- Each node exposes accessibility data for the accessibility tree: role, label, state.
+- The project template ships these default screens: title, say box, choice menu, NVL, save/load, preferences, backlog, gallery, confirm dialogs, quick menu.
 
 ```lua
 screen "quick_menu" {
@@ -311,76 +302,65 @@ screen "quick_menu" {
 }
 ```
 
----
-
 ## 16. Localization
 
-- `vnmaki extract-strings` collects every `say`/`narrate`/menu string and UI string into translation files.
-- Format: gettext `.po` (works with Poedit, Weblate, Crowdin). Entries keyed by label + step hash, with the original text and speaker as context.
-- Missing translations fall back to the source language; changed source lines are flagged as fuzzy.
+- `vnmaki extract-strings` collects every `say`, `narrate`, menu, and UI string into translation files.
+- Format: gettext `.po`, which Poedit, Weblate, and Crowdin support. Entry keys are the label and step hash. Context is the original text and speaker.
+- A missing translation uses the source language. The tool flags a changed source line as fuzzy.
 - Per-language fonts, styles, text direction, and layout overrides.
 - Runtime language switching.
-- Localized images and voice by path convention (`images/ja/...`, `voice/ja/...`).
-- Built-in translation editor in dev tools: side-by-side source/target, live preview in-game.
-
----
+- Localized images and voice use a path convention: `images/ja/...`, `voice/ja/...`.
+- The dev tools include a translation editor: source and target side by side, live in-game preview.
 
 ## 17. Accessibility
 
-- Screen reader support via the UI accessibility tree (AccessKit).
-- Self-voicing through platform TTS (SAPI, AVSpeech, speech-dispatcher).
+- Screen reader support uses the UI accessibility tree (AccessKit).
+- Self-voicing uses platform TTS: SAPI, AVSpeech, speech-dispatcher.
 - Text scaling, high contrast theme, dyslexia-friendly font option.
-- Reduce motion (disables shake, flashes, large camera moves).
+- Reduce motion disables shake, flashes, large camera moves.
 - Captions for sound effects and music cues.
-- Full keyboard and gamepad operation; remappable input.
-- Adjustable text speed, auto-advance timing, and window opacity.
-
----
+- Full keyboard and gamepad operation. Remappable input.
+- Adjustable text speed, auto-advance timing, window opacity.
 
 ## 18. Developer Tools (dev builds only)
 
-- **Hot reload:** file watcher reloads changed scripts, images, styles, and shaders. After a script reload, the current label is re-entered via replay to the current step.
-- **Debugger:** Lua debugging through the Debug Adapter Protocol (VS Code and other DAP clients): breakpoints, step in/over/out, call stack, locals, `store` inspection, watch expressions. Jump to any label/step using replay.
-- **Dev overlay (ImGui):** variable viewer/editor, scene graph inspector, displayable properties, active tweens, audio channels, performance stats, log console with Lua REPL.
-- **Story graph:** static analysis of scripts (labels, `jump`, `call`, `menu` branches) rendered as a node graph; edges found only at runtime are added from traces. Click a node to open the script or jump there in-game. Shows unreachable labels and dead ends.
-- **Screen editor (later):** WYSIWYG editing of the screen tree, writing back to the Lua screen files.
-- **Translation editor:** see §16.
-- **Profiler:** frame timing, draw calls, texture memory, load times; exports CSV.
-
----
+- **Hot reload:** A file watcher reloads changed scripts, images, styles, shaders. After a script reload, the engine replays the current label to the current step.
+- **Debugger:** Lua debugging through the Debug Adapter Protocol (VS Code and other DAP clients). Breakpoints, step in, step over, step out, call stack, locals, `store` inspection, watch expressions. Jumps to any label and step with replay.
+- **Dev overlay (ImGui):** variable viewer and editor, scene graph inspector, displayable properties, active tweens, audio channels, performance stats, log console with Lua REPL.
+- **Story graph:** static analysis of scripts (labels, `jump`, `call`, `menu` branches) drawn as a node graph. Edges found only at run time come from traces. Clicking a node opens its script or jumps there in-game. Shows unreachable labels and dead ends.
+- **Screen editor (later):** WYSIWYG editing of the screen tree, written back to the Lua screen files.
+- **Profiler:** frame timing, draw calls, texture memory, load times. Exports CSV.
 
 ## 19. Asset Pipeline and Packaging
 
-- **Dev mode:** loose files, imported into a local cache on change.
-- **Import:** images → KTX2 (Basis Universal) with atlas packing for small sprites; audio normalized and encoded; fonts subset per language; glTF validated and optimized.
-- **Release:** `.vnpak` archives (indexed, zstd-compressed, optional per-file encryption key for casual asset protection). Patch packs override base packs by path.
+- **Dev mode:** loose files, imported into a local cache when they change.
+- **Import:**
+  - Images: KTX2 (Basis Universal), atlas packing for small sprites.
+  - Audio: normalization and encoding.
+  - Fonts: subset per language.
+  - glTF: validation and optimization.
+- **Release:** `.vnpak` archives (indexed, zstd-compressed). Optional per-file encryption key for casual asset protection. Patch packs override base packs by path.
 - **CLI:**
   - `vnmaki new <name>` — create project from template
   - `vnmaki run` — run in dev mode
   - `vnmaki build <platform>` — import + package
   - `vnmaki extract-strings` — localization export
   - `vnmaki check` — lint scripts, missing assets, unreachable labels
-- Project config: `project.toml` (title, version, resolution, languages, platforms, plugins, build options).
-- Launcher GUI built on the CLI comes later.
-
----
+- Project config `project.toml`: title, version, resolution, languages, platforms, plugins, build options.
+- A launcher GUI built on the CLI comes later.
 
 ## 20. Plugin API
 
-- **C++ plugins:** implement module interfaces (new displayables, shaders, platform services, file formats, Lua bindings). Statically linked by default (console-safe); dynamic loading allowed on desktop.
+- **C++ plugins:** implement module interfaces: new displayables, shaders, platform services, file formats, Lua bindings. Statically linked by default (console-safe). Dynamic loading allowed on desktop.
 - **Lua plugins:** packages in `plugins/` that add API functions, screens, transitions, or effects.
 - Plugins declare engine version compatibility in a manifest.
-
----
 
 ## 21. Platform Services
 
 - `IPlatformServices` interface: achievements, stats, cloud saves, rich presence, overlay hooks.
-- Default backend: local-only (achievements and saves stored locally).
-- Optional bring-your-own-SDK modules: Steamworks, GOG Galaxy, console services. Not in the public repo where licensing forbids it.
-- Script-side API is identical across backends.
-
----
+- Default backend: local only. Achievements and saves are stored locally.
+- Optional modules for Steamworks, GOG Galaxy, console services. The public repo omits a module when its license forbids it.
+- Script API is identical across backends.
 
 ## 22. Repository Layout
 
@@ -402,8 +382,6 @@ vnmaki/
   .clang-tidy  .clang-format
   LICENSE (MIT)
 ```
-
----
 
 ## 23. Roadmap
 
