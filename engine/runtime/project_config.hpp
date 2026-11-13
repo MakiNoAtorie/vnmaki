@@ -96,6 +96,10 @@ class ProjectConfigError : public std::runtime_error {
 /// The virtual path of the project file at the root of a game.
 inline constexpr std::string_view kProjectConfigPath = "project.toml";
 
+/// True for a language code: letters, digits, '-' and '_'. A code is a file name (`translations/
+/// <code>.po`, `fonts/X.<code>.ttf`), so `parse_project_config` accepts no other `languages` entry.
+[[nodiscard]] bool is_language_code(std::string_view language);
+
 /// Parses the text of a project.toml. Throws ProjectConfigError.
 [[nodiscard]] ProjectConfig parse_project_config(std::string_view toml_text);
 

@@ -19,6 +19,7 @@
 #include "cli/check_command.hpp"
 #include "cli/extract_command.hpp"
 #include "cli/new_command.hpp"
+#include "engine/core/utf8_path.hpp"
 #include "engine/platform/sdl_platform.hpp"
 #include "engine/platform/shell.hpp"
 
@@ -53,7 +54,10 @@ RecentProjects::RecentProjects(fs::path file) : file_(std::move(file)) {
       line.pop_back();
     }
     if (!line.empty() && projects_.size() < kMaxProjects) {
-      projects_.emplace_back(line);
+      try {
+        projects_.push_back(utf8_path(line));
+      } catch (const std::exception&) {  // a line that is not UTF-8 (an old file) is dropped
+      }
     }
   }
 }
@@ -74,7 +78,7 @@ bool RecentProjects::add(const fs::path& folder) {
   }
   std::ofstream stream{file_, std::ios::trunc};
   for (const fs::path& project : projects_) {
-    stream << project.string() << '\n';
+    stream << to_utf8(project) << '\n';
   }
   return static_cast<bool>(stream.flush());
 }
@@ -92,8 +96,8 @@ int Launcher::run(LauncherAction action, std::string_view folder) {
     return kExitUsage;
   }
   const std::string dir{folder};
-  const std::string build_folder = (fs::path{dir} / ".vnmaki" / "windows").string();
-  const std::string runner = host_.runner ? host_.runner->string() : std::string{};
+  const std::string build_folder = to_utf8(utf8_path(dir) / ".vnmaki" / "windows");
+  const std::string runner = host_.runner ? to_utf8(*host_.runner) : std::string{};
   std::ostringstream text;  // out and err together, so that the log keeps their order
   int code = 0;
   try {
@@ -129,13 +133,13 @@ int Launcher::run(LauncherAction action, std::string_view folder) {
       case LauncherAction::kRun: {
         const std::string_view shown[] = {dir};
         text << command_line("run", shown);
-        const fs::path args[] = {"run", fs::path{dir}};
+        const fs::path args[] = {"run", utf8_path(dir)};
         code = host_.spawn_vnmaki(args) ? 0 : kExitFailure;
         text << (code == 0 ? "Started the game in its own window.\n" : "Cannot start vnmaki.\n");
         break;
       }
       case LauncherAction::kOpenFolder:
-        code = host_.open_folder(fs::path{dir}) ? 0 : kExitFailure;
+        code = host_.open_folder(utf8_path(dir)) ? 0 : kExitFailure;
         if (code != 0) {
           text << "Cannot open \"" << dir << "\".\n";
         }
@@ -146,7 +150,7 @@ int Launcher::run(LauncherAction action, std::string_view folder) {
     code = kExitFailure;
   }
   log_ += text.str();
-  if (code == 0 && !recent_.add(fs::path{dir})) {
+  if (code == 0 && !recent_.add(utf8_path(dir))) {
     log_ += "Cannot write the list of recent projects.\n";
   }
   return code;
@@ -166,7 +170,7 @@ int launcher_command(std::span<const std::string_view> args, std::ostream& err) 
       }
       max_frames = frames;
     } else if (args[i] == "--data-dir" && i + 1 < args.size()) {
-      data_directory = fs::path{args[++i]};
+      data_directory = utf8_path(args[++i]);
     } else {
       err << "vnmaki launcher: unexpected argument '" << args[i] << "'\nusage:"
           << kLauncherUsage.substr(std::string_view{"      "}.size());

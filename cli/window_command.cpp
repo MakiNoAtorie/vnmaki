@@ -9,6 +9,7 @@
 #include <system_error>
 
 #include "cli/image_view.hpp"
+#include "engine/core/utf8_path.hpp"
 #include "engine/platform/main_loop.hpp"
 #include "engine/platform/sdl_platform.hpp"
 
@@ -46,7 +47,7 @@ int window_command(std::span<const std::string_view> args, std::ostream& err) {
         return kExitUsageError;
       }
     } else if (args[i] == "--image" && i + 1 < args.size()) {
-      image_file = std::filesystem::path{args[++i]};
+      image_file = utf8_path(args[++i]);
     } else {
       err << "vnmaki window: unknown option '" << args[i]
           << "'\nusage: vnmaki window [--frames N] [--image FILE]\n";

@@ -7,6 +7,7 @@
 #include <span>
 #include <string_view>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/tools/story_graph.hpp"
 #include "engine/vfs/vfs.hpp"
 
@@ -31,7 +32,7 @@ int graph_command(std::span<const std::string_view> args, std::ostream& out, std
     } else if (args[i].starts_with("-") || directory) {
       usage_error = true;
     } else {
-      directory = std::filesystem::path{args[i]};
+      directory = utf8_path(args[i]);
     }
   }
   if (usage_error || !directory) {

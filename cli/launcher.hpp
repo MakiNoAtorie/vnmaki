@@ -18,8 +18,8 @@ inline constexpr std::string_view kLauncherUsage =
     "       vnmaki launcher [--frames <n>] [--data-dir <path>]\n";
 
 /// The folders that the launcher used last, newest first. They are kept in a text file with one
-/// folder on each line. A folder name is read and written in the system's code page, as on the
-/// command line, so a name with characters outside it is not kept.
+/// folder on each line. A folder name is read and written as UTF-8, like the arguments of the
+/// command line.
 class RecentProjects {
  public:
   static constexpr std::size_t kMaxProjects = 10;

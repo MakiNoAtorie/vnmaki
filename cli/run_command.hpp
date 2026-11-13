@@ -24,7 +24,8 @@ inline constexpr std::string_view kRunUsage =
 ///
 /// A <project-dir> that has a `game.vnpak` is a built game (docs/SPEC.md section 19): the project
 /// is that pack and the `patch-*.vnpak` files next to it (engine/vfs/pak_mount.hpp), not the loose
-/// files. A pak that cannot be read gives exit code 1.
+/// files, unless the folder also has a `project.toml`: then the loose files run and a warning says
+/// that the pack is ignored. A pak that cannot be read gives exit code 1.
 ///
 /// Saves and the persistent file go to the user-data directory of the game's title, or to
 /// <path> with --data-dir (in a window and headless). Tests use it to leave the user's data alone.

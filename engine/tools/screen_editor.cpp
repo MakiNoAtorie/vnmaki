@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/tools/script_scan.hpp"
 #include "engine/tools/story_graph.hpp"
@@ -413,7 +414,7 @@ std::string ScreenEditor::save() {
   if (edits.empty()) {
     return {};
   }
-  const std::filesystem::path path = project_dir_ / std::filesystem::path{file_};
+  const std::filesystem::path path = project_dir_ / utf8_path(file_);
   const RewriteResult rewritten = rewrite_spans(read_file(path), std::move(edits));
   if (!rewritten.problem.empty()) {
     return rewritten.problem + " (" + file_ + ")";
@@ -425,7 +426,7 @@ std::string ScreenEditor::save() {
     out.write(rewritten.text.data(), static_cast<std::streamsize>(rewritten.text.size()));
     out.close();
     if (!out) {
-      return "cannot write " + temporary.string();
+      return "cannot write " + to_utf8(temporary);
     }
   }
   std::error_code error;

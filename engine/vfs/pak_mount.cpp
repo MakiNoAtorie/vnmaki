@@ -13,6 +13,7 @@
 
 #include "engine/assets/import_cache.hpp"
 #include "engine/core/byte_stream.hpp"
+#include "engine/core/utf8_path.hpp"
 #include "engine/vfs/path.hpp"
 
 namespace vnmaki {
@@ -36,14 +37,14 @@ std::unique_ptr<PakMount> PakMount::open(const fs::path& file) {
   std::error_code error;
   const std::uintmax_t size = fs::file_size(file, error);
   if (error) {
-    throw PakError{"pak: cannot open " + file.string()};
+    throw PakError{"pak: cannot open " + to_utf8(file)};
   }
   std::unique_ptr<PakMount> pak{new PakMount};
   pak->file_ = file;
   try {
     pak->parse_index(size);
   } catch (const PakError& failure) {
-    throw PakError{file.string() + ": " + failure.what()};
+    throw PakError{to_utf8(file) + ": " + failure.what()};
   }
   return pak;
 }
@@ -230,13 +231,13 @@ bool mount_game_packs(Vfs& vfs, const fs::path& directory) {
   std::vector<fs::path> patches;
   for (fs::directory_iterator it{directory, error}; !error && it != fs::directory_iterator{};
        it.increment(error)) {
-    const std::string name = it->path().filename().string();
+    const std::string name = to_utf8(it->path().filename());
     if (name.starts_with(kPatchPakPrefix) && name.ends_with(kPakExtension) &&
         it->is_regular_file(error)) {
       patches.push_back(it->path());
     }
   }
-  std::ranges::sort(patches, {}, [](const fs::path& path) { return path.filename().string(); });
+  std::ranges::sort(patches, {}, [](const fs::path& path) { return to_utf8(path.filename()); });
   vfs.mount(PakMount::open(game));
   for (const fs::path& patch : patches) {
     vfs.mount(PakMount::open(patch));

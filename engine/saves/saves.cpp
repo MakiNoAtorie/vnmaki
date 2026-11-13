@@ -17,6 +17,7 @@
 #include <variant>
 #include <vector>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/core/version.hpp"
 #include "engine/saves/save_file.hpp"
 #include "engine/saves/thumbnail.hpp"
@@ -91,7 +92,7 @@ std::vector<std::byte> read_file(const std::filesystem::path& path) {
   }
   std::ifstream stream{path, std::ios::binary};
   if (!stream) {
-    throw SaveError{"save: cannot open " + path.string()};
+    throw SaveError{"save: cannot open " + to_utf8(path)};
   }
   std::vector<std::byte> bytes;
   bytes.reserve(static_cast<std::size_t>(size));
@@ -167,7 +168,7 @@ std::string Saves::write_file(std::string_view slot, const SaveData& data) const
                    static_cast<std::streamsize>(bytes.size()));
       stream.flush();
       if (!stream) {
-        return "cannot write " + temporary.string();
+        return "cannot write " + to_utf8(temporary);
       }
     }
     // A save is written beside its slot and then renamed over it, so a crash leaves the old one.
@@ -269,10 +270,10 @@ std::vector<SlotInfo> Saves::list() const {
   }
   for (const std::filesystem::directory_entry& entry : entries) {
     const std::filesystem::path& path = entry.path();
-    if (path.extension() != kSaveExtension || !valid_slot(path.stem().string())) {
+    if (path.extension() != kSaveExtension || !valid_slot(to_utf8(path.stem()))) {
       continue;
     }
-    SlotInfo info{.slot = path.stem().string()};
+    SlotInfo info{.slot = to_utf8(path.stem())};
     try {
       SaveData data = decode_save(read_file(path));
       info.title = std::move(data.title);

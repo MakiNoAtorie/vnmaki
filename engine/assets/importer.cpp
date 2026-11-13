@@ -17,6 +17,7 @@
 #include "engine/assets/audio_import.hpp"
 #include "engine/assets/font_import.hpp"
 #include "engine/assets/gltf_import.hpp"
+#include "engine/core/utf8_path.hpp"
 #include "engine/render/precompiled_shader.hpp"
 #include "engine/render/shader_compiler.hpp"
 #include "engine/render/shader_headers.hpp"
@@ -72,12 +73,6 @@ Kind kind_of(std::string_view path) {
     return Kind::kText;
   }
   return Kind::kNone;
-}
-
-bool is_language_code(std::string_view language) {
-  return !language.empty() && std::ranges::all_of(language, [](char c) {
-    return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '-' || c == '_';
-  });
 }
 
 std::vector<std::byte> bytes_of(std::string_view text) {
@@ -208,9 +203,6 @@ ImportReport Importer::import_paths(const std::vector<std::string>& sources) con
             scripts = read_scripts(*vfs_);
           }
           for (const std::string& language : config.languages) {
-            if (!is_language_code(language)) {
-              throw std::runtime_error{"project.toml: '" + language + "' is not a language code"};
-            }
             auto found = codepoints.find(language);
             if (found == codepoints.end()) {
               found = codepoints
@@ -254,14 +246,14 @@ void write_imported_files(const ImportReport& report, const std::filesystem::pat
     if (file.path.empty()) {
       continue;
     }
-    const std::filesystem::path target = directory / std::filesystem::path{file.path};
+    const std::filesystem::path target = directory / utf8_path(file.path);
     std::error_code ignored;
     std::filesystem::create_directories(target.parent_path(), ignored);
     std::ofstream out{target, std::ios::binary | std::ios::trunc};
     out.write(reinterpret_cast<const char*>(file.data.data()),
               static_cast<std::streamsize>(file.data.size()));
     if (!out.flush()) {
-      throw std::runtime_error{"cannot write " + target.string()};
+      throw std::runtime_error{"cannot write " + to_utf8(target)};
     }
   }
 }

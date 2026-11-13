@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "engine/core/load_timing.hpp"
+#include "engine/core/utf8_path.hpp"
 
 namespace vnmaki {
 
@@ -34,11 +35,11 @@ template <typename Writer>
 std::string write_file(const std::filesystem::path& path, const Writer& writer) {
   std::ofstream file{path, std::ios::binary};
   if (!file) {
-    return "cannot write " + path.string();
+    return "cannot write " + to_utf8(path);
   }
   writer(file);
   file.flush();
-  return file ? std::string{} : "cannot write " + path.string();
+  return file ? std::string{} : "cannot write " + to_utf8(path);
 }
 
 }  // namespace
@@ -145,7 +146,10 @@ std::string Profiler::write_csv_files(const std::filesystem::path& frames_csv) c
 
 std::filesystem::path loads_csv_path(const std::filesystem::path& frames_csv) {
   std::filesystem::path loads = frames_csv;
-  loads.replace_filename(frames_csv.stem().string() + "_loads" + frames_csv.extension().string());
+  std::filesystem::path name = frames_csv.stem();
+  name += "_loads";
+  name += frames_csv.extension();
+  loads.replace_filename(name);
   return loads;
 }
 

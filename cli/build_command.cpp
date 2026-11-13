@@ -17,6 +17,7 @@
 
 #include "cli/run_command.hpp"
 #include "engine/assets/importer.hpp"
+#include "engine/core/utf8_path.hpp"
 #include "engine/platform/sdl_platform.hpp"
 #include "engine/runtime/project_config.hpp"
 #include "engine/vfs/pak_mount.hpp"
@@ -51,11 +52,11 @@ std::optional<BuildArguments> parse_arguments(std::span<const std::string_view> 
   for (std::size_t i = 1; i < args.size(); ++i) {
     const bool has_value = i + 1 < args.size();
     if (args[i] == "--out" && has_value && parsed.out.empty()) {
-      parsed.out = fs::path{args[++i]};
+      parsed.out = utf8_path(args[++i]);
     } else if (args[i] == "--runner" && has_value && !parsed.runner) {
-      parsed.runner = fs::path{args[++i]};
+      parsed.runner = utf8_path(args[++i]);
     } else if (!args[i].starts_with("-") && parsed.project.empty()) {
-      parsed.project = fs::path{args[i]};
+      parsed.project = utf8_path(args[i]);
     } else {
       err << "vnmaki build: unexpected argument '" << args[i] << "'\n";
       return std::nullopt;
@@ -90,11 +91,6 @@ std::string exe_name_of(std::string title) {
   return (title.empty() ? std::string{"game"} : title) + ".exe";
 }
 
-// A UTF-8 name as a host path (a narrow string would be read in the ANSI code page).
-fs::path utf8_path(const std::string& utf8) {
-  return fs::path{std::u8string{utf8.begin(), utf8.end()}};
-}
-
 // The virtual path of `out` inside the project, or empty when it is outside.
 std::string out_inside(const fs::path& project, const fs::path& out) {
   std::error_code error;
@@ -103,7 +99,16 @@ std::string out_inside(const fs::path& project, const fs::path& out) {
   if (error || relative.empty() || *relative.begin() == "..") {
     return {};
   }
-  return relative.generic_string();
+  return to_generic_utf8(relative);
+}
+
+// What an earlier build leaves at the top of its folder: a pack must not take it in again.
+bool is_build_output(std::string_view name) {
+  std::string lower{name};
+  std::ranges::transform(lower, lower.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return lower.ends_with(".exe") || lower.ends_with(".dll") || lower == kGamePakName ||
+         (lower.starts_with(kPatchPakPrefix) && lower.ends_with(kPakExtension));
 }
 
 // Every file of the project that the pack takes as it is, in order.
@@ -111,7 +116,8 @@ void collect_files(const Vfs& vfs, const std::string& directory, const std::stri
                    std::vector<std::string>& files) {
   for (const VfsEntry& entry : vfs.list(directory)) {
     const std::string path = directory.empty() ? entry.name : directory + "/" + entry.name;
-    if ((directory.empty() && entry.name.starts_with(".")) || path == skip) {
+    if ((directory.empty() && (entry.name.starts_with(".") || is_build_output(entry.name))) ||
+        path == skip) {
       continue;
     }
     if (entry.is_directory) {
@@ -125,7 +131,7 @@ void collect_files(const Vfs& vfs, const std::string& directory, const std::stri
 void copy_runner(const fs::path& runner, const fs::path& out, const std::string& exe_name) {
   fs::copy_file(runner, out / utf8_path(exe_name), fs::copy_options::overwrite_existing);
   for (const fs::directory_entry& entry : fs::directory_iterator{runner.parent_path()}) {
-    std::string extension = entry.path().extension().string();
+    std::string extension = to_utf8(entry.path().extension());
     std::ranges::transform(extension, extension.begin(),
                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (extension == ".dll" && entry.is_regular_file()) {
@@ -147,13 +153,18 @@ int build_command(std::span<const std::string_view> args, std::ostream& out, std
   try {
     Vfs vfs;
     if (!vfs.mount(make_directory_mount(arguments->project))) {
-      err << "vnmaki: " << arguments->project << " is not a directory\n";
+      err << "vnmaki: " << to_utf8(arguments->project) << " is not a directory\n";
+      return kExitError;
+    }
+    std::error_code same_error;
+    if (fs::equivalent(arguments->out, arguments->project, same_error)) {
+      err << "vnmaki: --out must not be the project folder itself\n";
       return kExitError;
     }
     const ProjectConfig config = load_project_config(vfs);
     const fs::path runner = arguments->runner ? *arguments->runner : default_runner();
     if (!fs::is_regular_file(runner)) {
-      err << "vnmaki: no runner at " << runner
+      err << "vnmaki: no runner at " << to_utf8(runner)
           << "; build the release preset (build/release) or pass --runner <vnmaki.exe>\n";
       return kExitError;
     }
@@ -183,7 +194,7 @@ int build_command(std::span<const std::string_view> args, std::ostream& out, std
     {
       std::ofstream stream{temporary, std::ios::binary | std::ios::trunc};
       if (!stream) {
-        throw PakError{"cannot write " + temporary.string()};
+        throw PakError{"cannot write " + to_utf8(temporary)};
       }
       PakWriter pak{stream};
       for (const std::string& path : files) {
@@ -206,12 +217,12 @@ int build_command(std::span<const std::string_view> args, std::ostream& out, std
       pak.finish();
     }
     fs::rename(temporary, pak_path);
-    out << "packed " << count << " files into " << pak_path.string() << "\n";
+    out << "packed " << count << " files into " << to_utf8(pak_path) << "\n";
 
     const std::string exe_name = exe_name_of(config.title);
     copy_runner(runner, arguments->out, exe_name);
-    out << "runner " << runner.string() << " -> "
-        << (arguments->out / utf8_path(exe_name)).string() << "\n";
+    out << "runner " << to_utf8(runner) << " -> "
+        << to_utf8(arguments->out / utf8_path(exe_name)) << "\n";
     return 0;
   } catch (const ProjectConfigError& error) {
     err << "vnmaki: " << error.what() << "\n";
@@ -245,7 +256,7 @@ std::optional<int> build_or_packed_command(std::span<const std::string_view> arg
   if (!fs::is_regular_file(folder / std::string{kGamePakName}, error)) {
     return std::nullopt;
   }
-  const std::string folder_text = folder.string();
+  const std::string folder_text = to_utf8(folder);
   std::vector<std::string_view> run_args{folder_text};
   run_args.insert(run_args.end(), args.begin(), args.end());
   return run_command(run_args, out, err);

@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/tools/check.hpp"
 #include "engine/vfs/vfs.hpp"
 
@@ -23,10 +24,10 @@ int check_command(std::span<const std::string_view> args, std::ostream& out, std
     err << "usage:" << kCheckUsage.substr(std::string_view{"      "}.size());
     return kExitUsage;
   }
-  const std::filesystem::path directory{args.front()};
+  const std::filesystem::path directory = utf8_path(args.front());
   Vfs vfs;
   if (!vfs.mount(make_directory_mount(directory))) {
-    err << "vnmaki: " << directory << " is not a directory\n";
+    err << "vnmaki: " << to_utf8(directory) << " is not a directory\n";
     return kExitError;
   }
   const std::vector<Finding> findings = check_project(vfs);

@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/saves/save_file.hpp"
 
 namespace vnmaki {
@@ -73,7 +74,7 @@ void PersistentStore::load() {
     std::filesystem::rename(file_, bad, moved);
     written_ = runtime_->persistent_snapshot();
     warn("persistent: " + std::string{error.what()} + "; starting with no saved data" +
-         (moved ? "" : " (the old file is kept as " + bad.filename().string() + ")"));
+         (moved ? "" : " (the old file is kept as " + to_utf8(bad.filename()) + ")"));
   }
 }
 
@@ -95,7 +96,7 @@ void PersistentStore::flush() {
                    static_cast<std::streamsize>(bytes.size()));
       stream.flush();
       if (!stream) {
-        throw std::runtime_error{"cannot write " + temporary.string()};
+        throw std::runtime_error{"cannot write " + to_utf8(temporary)};
       }
     }
     // Written beside the file and renamed over it, so a crash leaves the old one.

@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/jobs/job_system.hpp"
 #include "engine/platform/main_loop.hpp"
 #include "engine/platform/platform.hpp"
@@ -25,12 +26,12 @@ constexpr Size kVirtualSize = kDefaultWindowSize;
 int run_image_view(SdlPlatform& platform, const std::filesystem::path& image_file,
                    std::optional<std::uint64_t> max_frames, std::ostream& err) {
   Vfs vfs;
-  const std::string virtual_path = image_file.filename().generic_string();
+  const std::string virtual_path = to_utf8(image_file.filename());
   if (!vfs.mount(make_directory_mount(image_file.parent_path().empty()
                                           ? std::filesystem::path{"."}
                                           : image_file.parent_path())) ||
       !vfs.exists(virtual_path)) {
-    err << "vnmaki window: no image file at '" << image_file.generic_string() << "'\n";
+    err << "vnmaki window: no image file at '" << to_generic_utf8(image_file) << "'\n";
     return kExitFailure;
   }
   JobSystem jobs;

@@ -1,5 +1,5 @@
 target_sources(vnmaki_engine PRIVATE byte_stream.hpp load_timing.cpp load_timing.hpp version.cpp
-                                       version.hpp)
+                                       version.hpp utf8_path.hpp)
 
 # project() in the top-level CMakeLists.txt is the single source of the version.
 set_property(

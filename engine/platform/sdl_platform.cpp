@@ -6,6 +6,7 @@
 
 #include <SDL3/SDL.h>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/platform/sdl_events.hpp"
 
 namespace vnmaki {
@@ -103,7 +104,7 @@ std::filesystem::path user_data_directory(std::string_view organization,
   if (path == nullptr) {
     throw PlatformError{std::string{"no user data directory: "} + SDL_GetError()};
   }
-  std::filesystem::path result{path};
+  std::filesystem::path result = utf8_path(path);  // SDL gives UTF-8
   SDL_free(path);
   return result;
 }
@@ -113,7 +114,7 @@ std::filesystem::path executable_directory() {
   if (path == nullptr) {
     throw PlatformError{std::string{"no executable directory: "} + SDL_GetError()};
   }
-  return std::filesystem::path{path};
+  return utf8_path(path);
 }
 
 SDL_Window* SdlPlatform::sdl_window() const { return window_.get(); }

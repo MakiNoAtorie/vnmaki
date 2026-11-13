@@ -750,6 +750,16 @@ set_tests_properties(
   cli.build_windows_packs_the_template_and_plays_it
   PROPERTIES TIMEOUT 600 SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
 
+# The same in a folder whose name is not ASCII: arguments, the folder of the executable and the
+# runner's hand-over to `run` must keep UTF-8 (a narrow path is read in the ANSI code page).
+add_test(NAME cli.build_windows_in_a_non_ascii_folder
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> ${vnmaki_new_precompiled}
+                 "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/work/build_田中" -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_build.cmake")
+set_tests_properties(
+  cli.build_windows_in_a_non_ascii_folder
+  PROPERTIES TIMEOUT 600 SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
+
 vnmaki_add_cli_test(
   build_needs_a_platform
   ARGS build

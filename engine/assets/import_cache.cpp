@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <system_error>
 
+#include "engine/core/utf8_path.hpp"
+
 namespace vnmaki {
 
 namespace {
@@ -74,12 +76,12 @@ void ImportCache::store(const std::string& key, std::span<const std::byte> data)
     out.write(reinterpret_cast<const char*>(data.data()),
               static_cast<std::streamsize>(data.size()));
     if (!out.flush()) {
-      throw std::runtime_error{"cannot write " + temporary.string()};
+      throw std::runtime_error{"cannot write " + to_utf8(temporary)};
     }
   }
   std::filesystem::rename(temporary, directory_ / key, error);
   if (error) {
-    throw std::runtime_error{"cannot write " + (directory_ / key).string() + ": " +
+    throw std::runtime_error{"cannot write " + to_utf8(directory_ / key) + ": " +
                              error.message()};
   }
 }
