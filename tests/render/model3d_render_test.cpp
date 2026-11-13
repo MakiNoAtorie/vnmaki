@@ -30,6 +30,13 @@ namespace {
 constexpr vnmaki::Size kVirtualSize{.width = 64, .height = 64};
 constexpr int kCenter = 32;  // the pixel just right of and below the middle of the screen
 constexpr int kTolerance = 3;
+constexpr int kFarCubeX = 20;    // in the far cube's face, left of the near cube's
+constexpr int kCornerPixel = 4;  // outside both cubes
+// The front face covers pixels 24 to 40: a pixel in each quarter, away from the middle.
+constexpr int kLeftQuarter = 26;
+constexpr int kRightQuarter = 38;
+constexpr int kFull = 255;
+constexpr std::size_t kBytesPerPixel = 4;
 constexpr float kByteMax = 255.0F;
 
 // The orange of cube.gltf (0.8, 0.4, 0.2) and the blue of blue.gltf (0.2, 0.4, 0.8) in bytes.
@@ -93,7 +100,10 @@ class Frame {
 
   // The red, green and blue bytes of a pixel.
   [[nodiscard]] std::array<int, 3> pixel(int x, int y) const {
-    const auto at = static_cast<std::size_t>(((y * kVirtualSize.width) + x) * 4);
+    const auto row = static_cast<std::size_t>(y);
+    const auto column = static_cast<std::size_t>(x);
+    const auto at =
+        ((row * static_cast<std::size_t>(kVirtualSize.width)) + column) * kBytesPerPixel;
     return {image_.pixels.at(at), image_.pixels.at(at + 1), image_.pixels.at(at + 2)};
   }
 
@@ -122,9 +132,9 @@ TEST_CASE("model3d: unlit cubes match the golden, and the depth buffer hides the
     return;
   }
   vnmaki::test::check_golden_in("model3d", frame.image(), "unlit");
-  frame.expect(kCenter, kCenter, kOrange);  // the near cube, drawn first, in front
-  frame.expect(20, kCenter, kBlue);         // the far cube, drawn second, around it
-  frame.expect(4, 4, {0, 0, 0});            // nothing: the 2D background shows
+  frame.expect(kCenter, kCenter, kOrange);              // the near cube, drawn first, in front
+  frame.expect(kFarCubeX, kCenter, kBlue);              // the far cube, drawn second, around it
+  frame.expect(kCornerPixel, kCornerPixel, {0, 0, 0});  // nothing: the 2D background shows
 }
 
 TEST_CASE("model3d: toon shading falls into three bands") {
@@ -169,10 +179,10 @@ TEST_CASE("model3d: a texture of the model shows on its faces") {
     return;
   }
   // The front face covers pixels 24 to 40; the texture is red, green / blue, white.
-  frame.expect(26, 26, {255, 0, 0});
-  frame.expect(38, 26, {0, 255, 0});
-  frame.expect(26, 38, {0, 0, 255});
-  frame.expect(38, 38, {255, 255, 255});
+  frame.expect(kLeftQuarter, kLeftQuarter, {kFull, 0, 0});
+  frame.expect(kRightQuarter, kLeftQuarter, {0, kFull, 0});
+  frame.expect(kLeftQuarter, kRightQuarter, {0, 0, kFull});
+  frame.expect(kRightQuarter, kRightQuarter, {kFull, kFull, kFull});
 }
 
 TEST_CASE("model3d: a game shader that includes mesh.hlsli draws a model") {

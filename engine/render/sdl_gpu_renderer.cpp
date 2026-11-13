@@ -460,7 +460,7 @@ SDL_GPUGraphicsPipeline* SdlGpuRenderer::Impl::pipeline(ShaderId shader, BlendMo
 
   const SDL_GPUVertexBufferDescription vertex_buffer_description{
       .slot = 0,
-      .pitch = mesh ? sizeof(MeshVertex) : sizeof(SpriteVertex),
+      .pitch = static_cast<std::uint32_t>(mesh ? sizeof(MeshVertex) : sizeof(SpriteVertex)),
       .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
       .instance_step_rate = 0};
   const std::array<SDL_GPUVertexAttribute, 3> sprite_attributes{{
@@ -855,12 +855,14 @@ MeshId SdlGpuRenderer::create_mesh(std::span<const MeshVertex> vertices,
   made.index_count = static_cast<std::uint32_t>(indices.size());
   const GpuPtr<SDL_GPUTransferBuffer> upload =
       impl_->make_transfer_buffer(SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, vertex_bytes + index_bytes);
-  auto* mapped = static_cast<std::uint8_t*>(SDL_MapGPUTransferBuffer(device, upload.get(), false));
+  void* mapped = SDL_MapGPUTransferBuffer(device, upload.get(), false);
   if (mapped == nullptr) {
     throw_sdl_error("cannot map a GPU transfer buffer");
   }
-  std::memcpy(mapped, vertices.data(), vertex_bytes);
-  std::memcpy(mapped + vertex_bytes, indices.data(), index_bytes);
+  const std::span<std::byte> staging{static_cast<std::byte*>(mapped),
+                                     std::size_t{vertex_bytes} + index_bytes};
+  std::memcpy(staging.data(), vertices.data(), vertex_bytes);
+  std::memcpy(staging.subspan(vertex_bytes).data(), indices.data(), index_bytes);
   SDL_UnmapGPUTransferBuffer(device, upload.get());
 
   SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);

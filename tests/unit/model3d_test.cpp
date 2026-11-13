@@ -56,6 +56,36 @@ constexpr float kFov = 50.0F;
 constexpr int kMutations = 300;
 constexpr std::uint32_t kSeed = 46;
 constexpr std::size_t kCutStep = 7;
+constexpr float kFarAway = 1e9F;
+// moved.gltf: the cube is translated by 10 and scaled by 2.
+constexpr float kMovedLowX = 8.0F;
+constexpr float kMovedHighX = 12.0F;
+constexpr float kMovedTop = 2.0F;
+// The camera of the maths tests: 90 degrees, so the half-width at distance d is d.
+constexpr float kRightFov = 90.0F;
+constexpr float kBesideDistance = 4.0F;
+constexpr float kBesideX = 0.25F;
+constexpr float kBesideY = 0.125F;
+constexpr float kFiveBehind = -5.0F;
+constexpr float kGreenOfOrange = 128.0F / 255.0F;
+// Half way through the one second tweens of kTweened.
+constexpr float kHalfY = 1.0F;
+constexpr float kHalfTurn = 45.0F;
+constexpr float kHalfScale = 2.0F;
+constexpr float kHalfCameraZ = 7.0F;
+constexpr float kHalfFov = 45.0F;
+constexpr float kHalfIntensity = 0.5F;
+constexpr float kHalfwayAmount = 0.625F;
+constexpr float kLoopHalfway = 5.5F;
+constexpr double kShortWhile = 0.1;
+constexpr float kStartAmount = 0.25F;  // the amount of the whiten shader in its script
+// The channels of a pose (see kModelChannels, kLightChannels and kCameraChannels).
+constexpr std::size_t kChannelY = 1;
+constexpr std::size_t kChannelZ = 2;
+constexpr std::size_t kChannelRy = 4;
+constexpr std::size_t kChannelScale = 6;
+constexpr std::size_t kChannelIntensity = 6;
+constexpr std::size_t kChannelFov = 6;
 
 vnmaki::Vfs fixture_vfs() {
   vnmaki::Vfs vfs;
@@ -83,16 +113,16 @@ void check_cube(const ModelData& model) {
   CHECK(vnmaki::fuzz::model_is_consistent(model));
   REQUIRE(model.materials.size() >= 1);
   const vnmaki::ModelMaterial& material = model.materials.at(mesh.material);
-  CHECK(material.color[0] == doctest::Approx(kOrangeRed));
-  CHECK(material.color[1] == doctest::Approx(kOrangeGreen));
-  CHECK(material.color[2] == doctest::Approx(kOrangeBlue));
-  CHECK(material.color[3] == doctest::Approx(1.0F));
+  CHECK(material.color.at(0) == doctest::Approx(kOrangeRed));
+  CHECK(material.color.at(1) == doctest::Approx(kOrangeGreen));
+  CHECK(material.color.at(2) == doctest::Approx(kOrangeBlue));
+  CHECK(material.color.at(3) == doctest::Approx(1.0F));
   CHECK(material.metallic == doctest::Approx(0.0F));
   CHECK(material.roughness == doctest::Approx(kHalfRoughness));
   // The first face is +z: its normal points at the camera and its corners are at z = 1.
   const vnmaki::MeshVertex& first = mesh.vertices.front();
   CHECK(first.normal == std::array<float, 3>{0, 0, 1});
-  CHECK(first.position[2] == 1);
+  CHECK(first.position.at(2) == 1);
 }
 
 TEST_CASE("model3d: a .gltf cube loads with its material, normals and texture coordinates") {
@@ -136,21 +166,21 @@ TEST_CASE("model3d: a texture comes from a file next to the model or from the .g
 TEST_CASE("model3d: the transform of a node is applied to its mesh") {
   const vnmaki::Vfs vfs = fixture_vfs();
   const ModelData model = vnmaki::load_model(vfs, "models/moved.gltf");
-  float low_x = 1e9F;
-  float high_x = -1e9F;
-  float high_y = -1e9F;
+  float low_x = kFarAway;
+  float high_x = -kFarAway;
+  float high_y = -kFarAway;
   for (const vnmaki::MeshVertex& vertex : model.meshes.front().vertices) {
-    low_x = std::min(low_x, vertex.position[0]);
-    high_x = std::max(high_x, vertex.position[0]);
-    high_y = std::max(high_y, vertex.position[1]);
-    const float length =
-        std::sqrt((vertex.normal[0] * vertex.normal[0]) + (vertex.normal[1] * vertex.normal[1]) +
-                  (vertex.normal[2] * vertex.normal[2]));
+    low_x = std::min(low_x, vertex.position.at(0));
+    high_x = std::max(high_x, vertex.position.at(0));
+    high_y = std::max(high_y, vertex.position.at(1));
+    const float length = std::sqrt((vertex.normal.at(0) * vertex.normal.at(0)) +
+                                   (vertex.normal.at(1) * vertex.normal.at(1)) +
+                                   (vertex.normal.at(2) * vertex.normal.at(2)));
     CHECK(length == doctest::Approx(1.0F));
   }
-  CHECK(low_x == doctest::Approx(8.0F));  // translated by 10, scaled by 2
-  CHECK(high_x == doctest::Approx(12.0F));
-  CHECK(high_y == doctest::Approx(2.0F));
+  CHECK(low_x == doctest::Approx(kMovedLowX));
+  CHECK(high_x == doctest::Approx(kMovedHighX));
+  CHECK(high_y == doctest::Approx(kMovedTop));
 }
 
 TEST_CASE("model3d: a file that cannot be read is an error that names the file") {
@@ -189,8 +219,9 @@ TEST_CASE("model3d: a damaged cube loads or fails, and never draws out of range"
   const vnmaki::Vfs vfs = fixture_vfs();
   const std::optional<std::vector<std::byte>> original = vfs.read("models/cube.glb");
   REQUIRE(original.has_value());
-  std::mt19937 random{kSeed};
+  std::mt19937 random{kSeed};  // NOLINT(bugprone-random-generator-seed)
   int loaded = 0;
+  int refused = 0;
   for (int i = 0; i < kMutations; ++i) {
     std::vector<std::byte> bytes = *original;
     for (int edit = 0; edit < 4; ++edit) {
@@ -201,10 +232,11 @@ TEST_CASE("model3d: a damaged cube loads or fails, and never draws out of range"
       CHECK(vnmaki::fuzz::model_is_consistent(model));
       ++loaded;
     } catch (const vnmaki::ModelError&) {
-      // A refused file is fine.
+      ++refused;  // A refused file is fine.
     }
   }
   CHECK(loaded > 0);
+  CHECK(refused > 0);
 }
 
 // --- The maths -------------------------------------------------------------------------------
@@ -226,12 +258,12 @@ Clip apply(const vnmaki::Mat4& m, vnmaki::Vec3 v) {
 
 TEST_CASE("model3d: the camera maps a point in front of it to clip space with depth 0 to 1") {
   const vnmaki::Mat4 view = vnmaki::look_at({.x = 0, .y = 0, .z = 5}, {.x = 0, .y = 0, .z = 0});
-  const vnmaki::Mat4 both = vnmaki::multiply(vnmaki::perspective(90.0F, 1.0F), view);
+  const vnmaki::Mat4 both = vnmaki::multiply(vnmaki::perspective(kRightFov, 1.0F), view);
   // With a field of view of 90 degrees the half-width at distance d is d.
   const Clip beside = apply(both, {.x = 1, .y = 0.5F, .z = 1});  // distance 4
-  CHECK(beside.w == doctest::Approx(4.0F));
-  CHECK(beside.x / beside.w == doctest::Approx(0.25F));
-  CHECK(beside.y / beside.w == doctest::Approx(0.125F));
+  CHECK(beside.w == doctest::Approx(kBesideDistance));
+  CHECK(beside.x / beside.w == doctest::Approx(kBesideX));
+  CHECK(beside.y / beside.w == doctest::Approx(kBesideY));
   const Clip near_plane = apply(both, {.x = 0, .y = 0, .z = 5 - vnmaki::kNearPlane});
   CHECK(near_plane.z / near_plane.w == doctest::Approx(0.0F).epsilon(kTolerance));
   const Clip far_plane = apply(both, {.x = 0, .y = 0, .z = 5 - vnmaki::kFarPlane});
@@ -243,7 +275,7 @@ TEST_CASE("model3d: the camera maps a point in front of it to clip space with de
 TEST_CASE("model3d: look_at survives a camera that looks straight down or at itself") {
   const vnmaki::Mat4 down = vnmaki::look_at({.x = 0, .y = 5, .z = 0}, {.x = 0, .y = 0, .z = 0});
   const Clip below = apply(down, {.x = 0, .y = 0, .z = 0});
-  CHECK(below.z == doctest::Approx(-5.0F));  // five in front of the camera, in view space
+  CHECK(below.z == doctest::Approx(kFiveBehind));  // in front of the camera, in view space
   for (const float value : vnmaki::look_at({.x = 1, .y = 1, .z = 1}, {.x = 1, .y = 1, .z = 1})) {
     CHECK(std::isfinite(value));
   }
@@ -254,7 +286,7 @@ TEST_CASE("model3d: the model matrix scales, turns about y and moves") {
       vnmaki::model_matrix({.x = 1, .y = 2, .z = 3}, {.x = 0, .y = kQuarterTurn, .z = 0}, 2.0F);
   const Clip moved = apply(m, {.x = 1, .y = 0, .z = 0});
   CHECK(moved.x == doctest::Approx(1.0F).epsilon(kTolerance));
-  CHECK(moved.y == doctest::Approx(2.0F));
+  CHECK(moved.y == doctest::Approx(kMovedTop));
   CHECK(moved.z == doctest::Approx(1.0F).epsilon(kTolerance));  // x turns to -z: 3 - 2
 }
 
@@ -316,30 +348,30 @@ TEST_CASE("script: scene3d, model, light and camera build a scene on the 3d laye
   CHECK(stage.scene.layer_of("stage") == Layer::k3d);
 
   const auto& camera = scene->camera().uniforms;
-  CHECK(camera[0] == 0);
-  CHECK(camera[1] == 1);
-  CHECK(camera[2] == 6);
-  CHECK(camera[4] == 1);  // look_at.y
-  CHECK(camera[6] == kFov);
+  CHECK(camera.at(0) == 0);
+  CHECK(camera.at(1) == 1);
+  CHECK(camera.at(2) == 6);
+  CHECK(camera.at(4) == 1);  // look_at.y
+  CHECK(camera.at(6) == kFov);
 
   REQUIRE(scene->models().size() == 1);
   const vnmaki::Model3d& hero = scene->models().front();
   CHECK(hero.tag == "hero");
   CHECK(hero.path == "models/cube.gltf");
   CHECK(hero.style == vnmaki::ShadingStyle::kToon);
-  CHECK(hero.properties.uniforms[0] == 1);
-  CHECK(hero.properties.uniforms[2] == 3);
-  CHECK(hero.properties.uniforms[4] == 45);
-  CHECK(hero.properties.uniforms[6] == 2);
+  CHECK(hero.properties.uniforms.at(0) == 1);
+  CHECK(hero.properties.uniforms.at(2) == 3);
+  CHECK(hero.properties.uniforms.at(4) == 45);
+  CHECK(hero.properties.uniforms.at(6) == 2);
 
   REQUIRE(scene->lights().size() == 3);
   const vnmaki::Light3d& sun = scene->lights().at(0);
   CHECK(sun.kind == vnmaki::LightKind::kDirectional);
-  CHECK(sun.properties.uniforms[1] == -1);
-  CHECK(sun.properties.uniforms[3] == doctest::Approx(1.0F));
-  CHECK(sun.properties.uniforms[4] == doctest::Approx(128.0F / 255.0F));
-  CHECK(sun.properties.uniforms[5] == 0);
-  CHECK(sun.properties.uniforms[6] == 2);
+  CHECK(sun.properties.uniforms.at(1) == -1);
+  CHECK(sun.properties.uniforms.at(3) == doctest::Approx(1.0F));
+  CHECK(sun.properties.uniforms.at(4) == doctest::Approx(kGreenOfOrange));
+  CHECK(sun.properties.uniforms.at(5) == 0);
+  CHECK(sun.properties.uniforms.at(6) == 2);
   CHECK(scene->lights().at(1).kind == vnmaki::LightKind::kAmbient);
   CHECK(scene->lights().at(2).kind == vnmaki::LightKind::kPoint);
 }
@@ -361,17 +393,17 @@ end)
   REQUIRE(scene != nullptr);
   REQUIRE(scene->models().size() == 1);
   CHECK(scene->models().front().path == "models/blue.gltf");
-  CHECK(scene->models().front().properties.uniforms[0] == 5);
-  CHECK(scene->models().front().properties.uniforms[6] == 2);  // the scale stays
+  CHECK(scene->models().front().properties.uniforms.at(0) == 5);
+  CHECK(scene->models().front().properties.uniforms.at(6) == 2);  // the scale stays
   REQUIRE(scene->lights().size() == 1);
-  CHECK(scene->lights().front().properties.uniforms[6] == 3);  // the intensity stays
-  CHECK(scene->lights().front().properties.uniforms[3] == 0);  // the colour changed
-  CHECK(scene->lights().front().properties.uniforms[4] == 1);
+  CHECK(scene->lights().front().properties.uniforms.at(6) == 3);  // the intensity stays
+  CHECK(scene->lights().front().properties.uniforms.at(3) == 0);  // the colour changed
+  CHECK(scene->lights().front().properties.uniforms.at(4) == 1);
   CHECK(stage.scene.layer_of("stage") == Layer::kOverlay);
   CHECK(stage.scene.tags(Layer::k3d).empty());
   // The camera starts at (0, 0, 5) looking at the origin.
-  CHECK(scene->camera().uniforms[2] == 5);
-  CHECK(scene->camera().uniforms[6] == 60);
+  CHECK(scene->camera().uniforms.at(2) == 5);
+  CHECK(scene->camera().uniforms.at(6) == 60);
 }
 
 TEST_CASE("script: hide3d removes an object and hide removes the scene") {
@@ -450,7 +482,7 @@ end)
 )"};
   REQUIRE_MESSAGE(stage.runtime.state() == vnmaki::RunState::kWaiting, stage.runtime.error());
   CHECK(stage.scene.camera().pose.position.x == 32);
-  CHECK(stage.stage()->camera().uniforms[0] == 0);
+  CHECK(stage.stage()->camera().uniforms.at(0) == 0);
 }
 
 // --- Tweens and waits ------------------------------------------------------------------------
@@ -480,18 +512,19 @@ TEST_CASE("script: tween and wait move a model, a light and the camera") {
   stage.scene.update(kHalfSecond);
   CHECK_FALSE(waits.update());
   const auto& hero = scene->models().front().properties.uniforms;
-  CHECK(hero[1] == doctest::Approx(1.0F));                       // y: 0 to 2
-  CHECK(hero[4] == doctest::Approx(45.0F));                      // ry: 0 to 90
-  CHECK(hero[6] == doctest::Approx(2.0F));                       // scale: 1 to 3
-  CHECK(scene->camera().uniforms[2] == doctest::Approx(7.0F));   // z: 5 to 9
-  CHECK(scene->camera().uniforms[6] == doctest::Approx(45.0F));  // fov: 60 to 30
-  CHECK(scene->lights().front().properties.uniforms[6] == doctest::Approx(0.5F));
+  CHECK(hero.at(kChannelY) == doctest::Approx(kHalfY));                            // y: 0 to 2
+  CHECK(hero.at(kChannelRy) == doctest::Approx(kHalfTurn));                        // ry: 0 to 90
+  CHECK(hero.at(kChannelScale) == doctest::Approx(kHalfScale));                    // scale: 1 to 3
+  CHECK(scene->camera().uniforms.at(kChannelZ) == doctest::Approx(kHalfCameraZ));  // z: 5 to 9
+  CHECK(scene->camera().uniforms.at(kChannelFov) == doctest::Approx(kHalfFov));    // fov: 60 to 30
+  CHECK(scene->lights().front().properties.uniforms.at(kChannelIntensity) ==
+        doctest::Approx(kHalfIntensity));
 
   stage.scene.update(kHalfSecond);
   CHECK(waits.update());
   CHECK(stage.text() == "done");
-  CHECK(hero[1] == 2);
-  CHECK(scene->lights().front().properties.uniforms[3] == 0);
+  CHECK(hero.at(1) == 2);
+  CHECK(scene->lights().front().properties.uniforms.at(3) == 0);
 }
 
 TEST_CASE("script: a tween of a 3D object checks its tag and its options") {
@@ -519,10 +552,10 @@ TEST_CASE("script: a click ends the waited 3D tween at its end values") {
   Stage stage{std::string{kTweened}};
   REQUIRE_MESSAGE(stage.runtime.state() == vnmaki::RunState::kWaiting, stage.runtime.error());
   WaitPresenter waits{stage.runtime, stage.scene};
-  stage.scene.update(0.1);
+  stage.scene.update(kShortWhile);
   CHECK(waits.skip());
   CHECK(stage.text() == "done");
-  CHECK(stage.stage()->models().front().properties.uniforms[1] == 2);
+  CHECK(stage.stage()->models().front().properties.uniforms.at(1) == 2);
   CHECK(stage.scene.tweening("@3d.stage.camera"));  // only the waited tag ends
 }
 
@@ -545,11 +578,11 @@ end)
   REQUIRE_MESSAGE(stage.runtime.state() == vnmaki::RunState::kWaiting, stage.runtime.error());
   const vnmaki::Model3d& hero = stage.stage()->models().front();
   CHECK(hero.properties.shader != 0);
-  CHECK(hero.properties.uniforms[vnmaki::kPoseChannels] == 0.25F);
+  CHECK(hero.properties.uniforms.at(vnmaki::kPoseChannels) == kStartAmount);
   stage.scene.update(kHalfSecond);
-  CHECK(hero.properties.uniforms[vnmaki::kPoseChannels] == doctest::Approx(0.625F));
+  CHECK(hero.properties.uniforms.at(vnmaki::kPoseChannels) == doctest::Approx(kHalfwayAmount));
   stage.scene.update(kHalfSecond);
-  CHECK(hero.properties.uniforms[vnmaki::kPoseChannels] == 1.0F);
+  CHECK(hero.properties.uniforms.at(vnmaki::kPoseChannels) == 1.0F);
 }
 
 // --- The snapshot and the replay -------------------------------------------------------------
@@ -585,19 +618,20 @@ TEST_CASE("snapshot: the 3D scenes are a part of their own, restored after the 2
         std::vector<std::string>{"below", "stage", "girl", "above"});
   Scene3dDisplayable* scene = stage.stage();
   REQUIRE(scene != nullptr);
-  CHECK(scene->camera().uniforms[0] == 1);  // a loop is at the value where it started
-  CHECK(scene->camera().uniforms[6] == 40);
+  CHECK(scene->camera().uniforms.at(0) == 1);  // a loop is at the value where it started
+  CHECK(scene->camera().uniforms.at(6) == 40);
   REQUIRE(scene->models().size() == 1);
   CHECK(scene->models().front().style == vnmaki::ShadingStyle::kPbr);
-  CHECK(scene->models().front().properties.uniforms[4] == 90);  // a tween that ends is at its end
-  CHECK(scene->models().front().properties.uniforms[1] == 8);
+  CHECK(scene->models().front().properties.uniforms.at(4) ==
+        90);  // a tween that ends is at its end
+  CHECK(scene->models().front().properties.uniforms.at(1) == 8);
   REQUIRE(scene->lights().size() == 1);
-  CHECK(scene->lights().front().properties.uniforms[6] == 2);
+  CHECK(scene->lights().front().properties.uniforms.at(6) == 2);
   CHECK(stage.scene.capture() == bytes);
   // The loop starts again at time 0; the tween that ended does not.
   CHECK(stage.scene.timeline().tags() == std::vector<std::string>{"@3d.stage.camera"});
   stage.scene.update(kHalfSecond);
-  CHECK(scene->camera().uniforms[0] == doctest::Approx(5.5F));  // from 1 to 10
+  CHECK(scene->camera().uniforms.at(0) == doctest::Approx(kLoopHalfway));  // from 1 to 10
 }
 
 TEST_CASE("snapshot: a game without 3D keeps the snapshot it had") {
@@ -664,7 +698,7 @@ end)
   REQUIRE_MESSAGE(fresh.runtime.state() == vnmaki::RunState::kWaiting, fresh.runtime.error());
   CHECK(fresh.text() == "one");
   REQUIRE(fresh.stage() != nullptr);
-  CHECK(fresh.stage()->models().front().properties.uniforms[0] == 4);
+  CHECK(fresh.stage()->models().front().properties.uniforms.at(0) == 4);
   CHECK_FALSE(fresh.scene.tweening("@3d.stage.hero"));
   CHECK(fresh.scene.capture() == expected);
 }

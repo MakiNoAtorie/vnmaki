@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <span>
@@ -32,7 +33,6 @@ constexpr float kDefaultAmbientIntensity = 0.2F;
 
 // The channels of kModelChannels, kLightChannels and kCameraChannels by index.
 constexpr std::size_t kX = 0;
-constexpr std::size_t kY = 1;
 constexpr std::size_t kZ = 2;
 constexpr std::size_t kModelRotationX = 3;
 constexpr std::size_t kModelRotationY = 4;
@@ -43,8 +43,6 @@ constexpr std::size_t kLightGreen = 4;
 constexpr std::size_t kLightBlue = 5;
 constexpr std::size_t kLightIntensity = 6;
 constexpr std::size_t kCameraLookX = 3;
-constexpr std::size_t kCameraLookY = 4;
-constexpr std::size_t kCameraLookZ = 5;
 constexpr std::size_t kCameraFov = 6;
 
 // The constant buffer of the built-in mesh shaders, as MeshGlobals in shaders/mesh.hlsli lays it
@@ -60,7 +58,7 @@ struct MeshGlobals {
   std::array<float, 4> ambient{};
   std::array<LightData, kMaxLights> lights{};
 };
-static_assert(sizeof(MeshGlobals) == 4 * 4 * (4 + 2 * kMaxLights));
+static_assert(sizeof(MeshGlobals) == sizeof(std::array<float, 4>) * (4 + (2 * kMaxLights)));
 
 float finite_or(float value, float fallback) { return std::isfinite(value) ? value : fallback; }
 
@@ -220,8 +218,13 @@ Scene3dDisplayable::Scene3dDisplayable(Size size, std::shared_ptr<ModelLibrary> 
       camera_(default_camera_pose()) {}
 
 Scene3dDisplayable::~Scene3dDisplayable() {
-  if (target_ != TextureId{}) {
+  if (target_ == TextureId{}) {
+    return;
+  }
+  try {
     retired_->push_back(target_);
+  } catch (...) {  // NOLINT(bugprone-empty-catch)
+    // Out of memory: the target stays on the GPU until the renderer goes.
   }
 }
 
@@ -253,11 +256,11 @@ std::optional<std::size_t> Scene3dDisplayable::channel(
         return own;
       }
       const auto found = std::ranges::find(shader_uniforms, channel);
-      if (found == shader_uniforms.end() ||
-          static_cast<std::size_t>(found - shader_uniforms.begin()) >= kMaxModelShaderUniforms) {
+      const auto index = static_cast<std::size_t>(std::distance(shader_uniforms.begin(), found));
+      if (found == shader_uniforms.end() || index >= kMaxModelShaderUniforms) {
         return std::nullopt;
       }
-      return kPoseChannels + static_cast<std::size_t>(found - shader_uniforms.begin());
+      return kPoseChannels + index;
     }
   }
   for (const Light3d& light : lights_) {
@@ -353,8 +356,8 @@ void Scene3dDisplayable::render(IRenderer& renderer) const {
         // Only the uniforms after the model's own channels belong to the shader; the bytes after
         // them stay zero.
         const std::size_t floats = std::min(model.shader_floats, kMaxModelShaderUniforms);
-        std::memcpy(bytes.data() + size, pose.uniforms.data() + kPoseChannels,
-                    floats * sizeof(float));
+        std::memcpy(std::span{bytes}.subspan(size).data(),
+                    std::span{pose.uniforms}.subspan(kPoseChannels).data(), floats * sizeof(float));
         size += model.shader_floats * sizeof(float);
       }
       renderer.draw_mesh(MeshDraw{.mesh = mesh.mesh,

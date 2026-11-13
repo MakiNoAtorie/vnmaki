@@ -23,7 +23,7 @@ namespace vnmaki {
 
 namespace {
 
-constexpr std::size_t kMatrixSize = 4 * 4;
+constexpr std::size_t kMatrixSize = std::size_t{4} * 4;
 constexpr float kTiny = 1e-12F;
 // A primitive without a material: white, not metallic, half rough.
 constexpr float kDefaultRoughness = 0.5F;
@@ -167,8 +167,8 @@ std::vector<float> read_floats(const cgltf_accessor& accessor, std::size_t count
 }
 
 const cgltf_accessor* attribute_of(const cgltf_primitive& primitive, cgltf_attribute_type type) {
-  for (cgltf_size i = 0; i < primitive.attributes_count; ++i) {
-    const cgltf_attribute& attribute = primitive.attributes[i];
+  for (const cgltf_attribute& attribute :
+       std::span{primitive.attributes, primitive.attributes_count}) {
     if (attribute.type == type && attribute.index == 0) {
       return attribute.data;
     }
@@ -179,23 +179,23 @@ const cgltf_accessor* attribute_of(const cgltf_primitive& primitive, cgltf_attri
 class Loader {
  public:
   Loader(const Vfs& vfs, std::string_view path, const cgltf_data& data)
-      : vfs_(vfs), path_(path), data_(data) {}
+      : vfs_(&vfs), path_(path), data_(&data) {}
 
   ModelData load() {
-    result_.materials.reserve(data_.materials_count + 1);
-    for (cgltf_size i = 0; i < data_.materials_count; ++i) {
-      result_.materials.push_back(read_material(data_.materials[i]));
+    result_.materials.reserve(data_->materials_count + 1);
+    for (const cgltf_material& material : std::span{data_->materials, data_->materials_count}) {
+      result_.materials.push_back(read_material(material));
     }
     result_.materials.push_back(ModelMaterial{.roughness = kDefaultRoughness});
-    for (cgltf_size i = 0; i < data_.nodes_count; ++i) {
-      const cgltf_node& node = data_.nodes[i];
+    for (const cgltf_node& node : std::span{data_->nodes, data_->nodes_count}) {
       if (node.mesh == nullptr) {
         continue;
       }
       Matrix world{};
       cgltf_node_transform_world(&node, world.data());
-      for (cgltf_size p = 0; p < node.mesh->primitives_count; ++p) {
-        add_primitive(node.mesh->primitives[p], world);
+      for (const cgltf_primitive& primitive :
+           std::span{node.mesh->primitives, node.mesh->primitives_count}) {
+        add_primitive(primitive, world);
       }
     }
     return std::move(result_);
@@ -208,8 +208,7 @@ class Loader {
       return result;
     }
     const cgltf_pbr_metallic_roughness& pbr = material.pbr_metallic_roughness;
-    std::copy(std::begin(pbr.base_color_factor), std::end(pbr.base_color_factor),
-              result.color.begin());
+    std::ranges::copy(pbr.base_color_factor, result.color.begin());
     result.metallic = pbr.metallic_factor;
     result.roughness = pbr.roughness_factor;
     const cgltf_texture* texture = pbr.base_color_texture.texture;
@@ -232,16 +231,18 @@ class Loader {
     std::span<const std::byte> bytes;
     if (image->buffer_view != nullptr) {
       const cgltf_buffer_view& view = *image->buffer_view;
-      if (view.buffer->data == nullptr) {
+      if (view.buffer->data == nullptr || view.offset > view.buffer->size ||
+          view.size > view.buffer->size - view.offset) {
         fail(path_, "an image has no data");
       }
       bytes = std::as_bytes(
-          std::span{static_cast<const std::uint8_t*>(view.buffer->data) + view.offset, view.size});
-    } else if (image->uri != nullptr && std::string_view{image->uri}.rfind("data:", 0) != 0) {
+          std::span{static_cast<const std::uint8_t*>(view.buffer->data), view.buffer->size}.subspan(
+              view.offset, view.size));
+    } else if (image->uri != nullptr && !std::string_view{image->uri}.starts_with("data:")) {
       std::string uri = image->uri;
       cgltf_decode_uri(uri.data());
       uri.resize(std::strlen(uri.c_str()));
-      std::optional<std::vector<std::byte>> file = vfs_.read(folder_of(path_) + uri);
+      std::optional<std::vector<std::byte>> file = vfs_->read(folder_of(path_) + uri);
       if (!file.has_value()) {
         fail(path_, "the image '" + uri + "' is missing");
       }
@@ -322,14 +323,14 @@ class Loader {
       fill_normals(mesh);
     }
     mesh.material = primitive.material != nullptr
-                        ? static_cast<std::size_t>(primitive.material - data_.materials)
+                        ? static_cast<std::size_t>(primitive.material - data_->materials)
                         : result_.materials.size() - 1;
     result_.meshes.push_back(std::move(mesh));
   }
 
-  const Vfs& vfs_;
+  const Vfs* vfs_;
   std::string_view path_;
-  const cgltf_data& data_;
+  const cgltf_data* data_;
   ModelData result_;
   std::map<const cgltf_image*, int> decoded_;
   std::size_t total_vertices_ = 0;
@@ -339,13 +340,13 @@ class Loader {
 }  // namespace
 
 ModelData parse_model(const Vfs& vfs, std::string_view path, std::span<const std::byte> bytes) {
-  const VfsContext context{.vfs = &vfs};
+  VfsContext context{.vfs = &vfs};
   cgltf_options options{};
   options.memory.alloc_func = &allocate;
   options.memory.free_func = &release_memory;
   options.file.read = &read_file;
   options.file.release = &release_file;
-  options.file.user_data = const_cast<VfsContext*>(&context);
+  options.file.user_data = &context;
   cgltf_data* raw = nullptr;
   if (const cgltf_result result = cgltf_parse(&options, bytes.data(), bytes.size(), &raw);
       result != cgltf_result_success) {

@@ -1181,7 +1181,7 @@ std::string set_light_3d(Scene3dDisplayable& scene, const Scene3dRequest& reques
     return other.kind != LightKind::kAmbient && other.name != name;
   };
   if (light.kind != LightKind::kAmbient &&
-      static_cast<std::size_t>(std::ranges::count_if(scene.lights(), lights)) >= kMaxLights) {
+      std::cmp_greater_equal(std::ranges::count_if(scene.lights(), lights), kMaxLights)) {
     return "a 3D scene has at most " + std::to_string(kMaxLights) +
            " lights besides the ambient ones";
   }

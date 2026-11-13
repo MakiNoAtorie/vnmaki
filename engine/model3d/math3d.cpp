@@ -9,7 +9,7 @@ namespace vnmaki {
 
 namespace {
 
-constexpr int kDim = 4;
+constexpr std::size_t kDim = 4;
 constexpr float kDegreesPerHalfTurn = 180.0F;
 constexpr float kHalf = 0.5F;
 // A look direction closer to the vertical than this uses another up vector.
@@ -33,17 +33,15 @@ Vec3 normalized(Vec3 v, Vec3 fallback) {
   return {.x = v.x / length, .y = v.y / length, .z = v.z / length};
 }
 
-float& cell(Mat4& m, int row, int column) {
-  return m.at(static_cast<std::size_t>((row * kDim) + column));
-}
+float& cell(Mat4& m, std::size_t row, std::size_t column) { return m.at((row * kDim) + column); }
 
-float cell(const Mat4& m, int row, int column) {
-  return m.at(static_cast<std::size_t>((row * kDim) + column));
+float cell(const Mat4& m, std::size_t row, std::size_t column) {
+  return m.at((row * kDim) + column);
 }
 
 Mat4 identity() {
   Mat4 m{};
-  for (int i = 0; i < kDim; ++i) {
+  for (std::size_t i = 0; i < kDim; ++i) {
     cell(m, i, i) = 1;
   }
   return m;
@@ -86,10 +84,10 @@ Mat4 rotation_z(float degrees) {
 
 Mat4 multiply(const Mat4& left, const Mat4& right) {
   Mat4 result{};
-  for (int row = 0; row < kDim; ++row) {
-    for (int column = 0; column < kDim; ++column) {
+  for (std::size_t row = 0; row < kDim; ++row) {
+    for (std::size_t column = 0; column < kDim; ++column) {
       float sum = 0;
-      for (int k = 0; k < kDim; ++k) {
+      for (std::size_t k = 0; k < kDim; ++k) {
         sum += cell(left, row, k) * cell(right, k, column);
       }
       cell(result, row, column) = sum;
@@ -100,8 +98,8 @@ Mat4 multiply(const Mat4& left, const Mat4& right) {
 
 Mat4 model_matrix(Vec3 position, Vec3 degrees, float scale) {
   Mat4 m = multiply(rotation_y(degrees.y), multiply(rotation_x(degrees.x), rotation_z(degrees.z)));
-  for (int row = 0; row < 3; ++row) {
-    for (int column = 0; column < 3; ++column) {
+  for (std::size_t row = 0; row < 3; ++row) {
+    for (std::size_t column = 0; column < 3; ++column) {
       cell(m, row, column) *= scale;
     }
   }
@@ -122,8 +120,8 @@ Mat4 look_at(Vec3 eye, Vec3 target) {
   Mat4 m = identity();
   const std::array<Vec3, 3> axes{
       right, true_up, {.x = -forward.x, .y = -forward.y, .z = -forward.z}};
-  for (int row = 0; row < 3; ++row) {
-    const Vec3 axis = axes.at(static_cast<std::size_t>(row));
+  for (std::size_t row = 0; row < 3; ++row) {
+    const Vec3 axis = axes.at(row);
     cell(m, row, 0) = axis.x;
     cell(m, row, 1) = axis.y;
     cell(m, row, 2) = axis.z;
