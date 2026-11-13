@@ -227,7 +227,7 @@ TEST_CASE("launcher: New, Check and Build windows on one temporary folder") {
                            "translations/ja.po", "images/bg/classroom.png"}) {
     CHECK_MESSAGE(pak->is_file(path), path);
   }
-  CHECK_FALSE(pak->is_file(".vnmaki/cache"));  // the build folder is not packed into itself
+  CHECK_FALSE(pak->is_file(".vnmaki/windows/game.vnpak"));  // the output is not packed into itself
   // The folder is in the recent list once, newest first.
   REQUIRE(launcher.recent().list().size() == 1);
   CHECK(launcher.recent().list().front() == game);
