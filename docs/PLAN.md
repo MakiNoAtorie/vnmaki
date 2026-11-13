@@ -326,11 +326,11 @@ Files: new `engine/tools/file_watcher.*`, `engine/tools/hot_reload.*`, `engine/r
 
 Files: new `engine/tools/profiler.*`, `engine/render/` (texture memory), `engine/platform/main_loop.*`, `cli/`.
 
-- [ ] Each frame records CPU time for events, update, prepare and draw, and the draw calls from `FrameStats`.
-- [ ] The renderer counts texture and target bytes on create and destroy. Asset loads record the path and the time.
-- [ ] An overlay panel shows a frame-time graph of the last 300 frames, the counters, and the slowest loads.
-- [ ] `vnmaki run <dir> --frames N --profile out.csv` writes one CSV row per frame. A second file, `out_loads.csv`, has the loads.
-- [ ] Tests: unit test with a fake clock (exact phase times), a CSV header and row-count CLI test, and a texture-byte count test.
+- [x] Each frame records CPU time for events, update, prepare and draw, and the draw calls from `FrameStats`.
+- [x] The renderer counts texture and target bytes on create and destroy. Asset loads record the path and the time.
+- [x] An overlay panel shows a frame-time graph of the last 300 frames, the counters, and the slowest loads.
+- [x] `vnmaki run <dir> --frames N --profile out.csv` writes one CSV row per frame. A second file, `out_loads.csv`, has the loads.
+- [x] Tests: unit test with a fake clock (exact phase times), a CSV header and row-count CLI test, and a texture-byte count test.
 
 ### 34: Story graph (SPEC §18)
 

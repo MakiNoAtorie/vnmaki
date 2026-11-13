@@ -117,6 +117,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 
 - `Platform` (SDL or headless) changes OS events into `InputEvent`, a `std::variant`.
 - `MainLoop` runs a fixed timestep: events, updates, then `draw(alpha)`. You can inject the clock.
+  - `MainLoopHooks::frame_end` gets a `FrameTiming` (`events`, `update`, `draw` as clock differences, and the number of `updates`) at the end of each frame that ran. `draw` is the whole draw hook. The loop reads the clock for the phases only while `frame_end` is set. A frame that quits does not call it.
 - Pointer positions are in window pixels. Convert them with `window_to_virtual(compute_viewport(...), pos)`.
 - Clicks in the letterbox bars are outside the virtual area.
 - Text input is off when no text field has the focus. `UiHost::set_platform(&platform)` does this for the `input` node (see UI).
@@ -131,7 +132,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - A frame:
   1. `begin_frame`.
   2. One or more passes: `begin_pass({.target, .clear})`, then `draw(quads, DrawState)`.
-  3. `end_frame()`. It returns `FrameStats` (`draw_calls`).
+  3. `end_frame()`. It returns `FrameStats` (`passes`, `quads`, `draw_calls`).
 - Adjacent quads with the same `DrawState` are one draw call.
 - Coordinates are pixels of the pass target. The origin is top-left.
 - The GPU uses premultiplied colors. `Image` pixels are premultiplied RGBA8.
@@ -147,6 +148,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - A shader may use up to three textures and one constant buffer at `register(b0, space3)`. Storage textures and buffers are errors.
   - `shader_compiler_available()` is false on macOS, where vcpkg has no `sdl3-shadercross`. Tests that compile shaders return early then.
   - The compiler is only in `engine/render/sdl_shader_compiler.cpp`, because it includes SDL headers.
+- `SdlGpuRenderer::texture_memory()` returns `TextureMemory`: the bytes (RGBA8, width x height x 4) and the number of live textures and of render targets, counted when a resource is created and when it is released. A destroy inside a frame counts at `end_frame()`. It is on `SdlGpuRenderer`, not on `IRenderer`.
 - `load_image(vfs, jobs, path)` loads an image and returns `JobHandle<Image>`. `decode_image` reads PNG and JPEG (stb_image) and WebP, lossless or lossy, not animated (libwebp). It finds WebP by the `RIFF....WEBP` header, not by the file name. All three are premultiplied after decoding.
 - Upload images with `create_texture` on the main thread.
 - `SdlGpuRenderer::set_overlay(fn)` sets a hook that `end_frame()` calls once the passes are recorded. It gets the frame's command buffer and the target of the last pass (`GpuOverlayTarget`), so the hook can draw over the screen. It is not called when the screen pass was skipped. `gpu_info()` gives the device and the screen's format. The dev tools use it for ImGui (see Tools). Remove the hook before the renderer is destroyed.
@@ -548,7 +550,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 
 ### Tools (`engine/tools/`)
 
-- Dev builds only. `engine/CMakeLists.txt` adds the module when `VNMAKI_DEV_TOOLS` is ON. A release build compiles none of it, links no ImGui, and `cli/story_window.cpp` guards its calls with `#if VNMAKI_DEV_TOOLS`.
+- Dev builds only, except the Lua scan, the story graph and the profiler (no ImGui; see Profiler). `engine/CMakeLists.txt` adds the module when `VNMAKI_DEV_TOOLS` is ON. A release build compiles none of the rest, links no ImGui, and `cli/story_window.cpp` guards the overlay calls with `#if VNMAKI_DEV_TOOLS`.
 - `ImguiBackend` (`imgui_backend.*`) owns the ImGui context and the SDL GPU backend. Only `imgui_backend.cpp` includes SDL (`lint.no_sdl_outside_platform` allows it). Its header has no ImGui and no SDL.
   - It draws through `SdlGpuRenderer::set_overlay`, so the ImGui frame goes over the last pass of the renderer frame (the screen pass in the game). Per frame: `begin_frame(pixels, seconds)`, the windows, `end_frame()`, then the renderer's `end_frame()` draws it.
   - ImGui does not read SDL events. `DevOverlay::handle_event` gives it the engine's `InputEvent`s. Text arrives as `TextInputEvent`, so the overlay turns `Platform::set_text_input` on while ImGui wants text.
@@ -569,3 +571,10 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `inspect_tweens` lists the running tweens from `Timeline::active()` (`Scene::timeline()`). `inspect_audio` lists a row for each playing track (file, channel volume, position in seconds) and for each silent channel. `inspect_labels` lists `ScriptRuntime::label_names()` and marks the label that the story waits in.
   - `jump_to_label(runtime, name)` is the "Jump" button. It calls `drop_callers()`, then `replay()` of a snapshot of `name` with the current `store` and the scene bytes of the running label's entry, no inputs, to step 1. The story is then at the first blocking call of the label. If the label has none, it returns the error and replays the story back to where it was (the callers are then gone, as after a load).
 - Tests: `tests/unit/repl_test.cpp` (REPL and log), `tests/unit/inspect_test.cpp` (the row functions, on the template in `templates/default`) and `tests/render/overlay_render_test.cpp` (a headless GPU frame, F12, input, a click on each inspector tab). All are only built with the tools.
+- Profiler (`profiler.*`, `engine/core/load_timing.*`). `Profiler(clock, {.enabled, .max_frames})` records a `FrameSample` for each frame (`events`, `update`, `prepare`, `draw`, `updates`, the `FrameStats` and the `TextureMemory` of the frame) and the asset loads. It keeps the last `max_frames` frames (0 keeps all) and at most 10000 loads. A disabled profiler records nothing and sets no load sink.
+  - It has no ImGui. It builds in every preset. Only the overlay panel is dev-only. `vnmaki run <dir> --frames N --profile out.csv` therefore works in a release build too, which is the build whose numbers matter. `--profile` needs a window (not `--headless`).
+  - `story_window.cpp` makes the profiler first (so that it sees the font loads): in a dev build it is always enabled, for the overlay (last 300 frames). In a release build it is enabled only by `--profile`, and then it keeps all frames. The wiring: `hooks.frame_end` calls `end_frame(timing)`; the draw hook calls `begin_prepare()` and `end_prepare()` around the uploads before the first pass (`prepare` is that time, and `draw` is the rest of the draw hook), and `set_gpu(end_frame(), texture_memory())` after the renderer's `end_frame()`.
+  - CSV (SPEC §5): `out.csv` has `frame,events_us,update_us,prepare_us,draw_us,total_us,updates,passes,quads,draw_calls,texture_bytes,target_bytes,textures,targets` and a row for each frame. `out_loads.csv` has `path,time_us` and a row for each load, in the order they ended. The files are written when the window closes. Times are whole microseconds.
+  - Asset loads: a `LoadTimer` (`engine/core/load_timing.hpp`) in `load_image`, `load_font`, `load_movie` and the audio track loader times the read and the decode. It reports to one global sink (`set_load_sink`), because loads run on job threads. With no sink it costs one atomic read. Only one enabled profiler can exist. The loader of a new asset kind adds a `LoadTimer`.
+  - The panel "Profiler" (`DevOverlay::set_profiler`, `draw_profiler`) is drawn last in `draw()`: a frame-time graph of the last 300 frames, the phase times of the last frame, the GPU counters and the memory, and the 8 slowest loads.
+- Profiler tests: `tests/unit/profiler_test.cpp` (a fake clock with exact phase times, the CSV text, the load timing; in every build), `tests/platform/main_loop_test.cpp` (`frame_end` timing), `tests/render/renderer_test.cpp` (the texture byte count) and `cli.run_profile_writes_a_row_for_each_frame` (the CSV header and the row count).
