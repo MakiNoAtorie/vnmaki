@@ -3,10 +3,12 @@
 // The desktop Platform (Windows, Linux, macOS), built on SDL3. This header does not include SDL;
 // it only names SDL's window type so the renderer can attach a GPU device to the window.
 
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "engine/platform/geometry.hpp"
@@ -31,6 +33,12 @@ struct WindowConfig {
   /// Initial size in points (the OS's window coordinates).
   Size size = kDefaultWindowSize;
 };
+
+/// The per-user directory where `application` of `organization` keeps its files (saves,
+/// settings), created if it is missing: SDL's preference path. Needs no SdlPlatform. Throws
+/// PlatformError if the OS gives none.
+[[nodiscard]] std::filesystem::path user_data_directory(std::string_view organization,
+                                                        std::string_view application);
 
 /// Opens a resizable, high-density-aware window and turns SDL events (keyboard, mouse, gamepad,
 /// window) into InputEvents. Gamepads are opened as they connect.

@@ -31,7 +31,8 @@
     "opusfile",
     "sol2",
     "stb",
-    "tomlplusplus"
+    "tomlplusplus",
+    "zstd"
   ],
   "overrides": [
     {
