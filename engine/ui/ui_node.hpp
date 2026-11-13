@@ -100,6 +100,9 @@ struct UiStyle {
   /// The filled part of a slider or bar, and the mark of a checked toggle.
   Color fill = kWhite;
   float text_size = kDefaultTextSize;
+  /// A text node sets its text in columns that run down and from right to left
+  /// (TextOrientation::kVertical). `height` is the column length: the text wraps there.
+  bool vertical = false;
 };
 
 /// The datum a toggle, slider or bar shows and changes: `table` is "store", "persistent" or
@@ -120,6 +123,9 @@ struct UiNode {
   UiStyle style{};
   /// The content: a text node's string, a button's caption, an image's name (`images/<name>.png`).
   std::string text{};
+  /// The text of a text node or button before UiHost translated it (SPEC section 16); empty until
+  /// then. UiHost translates again from this when the language changes.
+  std::string source_text{};
   /// `text` has text tags (docs/TEXT_TAGS.md) that the renderer applies; a bad tag draws as plain
   /// text.
   bool markup = false;

@@ -23,6 +23,15 @@
 //   ja = ["fonts/jp.otf"]         # that supply characters the text's font
 //                                 # lacks, in the order to try; default none
 //
+//   [text_direction]              # for a language: "ltr" or "rtl"; default "ltr". Right to
+//   ar = "rtl"                    # left reverses the order of the children of an hbox
+//
+//   [vertical]                    # for a language: true sets the say box and the NVL screen in
+//   ja = true                     # vertical text (columns, right to left); default false
+//
+//   [styles]                      # for a language: the style override file, run after the
+//   ja = "styles/ja_look.lua"     # game's styles; default styles/<language>.lua if it exists
+//
 // Other keys (platforms, build options) belong to later features and
 // are ignored for now.
 
@@ -34,6 +43,7 @@
 #include <string_view>
 #include <vector>
 
+#include "engine/l10n/text_direction.hpp"
 #include "engine/runtime/script_runtime.hpp"
 
 namespace vnmaki {
@@ -61,6 +71,12 @@ struct ProjectConfig {
   /// The font fallback chain of each language that has one. Every key is in
   /// `languages`. Load the fonts into FontSet::fallbacks (engine/text/text.hpp).
   std::map<std::string, std::vector<std::string>> font_fallbacks;
+  /// The text direction of each language that has one in project.toml, and the style override
+  /// file of each language that has one. Every key is in `languages`.
+  std::map<std::string, TextDirection> text_directions{};
+  std::map<std::string, std::string> language_styles{};
+  /// The languages whose story text is vertical (`[vertical]`). Every key is in `languages`.
+  std::map<std::string, bool> vertical{};
   std::vector<AutoSaveEvent> auto_save{};
   std::vector<std::string> gallery{};
   std::size_t rollback_depth = kDefaultRollbackDepth;

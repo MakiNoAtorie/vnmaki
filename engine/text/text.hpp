@@ -86,6 +86,9 @@ struct LayoutGlyph {
   std::uint16_t font = 0;
   /// The glyph is part of right-to-left text: its leading edge is its right edge.
   bool rtl = false;
+  /// Vertical layout only: the glyph is turned 90 degrees clockwise (a Latin letter in a column),
+  /// about `origin`. Its quad is turned the same way (text_quads).
+  bool sideways = false;
   /// The glyph's size in pixels per em, and how far it moves the pen.
   float pixel_size = 0;
   float advance = 0;
@@ -119,6 +122,10 @@ struct LinkRegion {
   bool operator==(const LinkRegion&) const = default;
 };
 
+/// In a vertical layout (TextLayout::vertical) a TextLine is a column, and its fields turn:
+/// `baseline` is the x of the column's centre line (upright glyphs are centred on it), `width` is
+/// the column's length (its advance down, without spaces at its end), `top` is the column's left
+/// edge from the layout's left edge and `height` its thickness (ruby included, on the right).
 struct TextLine {
   /// In logical (reading and reveal) order. In right-to-left text the first glyph is the
   /// rightmost one.
@@ -147,9 +154,16 @@ struct TextLayout {
   /// The fonts the glyphs use (LayoutGlyph::font). They must outlive the layout's use.
   std::vector<const Font*> fonts{};
   std::vector<LinkRegion> links{};
+  /// Laid out with TextOrientation::kVertical: `lines` are columns, the first one rightmost.
+  bool vertical = false;
 
   bool operator==(const TextLayout&) const = default;
 };
+
+/// The width and height of the text of `layout`, from its top-left corner: the widest line and
+/// the bottom of the last one, or for a vertical layout the right edge of the first column and
+/// the longest column.
+[[nodiscard]] PointF layout_extent(const TextLayout& layout);
 
 /// Shapes UTF-8 `text` at `pixel_size` pixels per em and breaks it into lines no wider than
 /// `wrap_width` pixels, at the places the Unicode line breaking rules allow (so Japanese wraps
@@ -186,6 +200,14 @@ struct FontSet {
 /// `dyslexia` must outlive the result.
 [[nodiscard]] FontSet with_dyslexia_font(const FontSet& fonts, const Font& dyslexia);
 
+/// How `layout_text` sets lines.
+enum class TextOrientation : std::uint8_t {
+  /// Lines run left to right (or right to left), one below the other.
+  kHorizontal,
+  /// Columns run down, one beside the other from right to left.
+  kVertical,
+};
+
 /// As layout_text above, for text with styles (see parse_markup) and more than one font.
 /// - `size`, `font`, `b` and `i` select the size and font of each part. A line is as high as
 ///   its largest glyphs need.
@@ -194,10 +216,21 @@ struct FontSet {
 /// - A small kana or a long vowel mark does not start a line (kinsoku).
 /// - Ruby text is half the size of its base, centred above it. A base that is narrower than its
 ///   ruby gets space on both sides. A line does not break in a ruby base.
+/// - TextOrientation::kVertical sets columns that run right to left (the first column is the
+///   rightmost) and glyphs that run down. `wrap_width` is then the column length: the most a
+///   column takes before it breaks. HarfBuzz shapes characters that stand upright (CJK, kana,
+///   fullwidth forms) with top-to-bottom direction and the `vert` feature, so a font with vertical
+///   forms (brackets, "。", "ー") gets them; a font without them shows the horizontal glyphs.
+///   Every other character (Latin letters, digits, spaces) is shaped left to right and turned 90
+///   degrees clockwise (LayoutGlyph::sideways), a run as one piece. Kinsoku and line breaking
+///   work on columns as they do on lines. Ruby goes to the right of its base, centred on it, and
+///   makes its column thicker. There is no bidirectional reordering: all text runs top to bottom.
+///   A column is as thick as its largest line height. See TextLine for the fields of a column.
 /// Throws std::invalid_argument for a size outside (0, kMaxFontPixelSize] or without
 /// `fonts.base.regular`.
 [[nodiscard]] TextLayout layout_text(const FontSet& fonts, const StyledText& text, float pixel_size,
-                                     float wrap_width);
+                                     float wrap_width,
+                                     TextOrientation orientation = TextOrientation::kHorizontal);
 
 /// How many glyphs a typewriter reveal shows `elapsed_seconds` after it started, at
 /// `characters_per_second`: none before the start, all `glyph_count` once they have had time.
@@ -314,8 +347,9 @@ class GlyphAtlas {
 /// The quads that draw the first `visible_glyphs` glyphs of `layout` (see revealed_glyphs) with
 /// the top-left corner of the layout at `origin`. `atlas` must have been prepared with `layout`;
 /// `origin` and the quads are in the atlas's pixels (target pixels), and every glyph lands on
-/// whole pixels. Draw them with the texture made from atlas.image(). A glyph with a `color` tag
-/// has that colour in place of `tint`. Ruby glyphs come with their first base glyph.
+/// whole pixels. A sideways glyph (vertical layout) has its quad and texture turned 90 degrees
+/// clockwise about its origin. Draw them with the texture made from atlas.image(). A glyph with a
+/// `color` tag has that colour in place of `tint`. Ruby glyphs come with their first base glyph.
 [[nodiscard]] std::vector<Quad> text_quads(const TextLayout& layout, const GlyphAtlas& atlas,
                                            PointF origin, std::size_t visible_glyphs,
                                            Color tint = kWhite);

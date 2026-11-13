@@ -6,7 +6,7 @@
 function(vnmaki_isolate_run_data name args_var define_var)
   set(args ${${args_var}})
   set(define "")
-  if(args MATCHES "^(run|debug)(;|$)")
+  if(args MATCHES "^(run|debug|launcher)(;|$)")
     set(directory "${CMAKE_CURRENT_BINARY_DIR}/data/${name}")
     list(APPEND args --data-dir "${directory}")
     set(define "-DDATA_DIR=${directory}")
@@ -49,11 +49,21 @@ vnmaki_add_cli_test(
   NO_STDOUT
   STDERR_REGEX "unknown option '--frobnicate'.*usage: vnmaki")
 
-vnmaki_add_cli_test(
-  no_arguments_prints_usage
-  EXIT 2
-  NO_STDOUT
-  STDERR_REGEX "^usage: vnmaki")
+# With no arguments a dev build opens the launcher (cli.launcher_*); a release build prints the
+# usage.
+if(NOT VNMAKI_DEV_TOOLS)
+  vnmaki_add_cli_test(
+    no_arguments_prints_usage
+    EXIT 2
+    NO_STDOUT
+    STDERR_REGEX "^usage: vnmaki")
+  vnmaki_add_cli_test(
+    launcher_needs_the_dev_tools
+    ARGS launcher
+    EXIT 1
+    NO_STDOUT
+    STDERR_REGEX "vnmaki launcher: this build has no launcher")
+endif()
 
 # vnmaki window (ticket 04): opens an empty window and runs the main loop.
 vnmaki_add_cli_test(
@@ -641,6 +651,36 @@ vnmaki_add_cli_test(
   NO_STDOUT
   STDERR_REGEX "^usage: vnmaki extract-strings")
 
+# vnmaki run --lang (ticket 41): the transcript has the translations of the language. A fuzzy entry
+# and a line with no entry show the source text.
+vnmaki_add_cli_stdout_file_test(
+  run_headless_prints_the_source_text_without_lang
+  ARGS run "${vnmaki_l10n_fixtures}/lang" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_l10n_fixtures}/lang.en.transcript")
+vnmaki_add_cli_stdout_file_test(
+  run_headless_prints_the_translations_with_lang
+  ARGS run "${vnmaki_l10n_fixtures}/lang" --headless --lang ja
+  EXIT 0
+  STDOUT_FILE "${vnmaki_l10n_fixtures}/lang.ja.transcript")
+vnmaki_add_cli_test(
+  run_rejects_a_language_that_project_toml_does_not_list
+  ARGS run "${vnmaki_l10n_fixtures}/lang" --headless --lang xx
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "language 'xx' is not in 'languages' of project.toml")
+vnmaki_add_cli_test(
+  run_lang_needs_a_code
+  ARGS run "${vnmaki_l10n_fixtures}/lang" --lang --headless
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki run: --lang needs a language code")
+set_tests_properties(
+  cli.run_headless_prints_the_source_text_without_lang
+  cli.run_headless_prints_the_translations_with_lang
+  cli.run_rejects_a_language_that_project_toml_does_not_list cli.run_lang_needs_a_code
+  PROPERTIES TIMEOUT 60)
+
 # vnmaki extract-strings never opens a window or waits for input, so a hang is a bug.
 set_tests_properties(
   cli.extract_strings_writes_the_template_and_updates_the_po_files
@@ -767,3 +807,36 @@ if("example" IN_LIST VNMAKI_PLUGINS)
                                                                                              60)
 endif()
 
+
+# vnmaki launcher (task 51): the window opens on the GPU, runs a few frames and ends. --data-dir
+# keeps the recent-project file out of the user's data. The actions are in the unit tests.
+vnmaki_add_cli_test(
+  launcher_rejects_an_unknown_option
+  ARGS launcher --frobnicate
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki launcher: unexpected argument '--frobnicate'.*usage: vnmaki launcher")
+vnmaki_add_cli_test(
+  launcher_frames_must_be_a_number
+  ARGS launcher --frames many
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki launcher: --frames needs a whole number, not 'many'")
+set_tests_properties(cli.launcher_rejects_an_unknown_option cli.launcher_frames_must_be_a_number
+                     PROPERTIES TIMEOUT 60)
+if(VNMAKI_DEV_TOOLS)
+  vnmaki_add_cli_test(
+    launcher_opens_and_runs_some_frames
+    ARGS launcher --frames 3
+    EXIT 0
+    NO_STDOUT)
+  set_tests_properties(cli.launcher_opens_and_runs_some_frames PROPERTIES TIMEOUT 60)
+  if(vnmaki_gpu_cli_env)
+    set_tests_properties(cli.launcher_opens_and_runs_some_frames
+                         PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")
+  endif()
+  if(NOT "$ENV{VNMAKI_REQUIRE_GPU}" STREQUAL "1")
+    set_tests_properties(cli.launcher_opens_and_runs_some_frames
+                         PROPERTIES SKIP_REGULAR_EXPRESSION "cannot create a GPU device")
+  endif()
+endif()

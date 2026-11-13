@@ -43,6 +43,7 @@ Options:
 - `--frames <n>` closes the window after `n` frames.
 - `--data-dir <path>` gives the folder for saves and for the `persistent` data. Without it, they go to the user-data folder of the game title.
 - `--headless` plays without a window and prints a transcript. It needs no input for lines, but it stops with an error at a menu or a screen. The sample story has both.
+- `--lang <code>` plays in a language of `languages` in `project.toml` (see `docs/script-reference.md`, "Languages").
 
 ## Change the story
 

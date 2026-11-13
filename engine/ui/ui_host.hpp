@@ -12,12 +12,14 @@
 // its screen the keys too.
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include "engine/l10n/translator.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/platform.hpp"
@@ -48,6 +50,12 @@ class UiHost final : public ScreenCommands {
   explicit UiHost(Size canvas);
 
   void set_text_measure(TextMeasure measure);
+  /// Translates the text of the text nodes and buttons of every screen it shows (the key scope is
+  /// `screen/<name>`, as `vnmaki extract-strings` writes it), and lays the screens out in the
+  /// direction of the language. When the translator's revision changes, the screens that are shown
+  /// change at once. The screens `vnmaki:...` of the engine are left as they are. `translator` must
+  /// outlive the host; null unsets it.
+  void set_translator(const Translator* translator);
   /// Multiplies the text of every screen, shown now or later, by `scale` (the `text_scale`
   /// preference; 1 is the size the screen says). The layout is done again. A tree given to show()
   /// has the sizes the screen says; the host scales it.
@@ -135,6 +143,8 @@ class UiHost final : public ScreenCommands {
   Size canvas_;
   float text_scale_ = 1;
   ScriptRuntime* bindings_ = nullptr;
+  const Translator* translator_ = nullptr;
+  std::uint64_t translation_revision_ = 0;
   Platform* platform_ = nullptr;
   bool text_input_on_ = false;
   // The non-modal screen the player gave the keyboard to (Tab); empty for none.

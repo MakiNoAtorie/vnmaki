@@ -191,6 +191,15 @@ say(eileen, "Hello.")
 - The mouth shows the first frame when no voice with the tag plays. It does not change `show` values, saves or rollback. A replay plays no voice, so the mouth stays closed.
 - `vnmaki run` stops the voice while skip mode is on.
 
+## Languages
+
+- `languages = ["en", "ja"]` in `project.toml` lists the languages. The first is the one the scripts are written in.
+- `vnmaki extract-strings <folder>` writes `translations/template.pot` and `translations/<code>.po`. Translate the `msgstr` lines. A fuzzy or empty entry shows the source text.
+- `vnmaki run <folder> --lang ja` or `prefs.language = "ja"` plays in that language. `languages()` lists the codes. A button that returns `"@language:ja"` changes the language at once; the default `preferences` screen has these buttons when there is more than one language.
+- Images and voices: `images/ja/<name>` and `audio/voice/ja/<name>` are used first in that language.
+- `[fonts.fallback]` gives the font chain of a language. `[text_direction]` with `ar = "rtl"` reverses the order of an `hbox`. `[styles]` with `ja = "styles/ja_look.lua"` (or `styles/<code>.lua`) is a file of `style(...)` calls that runs over the game styles.
+- Vertical text: `[vertical]` with `ja = true` in `project.toml` sets the default say box and NVL screen in columns that run down, the first column at the right. A style file can do the same with `style("say_text", { vertical = true })` and `style("nvl_text", { vertical = true })`. A text node takes `vertical = true` too (give it a `height`: the columns wrap there), and so does the style of a text node. Kana and kanji stand upright, Latin letters and digits turn 90 degrees clockwise, `{ruby=...}` goes to the right of its column, and a column does not start with `。` or a small kana. A font with vertical forms (the `vert` feature) shows them for `。`, `、` and brackets; a font without them shows the horizontal shapes. `style_option(name, key)` reads an option of a style (the default screens use it to see `vertical`).
+- A dev build has a "Translations" window in the overlay (F12): it lists the entries of the current label and saves an edit to the `.po` file.
 ## Captions and reduced motion
 
 ```lua

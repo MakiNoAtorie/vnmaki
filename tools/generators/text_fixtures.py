@@ -136,8 +136,20 @@ def cmap(shapes: dict) -> bytes:
     return struct.pack(">HHHHI", 0, 1, 3, 10, 12) + subtable
 
 
+def vertical_metrics(glyphs: list) -> tuple:
+    """(vhea, vmtx): an advance of one em, and the top side bearing that puts the
+    top of the cell at the ascent, as vmtx stores it (ascent - yMax of the box)."""
+    vhea = struct.pack(">IhhhHhhhhhh4hhH", 0x00011000, UNITS_PER_EM // 2, -UNITS_PER_EM // 2, 0,
+                       UNITS_PER_EM, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, len(glyphs))
+    vmtx = b"".join(
+        struct.pack(">Hh", UNITS_PER_EM, ASCENT - max((b[3] for b in boxes_of(box)), default=ASCENT))
+        for _, box in glyphs)
+    return vhea, vmtx
+
+
 def build_font(shapes: dict) -> bytes:
     glyphs = glyph_list(shapes)
+    vhea, vmtx = vertical_metrics(glyphs)
     boxes = [b for _, box in glyphs for b in boxes_of(box)]
     max_contours = max(len(boxes_of(box)) for _, box in glyphs)
     x_min, y_min = min(b[0] for b in boxes), min(b[1] for b in boxes)
@@ -159,6 +171,8 @@ def build_font(shapes: dict) -> bytes:
         b"maxp": struct.pack(">IH13H", 0x00010000, len(glyphs), 4 * max_contours, max_contours,
                              0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0),
         b"post": struct.pack(">IIhhIIIII", 0x00030000, 0, -100, 50, 0, 0, 0, 0, 0),
+        b"vhea": vhea,
+        b"vmtx": vmtx,
     }
     count = len(tables)
     entry_selector = count.bit_length() - 1

@@ -20,7 +20,8 @@ namespace {
 // Writes each runtime event as one transcript line.
 class TranscriptRecorder final : public ScriptObserver {
  public:
-  explicit TranscriptRecorder(HeadlessResult& result) : result_(&result) {}
+  TranscriptRecorder(HeadlessResult& result, const Translator* translator)
+      : result_(&result), translator_(translator) {}
 
   void on_label_entered(std::string_view label) override { add("label ", label); }
   void on_label_resumed(std::string_view label) override { add("resume ", label); }
@@ -32,12 +33,14 @@ class TranscriptRecorder final : public ScriptObserver {
   void on_blocked(const BlockingRequest& request, const ScriptPosition& position) override {
     result_->stops.push_back(position);
     if (const auto* say = std::get_if<SayRequest>(&request)) {
-      result_->transcript.push_back("say " + say->speaker + ": " + say->text);
+      result_->transcript.push_back("say " + say->speaker + ": " +
+                                    translate(position, say->speaker, say->text));
     } else if (const auto* narrate = std::get_if<NarrateRequest>(&request)) {
-      add("narrate ", narrate->text);
+      add("narrate ", translate(position, {}, narrate->text));
     } else if (const auto* menu = std::get_if<MenuRequest>(&request)) {
       for (std::size_t i = 0; i < menu->options.size(); ++i) {
-        result_->transcript.push_back("menu " + std::to_string(i + 1) + ": " + menu->options[i]);
+        result_->transcript.push_back("menu " + std::to_string(i + 1) + ": " +
+                                      translate(position, {}, menu->options[i]));
       }
     } else if (const auto* screen = std::get_if<CallScreenRequest>(&request)) {
       add("screen ", screen->name);
@@ -53,6 +56,12 @@ class TranscriptRecorder final : public ScriptObserver {
   }
 
  private:
+  [[nodiscard]] std::string translate(const ScriptPosition& position, std::string_view speaker,
+                                      std::string_view text) const {
+    return translator_ != nullptr ? translator_->translate(position.label, speaker, text)
+                                  : std::string{text};
+  }
+
   void add(std::string_view prefix, std::string_view text) {
     std::string line{prefix};
     line += text;
@@ -60,13 +69,14 @@ class TranscriptRecorder final : public ScriptObserver {
   }
 
   HeadlessResult* result_;
+  const Translator* translator_;
 };
 
 // Runs the story and fills `result`. A separate function so that the persistent store, which
 // writes its file when it goes away, is gone before the caller sees the result.
 void run_into(HeadlessResult& result, const Vfs& vfs, std::span<const ScriptInput> inputs,
               const HeadlessOptions& options) {
-  TranscriptRecorder recorder{result};
+  TranscriptRecorder recorder{result, options.translator};
   ScriptRuntimeOptions runtime_options = options.runtime;
   runtime_options.observer = &recorder;
   ScriptRuntime runtime{vfs, runtime_options};

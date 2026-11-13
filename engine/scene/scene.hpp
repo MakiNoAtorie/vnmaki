@@ -15,6 +15,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/anim/timeline.hpp"
@@ -40,8 +41,10 @@ class Scene3dDisplayable;
 class Vfs;
 
 /// The file of image name `name`: "images/<name>.png", else ".jpg", else ".webp" (a name may hold
-/// "/"). Nothing when none exists. `vnmaki check` uses the same rule.
-[[nodiscard]] std::optional<std::string> resolve_image(const Vfs& vfs, std::string_view name);
+/// "/"). With a `language`, "images/<language>/<name>" comes first (a picture with text in that
+/// language). Nothing when none exists. `vnmaki check` uses the same rule.
+[[nodiscard]] std::optional<std::string> resolve_image(const Vfs& vfs, std::string_view name,
+                                                       std::string_view language = {});
 
 /// The layers, in the order they are declared and drawn: kBackground first (at the back).
 enum class Layer : std::uint8_t {
@@ -206,6 +209,10 @@ class Scene final : public SceneState, public SceneCommands {
   /// The voice level that lip-synced layered sprites follow on update(). May be null: the mouths
   /// then stay closed. It must outlive the scene.
   void set_voice_level(const VoiceLevel* levels) { voice_level_ = levels; }
+  /// The language whose images (`images/<language>/<name>`) the image calls look for first. It
+  /// changes the lookup of calls from now on: an image that is shown keeps its file until it is
+  /// shown again or the story replays.
+  void set_language(std::string language) { language_ = std::move(language); }
 
   /// Where prepare() and update() report a file that cannot be loaded or played (an image that
   /// does not decode, a movie that fails). That displayable stays in the scene and draws nothing,
@@ -335,6 +342,7 @@ class Scene final : public SceneState, public SceneCommands {
   [[nodiscard]] const std::vector<Entry>& entries(Layer layer) const;
 
   const Vfs* vfs_;
+  std::string language_;
   Size virtual_size_;
   Layers layers_;
   LayerState layer_state_;

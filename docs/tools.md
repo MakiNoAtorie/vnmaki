@@ -8,12 +8,13 @@ This guide is for the person who makes a game. The tools help you to write, test
 | Hot reload | Save a file while `vnmaki run` or `vnmaki debug` runs | Dev builds |
 | Screen editor | The window "Screen editor" of the overlay | Dev builds |
 | Debugger (DAP) | `vnmaki debug` | Dev builds, Windows |
+| Launcher | `vnmaki launcher`, or `vnmaki` with no arguments | Dev builds |
 | Check | `vnmaki check <dir>` | All builds |
 | Story graph | `vnmaki graph <dir>` | All builds |
 | Extract strings | `vnmaki extract-strings <dir>` | All builds |
 | Profile CSV | `vnmaki run <dir> --frames N --profile out.csv` | All builds |
 
-A dev build is a build with the CMake option `VNMAKI_DEV_TOOLS` (on for the `debug` preset, off for `release`). In a release build the overlay, hot reload and `vnmaki debug` do not exist; `vnmaki debug` then prints "this build has no debugger" and exits with 1.
+A dev build is a build with the CMake option `VNMAKI_DEV_TOOLS` (on for the `debug` preset, off for `release`). In a release build the overlay, hot reload, the launcher and `vnmaki debug` do not exist; `vnmaki debug` then prints "this build has no debugger" and exits with 1.
 
 ## Dev overlay
 
@@ -177,6 +178,21 @@ Load it with "Developer: Install Extension from Location..." (or copy the folder
 - `vnmaki` is the path of the executable. If it is on `PATH`, you can leave it out.
 - It must be a dev build.
 - To go to a label, call the custom request from an extension command: `vscode.debug.activeDebugSession.customRequest("vnmaki/goto", { label: "warm", step: 1 })`.
+
+## Launcher
+
+`vnmaki launcher` opens a window to work on projects without a command line. `vnmaki` with no arguments does the same in a dev build. In a release build, `vnmaki launcher` prints "this build has no launcher" and exits with 1, and `vnmaki` with no arguments prints the usage. A built game (a `<title>.exe` next to `game.vnpak`) plays the game and never opens the launcher.
+
+- Type the project folder in the text field, or click a folder of the recent list to put it there.
+- Buttons, each on the folder of the field:
+  - **New** makes a project from the template in that folder (it must not exist, or be empty). Same as `vnmaki new`.
+  - **Run** plays the game in its own window, as a separate `vnmaki run <folder>` process. The launcher stays open, and a crash of the game does not close it. The messages of the game go to the console that started the launcher, not to the log.
+  - **Check**, **Extract strings** and **Build windows** do what `vnmaki check`, `vnmaki extract-strings` and `vnmaki build windows` do, and the log shows their output. The build goes to `<folder>/.vnmaki/windows` and uses the release `vnmaki.exe` of `build/release/cli` as the runner (see `docs/CONVENTIONS.md`).
+  - **Open folder** shows the folder in Windows Explorer.
+- The log shows the command line (`> vnmaki check "..."`) and then its output. **Clear log** empties it.
+- A folder goes to the recent list (the last 10, newest first) when its action succeeds. The list is the file `recent.txt` in the folder `%APPDATA%\VNMaki\launcher`. The launcher cannot keep a folder name with characters outside the code page of the system.
+- `vnmaki launcher --frames N` ends after N frames, and `--data-dir <path>` puts `recent.txt` in `<path>`. The tests use them.
+- Only Windows has Run and Open folder.
 
 ## `vnmaki check`
 

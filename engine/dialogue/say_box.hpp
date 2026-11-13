@@ -10,6 +10,7 @@
 #include <string>
 
 #include "engine/dialogue/dialogue_presenter.hpp"
+#include "engine/l10n/text_direction.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
 #include "engine/text/text.hpp"
@@ -30,6 +31,10 @@ struct SayBoxStyle {
   /// The line wraps at this width.
   float wrap_width = 0;
   Color text_color = kWhite;
+  /// The line runs in columns, the first at the right edge of the text area, and wraps at
+  /// `wrap_height` (the column length) in place of `wrap_width`. The name stays horizontal.
+  bool vertical = false;
+  float wrap_height = 0;
 
   /// The look for a virtual resolution: a box across the bottom with margins on a 16:9 canvas.
   [[nodiscard]] static SayBoxStyle for_resolution(Size virtual_size);
@@ -63,6 +68,9 @@ class SayBoxView {
   using ScreenSource = std::function<std::optional<UiNode>(const DialogueLine&)>;
   void set_screen_source(ScreenSource source, Size canvas);
 
+  /// Uses `fonts` (the font chain of another language) and lays the screen out in `direction`
+  /// from now on. The fonts must outlive the view.
+  void set_language(FontSet fonts, TextDirection direction);
   /// Multiplies the text size of the box by `scale` (the `text_scale` preference). The screen is
   /// built and laid out again, so a wrapped line reflows.
   void set_text_scale(float scale);
@@ -106,6 +114,7 @@ class SayBoxView {
   std::optional<UiNode> built_;
   FontSet fonts_;
   SayBoxStyle style_;
+  TextDirection direction_ = TextDirection::kLtr;
   UiRenderer ui_;
   std::string laid_out_text_;
   bool has_layout_ = false;

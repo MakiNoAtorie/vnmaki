@@ -84,7 +84,7 @@ class UiRenderer {
   const Vfs* vfs_;
   std::function<std::optional<Image>(const std::string&)> generated_;
   TextureId white_;
-  std::map<std::tuple<std::string, bool, float, float, std::string>, TextLayout> layouts_;
+  std::map<std::tuple<std::string, bool, float, float, std::string, bool>, TextLayout> layouts_;
   std::map<float, SizeAtlas> atlases_;
   std::map<std::string, std::optional<TextureId>> images_;
 };

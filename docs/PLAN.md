@@ -413,12 +413,12 @@ Files: new `engine/l10n/po.*`, `engine/l10n/extract.*`, `engine/tools/script_sca
 
 Files: `engine/l10n/`, `engine/runtime/`, `engine/vfs/` (language lookup), `engine/ui/`, `engine/tools/translation_editor.*`.
 
-- [ ] `prefs.language` and `vnmaki run --lang ja`. A missing or fuzzy entry uses the source text.
-- [ ] Image `N` in language `ja` is `images/ja/N` if it exists. Voice uses `voice/ja/...` the same way.
-- [ ] `project.toml` sets the font chain, the style override file (`styles/<lang>.lua`) and the text direction for each language. RTL languages reverse hbox order.
-- [ ] A language change at run time updates the current line, the backlog and the screens at once. It is not a rollback step.
-- [ ] The overlay translation editor lists the entries of the current label. An edit updates the say box at once and saves the `.po` file.
-- [ ] Tests: headless transcript in two languages, image and voice lookup, a switch during a line, and an RTL hbox rectangle test.
+- [x] `prefs.language` and `vnmaki run --lang ja`. A missing or fuzzy entry uses the source text.
+- [x] Image `N` in language `ja` is `images/ja/N` if it exists. Voice uses `voice/ja/...` the same way.
+- [x] `project.toml` sets the font chain, the style override file (`styles/<lang>.lua`) and the text direction for each language. RTL languages reverse hbox order.
+- [x] A language change at run time updates the current line, the backlog and the screens at once. It is not a rollback step.
+- [x] The overlay translation editor lists the entries of the current label. An edit updates the say box at once and saves the `.po` file.
+- [x] Tests: headless transcript in two languages, image and voice lookup, a switch during a line, and an RTL hbox rectangle test.
 
 ### 42: Accessibility options (SPEC §17)
 
@@ -539,20 +539,20 @@ Files: new `engine/tools/screen_editor.*`, `engine/tools/script_scan.*`.
 
 Files: new `cli/launcher.*`, `cli/main.cpp`.
 
-- [ ] `vnmaki launcher`, or `vnmaki` with no arguments, opens an ImGui window.
-- [ ] It lists recent projects (saved in the user-data path). Buttons: New, Run, Check, Extract strings, Build windows, Open folder.
-- [ ] Each button calls the same function as the CLI command. Command output shows in a log panel.
-- [ ] A release runner next to `game.vnpak` does not open the launcher.
-- [ ] Tests: unit tests for the recent-project list and the action functions, without ImGui.
+- [x] `vnmaki launcher`, or `vnmaki` with no arguments, opens an ImGui window.
+- [x] It lists recent projects (saved in the user-data path). Buttons: New, Run, Check, Extract strings, Build windows, Open folder.
+- [x] Each button calls the same function as the CLI command. Command output shows in a log panel.
+- [x] A release runner next to `game.vnpak` does not open the launcher.
+- [x] Tests: unit tests for the recent-project list and the action functions, without ImGui.
 
 ### 52: Vertical text (SPEC §13, §16)
 
 Files: `engine/text/`, `engine/dialogue/say_box.*`, `tools/generators/text_fixtures.py`.
 
-- [ ] `layout_text` has a vertical mode: HarfBuzz top-to-bottom direction with the `vert` feature. Columns go from right to left.
-- [ ] Latin runs turn 90 degrees. Kinsoku rules apply to columns. Ruby goes to the right of the column.
-- [ ] `project.toml` and `styles/<lang>.lua` can set `vertical = true` for the say box and NVL.
-- [ ] Tests: glyph positions with the box font, kinsoku at a column end, and one GPU golden of a vertical say box.
+- [x] `layout_text` has a vertical mode: HarfBuzz top-to-bottom direction with the `vert` feature. Columns go from right to left.
+- [x] Latin runs turn 90 degrees. Kinsoku rules apply to columns. Ruby goes to the right of the column.
+- [x] `project.toml` and `styles/<lang>.lua` can set `vertical = true` for the say box and NVL.
+- [x] Tests: glyph positions with the box font, kinsoku at a column end, and one GPU golden of a vertical say box.
 
 ### 53: Later demo (SPEC §22)
 

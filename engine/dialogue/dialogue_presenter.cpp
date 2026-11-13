@@ -54,8 +54,24 @@ void DialoguePresenter::advance() {
     return;
   }
   line_.reset();
+  source_.reset();
   runtime_->advance();
   sync();
+}
+
+DialogueLine DialoguePresenter::translated(const DialogueLine& source) const {
+  if (translator_ == nullptr) {
+    return source;
+  }
+  const std::string scope = runtime_->position().label;
+  DialogueLine line = source;
+  line.text = translator_->translate(scope, source.speaker, source.text);
+  if (line.nvl) {
+    for (NvlLine& page_line : *line.nvl) {
+      page_line.text = translator_->translate(scope, page_line.speaker, page_line.text);
+    }
+  }
+  return line;
 }
 
 // Picks up the request the script waits at, unless it is the line already shown. A request that
@@ -74,11 +90,25 @@ void DialoguePresenter::sync() {
     next = DialogueLine{
         .speaker = {}, .color = std::nullopt, .text = narrate->text, .nvl = narrate->nvl};
   }
+  const std::uint64_t revision = translator_ != nullptr ? translator_->revision() : 0;
+  if (next == source_ && revision == translated_revision_) {
+    return;
+  }
+  const bool same_line = next == source_;  // only the language changed
+  source_ = next;
+  translated_revision_ = revision;
+  if (next) {
+    next = translated(*next);
+  }
   if (next == line_) {
     return;
   }
   line_ = std::move(next);
   if (!line_) {
+    return;
+  }
+  if (same_line) {
+    glyph_count_ = counter_(*line_);
     return;
   }
   ++line_serial_;

@@ -42,6 +42,8 @@ struct Preferences {
   double window_opacity = 1;
   /// Read by the presentation code (camera moves, flashes) that reduce_motion switches off.
   bool reduce_motion = false;
+  /// The language code (SPEC section 16); empty is the source language of project.toml.
+  std::string language{};
   /// Speak the story and the focused UI node (SelfVoicing).
   bool self_voicing = false;
   /// Scales the text of the say box and the screens. Layout reflows.
@@ -86,6 +88,8 @@ struct PreferenceTargets {
   InputMap* controls = nullptr;
   /// Called with the new value when `dyslexia_font` changes, and once at the start if it is on.
   std::function<void(bool)> dyslexia_font{};
+  /// Called with the language code when `language` changes (the empty code: the source language).
+  std::function<void(const std::string&)> language{};
 };
 
 class PreferenceApplier {

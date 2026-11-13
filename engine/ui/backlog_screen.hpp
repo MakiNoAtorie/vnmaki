@@ -19,6 +19,7 @@
 // modal screen is shown.
 
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
 #include <vector>
 
@@ -42,6 +43,9 @@ class BacklogScreen {
   /// Reads the entries and shows the screen with the newest one selected.
   void open();
   void close();
+  /// Reads the entries again while the screen is open and the language (the backlog's translator
+  /// revision) changed. The selected entry stays. Call it once a frame.
+  void sync();
   [[nodiscard]] bool is_open() const { return open_; }
 
   /// The controls that open it (InputAction::kBacklog). Without a map, L and the north button.
@@ -60,6 +64,7 @@ class BacklogScreen {
   [[nodiscard]] const std::vector<BacklogEntry>& entries() const { return entries_; }
 
  private:
+  void load(bool keep_selection);
   void rebuild();
   void select(std::size_t index);
   void move(std::ptrdiff_t delta);
@@ -70,6 +75,7 @@ class BacklogScreen {
   const InputMap* input_map_ = nullptr;
   TextMeasure measure_;
   bool open_ = false;
+  std::uint64_t revision_ = 0;  // the backlog revision that entries_ was read at
   std::vector<BacklogEntry> entries_{};
   std::vector<float> heights_{};  // the height of each entry as laid out, with its gap
   float available_ = 0;           // the height of the list area

@@ -38,6 +38,9 @@ std::vector<BacklogEntry> Backlog::entries() const {
   result.reserve(steps.size());
   for (const RollbackStep& step : steps) {
     if (std::optional<BacklogEntry> entry = to_entry(step)) {
+      if (translator_ != nullptr) {
+        entry->text = translator_->translate(entry->label, entry->speaker, entry->text);
+      }
       result.push_back(std::move(*entry));
     }
   }

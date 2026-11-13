@@ -41,6 +41,11 @@ target_compile_definitions(vnmaki_unit_tests PRIVATE VNMAKI_PRECOMPILED_DIR="${V
 
 add_subdirectory(cli)
 
+# The launcher (task 51): the recent-project list and the action functions, without ImGui. They
+# call the CLI commands, so the test executable links the command library.
+target_sources(vnmaki_unit_tests PRIVATE unit/launcher_test.cpp)
+target_link_libraries(vnmaki_unit_tests PRIVATE vnmaki_cli)
+
 # Platform: window, input, main loop, virtual resolution (ticket 04).
 add_subdirectory(platform)
 
@@ -68,6 +73,7 @@ vnmaki_add_fixture_generator(
 # Text: layout, glyph atlas, typewriter reveal (ticket 07).
 target_sources(vnmaki_unit_tests PRIVATE unit/text_test.cpp unit/markup_test.cpp
                                          unit/styled_text_test.cpp
+                                         unit/vertical_text_test.cpp
                                          unit/script_text_test.cpp)
 vnmaki_add_fixture_generator(
   text SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
@@ -210,7 +216,8 @@ vnmaki_add_fixture_generator(
 # Localization (ticket 40): `.po` files, string extraction and the update of translations. The
 # generator writes the projects and the expected files of the `vnmaki extract-strings` CLI tests.
 # The fuzz target shares fuzz/po_properties.hpp.
-target_sources(vnmaki_unit_tests PRIVATE unit/po_test.cpp unit/extract_test.cpp)
+target_sources(vnmaki_unit_tests PRIVATE unit/po_test.cpp unit/extract_test.cpp
+                                           unit/language_test.cpp)
 vnmaki_add_fixture_generator(
   l10n SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/l10n_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
@@ -253,6 +260,11 @@ if(VNMAKI_DEV_TOOLS)
   vnmaki_add_fixture_generator(
     screen_editor SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/screen_editor_fixtures.py"
     TEST_TARGETS vnmaki_unit_tests)
+endif()
+
+# Dev tools: the translation editor of the overlay, on a temporary project (ticket 41).
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/translation_editor_test.cpp)
 endif()
 
 # Dev tools: the row functions of the inspectors, on the default template (ticket 31).

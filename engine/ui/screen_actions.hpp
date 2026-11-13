@@ -12,6 +12,7 @@
 //   @auto            turn auto-advance on or off
 //   @skip            turn skip on (in the mode of the `skip_unseen` preference) or off
 //   @backlog         open the backlog
+//   @language:<code> set the preference `language` and change the language at once
 //   @quit            ask "confirm", then call the quit hook
 //   @rebind:<action> on the Controls screen: the next key or gamepad button press becomes the
 //                    binding of the action (see capture())
@@ -51,6 +52,9 @@ struct ScreenActionTargets {
   BacklogScreen* backlog = nullptr;
   /// Called when the player confirms @quit. Without it, @quit does nothing.
   std::function<void()> quit{};
+  /// Called with the code for @language:<code>, after the preference is written. It changes the
+  /// language (the story window does). Without it, @language only writes the preference.
+  std::function<void(const std::string&)> language{};
   /// Receives the reasons an action failed (a missing screen, a save that cannot be written).
   std::function<void(std::string_view)> on_warning{};
 };
@@ -104,6 +108,8 @@ class ScreenActions {
   ScreenActionTargets targets_;
   // The screens `open` showed, bottom first.
   std::vector<std::string> opened_;
+  // The args each of them was opened with, so that @language can build it again.
+  std::map<std::string, ScreenNodeDef> opened_args_;
   std::map<std::string, Thumbnail> thumbnails_;
 };
 

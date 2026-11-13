@@ -5,6 +5,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <map>
 #include <functional>
 #include <memory>
 #include <string>
@@ -26,6 +27,7 @@ class Audio;
 class ImguiBackend;
 class Profiler;
 class Scene;
+class TranslationEditor;
 class ScreenEditor;
 struct StoreRow;
 
@@ -68,6 +70,10 @@ class DevOverlay {
   /// `profiler`, which must outlive the overlay or be reset first (null).
   void set_profiler(const Profiler* profiler) { profiler_ = profiler; }
 
+  /// Turns on the "Translations" window: the entries of the label the story is in, in the language
+  /// that is shown, each with a text field. An edit is saved to the `.po` file and shows at once.
+  /// `editor` must outlive the overlay or be reset first (null).
+  void set_translations(TranslationEditor* editor) { translations_ = editor; }
   /// Turns on the "Screen editor" window (engine/tools/screen_editor.hpp): with its "Pick" box
   /// on, a left click on a node of a shown screen selects it instead of going to the game. The
   /// outline of the selected node is drawn with its rectangle. `viewport` says where the canvas
@@ -94,6 +100,7 @@ class DevOverlay {
   void draw_labels_tab();
   void draw_story_graph();
   void draw_profiler();
+  void draw_translations();
   void draw_screen_editor();
   void draw_editor_fields(ScreenEditor& editor);
   void run_input();
@@ -117,6 +124,11 @@ class DevOverlay {
   StoryGraph graph_;
   std::size_t trace_revision_ = 0;
   const Profiler* profiler_ = nullptr;
+  TranslationEditor* translations_ = nullptr;
+  // The text being typed for each entry (by key), and the language they are for.
+  std::map<std::string, std::string> translation_drafts_;
+  std::string translation_language_;
+  std::string translation_problem_;
   ScreenEditor* screen_editor_ = nullptr;
   std::function<Viewport()> viewport_;
   bool pick_ = false;

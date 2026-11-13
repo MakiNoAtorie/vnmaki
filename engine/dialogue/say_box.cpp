@@ -48,6 +48,7 @@ SayBoxStyle SayBoxStyle::for_resolution(Size virtual_size) {
   const int box_height = virtual_size.height * kBoxHeightNumerator / kBoxHeightDenominator;
   const int box_width = virtual_size.width - (2 * margin);
   const int box_top = virtual_size.height - (virtual_size.height / kBottomGapDivisor) - box_height;
+  const int text_top = padding + name_size + name_gap;
   return SayBoxStyle{
       .box = {.x = static_cast<float>(margin),
               .y = static_cast<float>(box_top),
@@ -55,12 +56,13 @@ SayBoxStyle SayBoxStyle::for_resolution(Size virtual_size) {
               .height = static_cast<float>(box_height)},
       .box_color = rgba8(kBoxRed, kBoxGreen, kBoxBlue, kBoxAlpha),
       .name_offset = {.x = static_cast<float>(padding), .y = static_cast<float>(padding)},
-      .text_offset = {.x = static_cast<float>(padding),
-                      .y = static_cast<float>(padding + name_size + name_gap)},
+      .text_offset = {.x = static_cast<float>(padding), .y = static_cast<float>(text_top)},
       .name_size = static_cast<float>(name_size),
       .text_size = static_cast<float>(text_size),
       .wrap_width = static_cast<float>(box_width - (2 * padding)),
       .text_color = kWhite,
+      .vertical = false,
+      .wrap_height = static_cast<float>(box_height - text_top - padding),
   };
 }
 
@@ -84,6 +86,10 @@ UiNode make_say_screen(const SayBoxStyle& style, const DialogueLine& line,
   text.style.width = style.wrap_width;
   text.style.text_size = style.text_size;
   text.style.color = style.text_color;
+  if (style.vertical) {
+    text.style.vertical = true;
+    text.style.height = style.wrap_height;
+  }
   text.visible_glyphs = visible_glyphs;
 
   UiNode panel = make_node(NodeKind::kBox);
@@ -117,6 +123,11 @@ UiNode* find_reveal(UiNode& node) {
 }
 
 }  // namespace
+
+void SayBoxView::set_language(FontSet fonts, TextDirection direction) {
+  direction_ = direction;
+  set_fonts(std::move(fonts));  // also builds and lays the screen out again
+}
 
 void SayBoxView::set_screen_source(ScreenSource source, Size canvas) {
   source_ = std::move(source);
@@ -155,7 +166,7 @@ UiNode* SayBoxView::scripted_screen(const DialogueLine& line) {
     }
     if (built_) {
       scale_text_sizes(*built_, text_scale_);
-      layout_tree(*built_, canvas_, ui_.text_measure());
+      layout_tree(*built_, canvas_, ui_.text_measure(), direction_);
     }
     has_layout_ = false;
   }
@@ -168,11 +179,14 @@ void SayBoxView::layout(const DialogueLine& line) {
     return;
   }
   float text_size = style_.text_size * text_scale_;
-  float wrap_width = style_.wrap_width;
+  bool vertical = style_.vertical;
+  float wrap_length = vertical ? style_.wrap_height : style_.wrap_width;
   if (scripted != nullptr) {
     const UiNode& reveal = *find_reveal(*scripted);
     text_size = reveal.style.text_size;
-    wrap_width = reveal.style.width.value_or(reveal.rect.width);
+    vertical = reveal.style.vertical;
+    wrap_length = vertical ? reveal.style.height.value_or(reveal.rect.height)
+                           : reveal.style.width.value_or(reveal.rect.width);
   }
   StyledText styled;
   try {
@@ -180,7 +194,8 @@ void SayBoxView::layout(const DialogueLine& line) {
   } catch (const MarkupError&) {
     styled = plain_text(line.text);  // The runtime rejects bad tags; this is for other callers.
   }
-  text_layout_ = layout_text(fonts_, styled, text_size, wrap_width);
+  text_layout_ = layout_text(fonts_, styled, text_size, wrap_length,
+                             vertical ? TextOrientation::kVertical : TextOrientation::kHorizontal);
   laid_out_text_ = line.text;
   has_layout_ = true;
 }
@@ -191,7 +206,7 @@ UiNode SayBoxView::laid_out_screen(const DialogueLine& line,
   scale_text_sizes(screen, text_scale_);
   const Size canvas{.width = static_cast<int>(std::ceil(style_.box.x + style_.box.width)),
                     .height = static_cast<int>(std::ceil(style_.box.y + style_.box.height))};
-  layout_tree(screen, canvas, ui_.text_measure());
+  layout_tree(screen, canvas, ui_.text_measure(), direction_);
   return screen;
 }
 
@@ -209,9 +224,14 @@ std::size_t SayBoxView::revealed(const DialogueLine& line, double characters_per
 std::string SayBoxView::link_at(const DialogueLine& line, PointF point) {
   layout(line);
   PointF origin{.x = style_.box.x + style_.text_offset.x, .y = style_.box.y + style_.text_offset.y};
+  float area_width = style_.wrap_width;
   if (UiNode* scripted = scripted_screen(line)) {
     const UiNode& reveal = *find_reveal(*scripted);
     origin = {.x = reveal.rect.x + reveal.style.padding, .y = reveal.rect.y + reveal.style.padding};
+    area_width = reveal.rect.width - (2 * reveal.style.padding);
+  }
+  if (text_layout_.vertical) {
+    origin.x += area_width - layout_extent(text_layout_).x;  // the columns hug the right edge
   }
   return std::string{
       vnmaki::link_at(text_layout_, {.x = point.x - origin.x, .y = point.y - origin.y})};

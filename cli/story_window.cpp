@@ -1,11 +1,13 @@
 #include "cli/story_window.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -24,6 +26,7 @@
 #include "engine/dialogue/rollback_input.hpp"
 #include "engine/dialogue/say_box.hpp"
 #include "engine/jobs/job_system.hpp"
+#include "engine/l10n/translator.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/input_map.hpp"
@@ -51,6 +54,7 @@
 #include "engine/tools/overlay.hpp"
 #include "engine/tools/screen_editor.hpp"
 #include "engine/tools/story_graph.hpp"
+#include "engine/tools/translation_editor.hpp"
 #endif
 #include "engine/ui/backlog_screen.hpp"
 #include "engine/ui/caption_presenter.hpp"
@@ -81,6 +85,37 @@ constexpr std::string_view kUserDataOrganization = "VNMaki";
 /// option.
 constexpr std::string_view kDyslexiaFontPath = "fonts/dyslexia.ttf";
 
+// The fonts of one language: the default font and the fallback chain of project.toml (the subset
+// of a pack for the language, when there is one) and the dyslexia-friendly font, if the game has
+// it. `set` points into this object, so it is not moved.
+struct LanguageFonts {
+  LanguageFonts(const Vfs& vfs, const ProjectConfig& config, const std::string& code)
+      : base(load_font_for_language(vfs, kDefaultFontPath, code)) {
+    set.base.regular = &base;
+    if (const auto chain = config.font_fallbacks.find(code); chain != config.font_fallbacks.end()) {
+      chain_fonts.reserve(chain->second.size());
+      for (const std::string& path : chain->second) {
+        chain_fonts.push_back(load_font_for_language(vfs, path, code));
+        set.fallbacks.push_back(&chain_fonts.back());
+      }
+    }
+    if (const std::string path = font_path_for_language(vfs, kDyslexiaFontPath, code);
+        vfs.exists(path)) {
+      dyslexia.emplace(load_font(vfs, path));
+    }
+  }
+  LanguageFonts(const LanguageFonts&) = delete;
+  LanguageFonts& operator=(const LanguageFonts&) = delete;
+  LanguageFonts(LanguageFonts&&) = delete;
+  LanguageFonts& operator=(LanguageFonts&&) = delete;
+  ~LanguageFonts() = default;
+
+  Font base;
+  std::vector<Font> chain_fonts;
+  std::optional<Font> dyslexia;
+  FontSet set;
+};
+
 // The system output; if there is none, a device that plays to nowhere, so that a game with no
 // sound card still runs. Builds without threads mix by hand (Audio::update does it).
 std::unique_ptr<Audio> make_audio(const Vfs& vfs, std::ostream& err) {
@@ -101,7 +136,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                      const ProjectConfig& config, std::optional<std::uint64_t> max_frames,
                      const std::optional<std::filesystem::path>& data_directory_override,
                      std::ostream& err, const std::optional<std::filesystem::path>& profile_csv,
-                     [[maybe_unused]] DapChannel* dap) {
+                     [[maybe_unused]] DapChannel* dap, const std::optional<std::string>& language) {
   const Size virtual_size{.width = config.resolution.width, .height = config.resolution.height};
   try {
     SteadyClock clock;
@@ -111,38 +146,25 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                       {.enabled = VNMAKI_DEV_TOOLS != 0 || profile_csv.has_value(),
                        .max_frames = profile_csv ? 0 : Profiler::kGraphFrames}};
     // Everything that needs no window comes first, so a broken project fails before one opens.
-    // The source language (the first in project.toml) has the font subsets of a pack.
-    const std::string_view language =
-        config.languages.empty() ? std::string_view{} : std::string_view{config.languages.front()};
-    const Font font = load_font_for_language(vfs, kDefaultFontPath, language);
-    // The fallback chain of that language.
-    std::vector<Font> fallback_fonts;
-    if (!config.languages.empty()) {
-      if (const auto chain = config.font_fallbacks.find(config.languages.front());
-          chain != config.font_fallbacks.end()) {
-        fallback_fonts.reserve(chain->second.size());
-        for (const std::string& path : chain->second) {
-          fallback_fonts.push_back(load_font_for_language(vfs, path, language));
-        }
+    // The fonts of each language load when the language is first shown (the one the player starts
+    // in loads below, before the window): a pack has the subset of a font for each language.
+    std::map<std::string, std::unique_ptr<LanguageFonts>> language_fonts;
+    const auto fonts_of = [&](const std::string& code) -> const LanguageFonts& {
+      std::unique_ptr<LanguageFonts>& slot = language_fonts[code];
+      if (!slot) {
+        slot = std::make_unique<LanguageFonts>(vfs, config, code);  // a FontError leaves it empty
       }
-    }
-    FontSet fonts{.base = {.regular = &font}};
-    for (const Font& fallback : fallback_fonts) {
-      fonts.fallbacks.push_back(&fallback);
-    }
-    const FontSet plain_fonts = fonts;
-    std::optional<Font> dyslexia_font;
-    if (const std::string dyslexia_path = font_path_for_language(vfs, kDyslexiaFontPath, language);
-        vfs.exists(dyslexia_path)) {
-      dyslexia_font.emplace(load_font(vfs, dyslexia_path));
-    }
+      return *slot;
+    };
     // The audio comes first, so that it outlives the scene: a movie stops its audio when it goes.
     const std::unique_ptr<Audio> audio = make_audio(vfs, err);
     Scene scene{vfs, virtual_size};
     scene.set_movie_audio(audio.get());
     scene.set_voice_level(audio.get());
     CompositeSceneState scene_state{{&scene, audio.get()}};
+    Translator translator{vfs, config};
     UiHost ui{virtual_size};
+    ui.set_translator(&translator);
     ScriptRuntime runtime{vfs,
                           {.rollback_depth = config.rollback_depth,
                            .scene_state = &scene_state,
@@ -150,6 +172,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                            .screens = &ui,
                            .audio = audio.get(),
                            .gallery = config.gallery,
+                           .languages = config.languages,
                            .canvas_width = virtual_size.width,
                            .canvas_height = virtual_size.height}};
     ui.set_bindings(&runtime);
@@ -170,6 +193,22 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                                 : user_data_directory(kUserDataOrganization, config.title);
     PersistentStore persistent{runtime, data_directory, warn};
     persistent.load();  // before the scripts, so that their defaults see the saved values
+    // The language: --lang (which is also kept as the preference), else the preference. The style
+    // file of it runs when the scripts load.
+    if (language) {
+      if (const std::string problem = runtime.set_binding("prefs", "language", *language);
+          !problem.empty()) {
+        warn(problem);
+      }
+    }
+    const std::string initial_language = read_preferences(runtime).language;
+    if (!initial_language.empty()) {
+      if (const std::string problem = translator.set_language(initial_language); !problem.empty()) {
+        warn(problem);
+      }
+    }
+    static_cast<void>(runtime.set_language_styles(translator.style_file(), translator.vertical()));
+    FontSet fonts = fonts_of(translator.language()).set;  // a missing font fails before the window
     runtime.load_scripts();
 #if VNMAKI_DEV_TOOLS
     // `vnmaki debug`: the pump (below) draws and handles OS events while the story is stopped.
@@ -185,9 +224,11 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     ui.set_platform(&platform);  // text input is on only while an `input` node has the keys
     const std::unique_ptr<SdlGpuRenderer> renderer = SdlGpuRenderer::create_for_window(platform);
 #if VNMAKI_DEV_TOOLS
+    TranslationEditor translation_editor{translator, runtime, project_dir};  // before the overlay
     DevOverlay dev_overlay{*renderer, platform, runtime, dev_log};  // F12; dies before the renderer
     dev_overlay.set_inspect_targets(&scene, audio.get());
     dev_overlay.set_story(vfs, dev_trace);
+    dev_overlay.set_translations(&translation_editor);
 #endif
     JobSystem jobs;
     const TextureId canvas = renderer->create_render_target(virtual_size, TextureFilter::kLinear);
@@ -217,6 +258,53 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
         },
         virtual_size);
 
+    // Puts the language of the translator into the scene, the audio, the fonts and the styles. It
+    // is called for the first language, for the preference and for @language.
+    std::string applied_language;
+    bool reopen_quick_menu = false;
+    // The font chain of the language that is shown, with the dyslexia-friendly font first when the
+    // preference is on.
+    bool dyslexia_on = false;
+    const auto current_fonts = [&] {
+      const LanguageFonts& shown = fonts_of(translator.language());
+      return dyslexia_on && shown.dyslexia ? with_dyslexia_font(shown.set, *shown.dyslexia)
+                                           : shown.set;
+    };
+    const auto apply_language = [&](const std::string& code) {
+      const std::string target = code.empty() ? translator.source_language() : code;
+      if (target != translator.language()) {
+        // The fonts of the language (its subset of a pack) load now; if they cannot, it stays.
+        if (std::ranges::find(config.languages, target) != config.languages.end()) {
+          try {
+            static_cast<void>(fonts_of(target));
+          } catch (const FontError& error) {
+            warn(std::string{"language "} + target + ": " + error.what());
+            return;
+          }
+        }
+        if (const std::string problem = translator.set_language(target); !problem.empty()) {
+          warn(problem);
+        }
+      }
+      if (translator.language() == applied_language) {
+        return;
+      }
+      reopen_quick_menu = !applied_language.empty();  // it is built again in the new styles
+      applied_language = translator.language();
+      scene.set_language(applied_language);
+      audio->set_language(applied_language);
+      const FontSet chosen = current_fonts();
+      ui_renderer.set_fonts(chosen);
+      say_box.set_language(chosen, translator.direction());
+      ui.relayout();
+      if (const std::string problem =
+              runtime.set_language_styles(translator.style_file(), translator.vertical());
+          !problem.empty()) {
+        warn(problem);
+      }
+    };
+    apply_language(initial_language);
+
     Saves saves{runtime,
                 {.directory = data_directory,
                  .game_version = config.version,
@@ -232,6 +320,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
 #endif
     saves.poll();
     ScreenPresenter screens{runtime, ui};
+    screens.set_translator(&translator);
     WaitPresenter waits{runtime, scene};
     MoviePresenter movies{runtime, vfs, jobs, audio.get()};
     scene.set_warning_handler(warn);  // a file that fails to load or play must not end the game
@@ -243,6 +332,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                                 [&](const DialogueLine& line, double speed, double elapsed) {
                                   return say_box.revealed(line, speed, elapsed);
                                 }};
+    presenter.set_translator(&translator);
     Playback playback{runtime,
                       presenter,
                       persistent,
@@ -252,17 +342,18 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     CaptionPresenter captions{runtime, ui, warn};
     InputMap input_map;  // PreferenceApplier fills it from the preferences
     screens.set_input_map(&input_map);
-    const Backlog backlog{runtime, audio.get(), config.backlog_length};
+    const Backlog backlog{runtime, audio.get(), config.backlog_length, &translator};
     BacklogScreen backlog_screen{ui, backlog, ui_renderer.text_measure()};
     const std::unique_ptr<TtsBackend> tts = make_system_tts();  // the COM thread is this one
     SelfVoicing self_voicing{*tts, runtime, presenter, playback, ui};
+    self_voicing.set_translator(&translator);
     backlog_screen.set_input_map(&input_map);
     const auto use_dyslexia_font = [&](bool on) {
-      if (on && !dyslexia_font) {
+      if (on && !fonts_of(translator.language()).dyslexia) {
         warn(std::string{kDyslexiaFontPath} + " is missing: the dyslexia-friendly font is off");
       }
-      const FontSet chosen =
-          on && dyslexia_font ? with_dyslexia_font(plain_fonts, *dyslexia_font) : plain_fonts;
+      dyslexia_on = on;
+      const FontSet chosen = current_fonts();
       ui_renderer.set_fonts(chosen);
       say_box.set_fonts(chosen);
       ui.relayout();
@@ -276,7 +367,8 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                                    .ui = &ui,
                                    .say_box = &say_box,
                                    .controls = &input_map,
-                                   .dyslexia_font = use_dyslexia_font}};
+                                   .dyslexia_font = use_dyslexia_font,
+                                   .language = apply_language}};
 
 #if VNMAKI_DEV_TOOLS
     dev_overlay.set_profiler(&profiler);
@@ -288,6 +380,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                           {.playback = &playback,
                            .backlog = &backlog_screen,
                            .quit = [&] { loop.request_quit(); },
+                           .language = apply_language,
                            .on_warning = warn}};
     screens.set_action_handler(
         [&](const ScreenActivation& activation) { return actions.handle(activation); });
@@ -402,6 +495,11 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       audio->update(seconds);
       movies.update(seconds);
       waits.update(seconds);
+      backlog_screen.sync();
+      if (reopen_quick_menu) {  // a language with other styles
+        reopen_quick_menu = false;
+        static_cast<void>(actions.open("quick_menu", {}, false));
+      }
       screens.sync();
       self_voicing.update();
       indicator.sync(playback.skip(), playback.automatic());

@@ -36,6 +36,12 @@ bool flag(const ScriptRuntime& runtime, std::string_view key, bool fallback) {
   return held != nullptr ? *held : fallback;
 }
 
+std::string text(const ScriptRuntime& runtime, std::string_view key) {
+  const ScreenValue value = runtime.binding("prefs", key);
+  const auto* held = std::get_if<std::string>(&value);
+  return held != nullptr ? *held : std::string{};
+}
+
 // The controls of `action`; the default if the preference is missing or does not parse.
 Binding read_controls(const ScriptRuntime& runtime, InputAction action) {
   const ScreenValue value = runtime.binding("prefs", controls_key(action));
@@ -76,6 +82,7 @@ Preferences read_preferences(const ScriptRuntime& runtime) {
       .window_opacity = std::clamp(number(runtime, "window_opacity", defaults.window_opacity),
                                    kMinWindowOpacity, 1.0),
       .reduce_motion = flag(runtime, "reduce_motion", defaults.reduce_motion),
+      .language = text(runtime, "language"),
       .self_voicing = flag(runtime, "self_voicing", defaults.self_voicing),
       .text_scale = std::clamp(number(runtime, "text_scale", defaults.text_scale), kMinTextScale,
                                kMaxTextScale),
@@ -132,6 +139,9 @@ void PreferenceApplier::update() {
     if (now.window_opacity != applied_.window_opacity) {
       targets_.platform->set_window_opacity(static_cast<float>(now.window_opacity));
     }
+  }
+  if (targets_.language && now.language != applied_.language) {
+    targets_.language(now.language);
   }
   if (targets_.self_voicing != nullptr && now.self_voicing != applied_.self_voicing) {
     targets_.self_voicing->set_enabled(now.self_voicing);

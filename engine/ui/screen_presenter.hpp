@@ -3,6 +3,7 @@
 // Connects a started ScriptRuntime to a UiHost for the requests that need a screen: `menu { ... }`
 // and `call_screen(...)`. say and narrate lines are the DialoguePresenter's business.
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -33,6 +34,11 @@ class ScreenPresenter {
   /// the story (it is called after every answer this class gives).
   void sync();
 
+  /// Shows the options of a menu in the language of `translator` (the scope of the key is the
+  /// running label). A change of its revision shows the menu again. A `call_screen` screen is
+  /// translated by the UiHost. `translator` must outlive the presenter; null shows the source text.
+  void set_translator(const Translator* translator) { translator_ = translator; }
+
   /// True while the script waits at a menu or a `call_screen`.
   [[nodiscard]] bool active() const { return shown_.has_value(); }
 
@@ -57,6 +63,7 @@ class ScreenPresenter {
 
   ScriptRuntime* runtime_;
   UiHost* host_;
+  const Translator* translator_ = nullptr;
   std::function<bool(const ScreenActivation&)> actions_;
   const InputMap* input_map_ = nullptr;
   // The screen shown for a request, and where the script waited when it was shown.
@@ -64,6 +71,7 @@ class ScreenPresenter {
     std::string name;
     ScriptPosition position;
     BlockingRequest request;
+    std::uint64_t revision;  // of the translator
   };
   std::optional<Shown> shown_;
 };

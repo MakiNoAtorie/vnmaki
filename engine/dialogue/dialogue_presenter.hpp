@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 
+#include "engine/l10n/translator.hpp"
 #include "engine/runtime/script_runtime.hpp"
 
 namespace vnmaki {
@@ -58,6 +59,12 @@ class DialoguePresenter {
 
   [[nodiscard]] double characters_per_second() const { return characters_per_second_; }
 
+  /// Shows the translation of each line (SPEC section 16): the text of line() goes through
+  /// `translator`, with the running label as the scope of the key. When the translator's revision
+  /// changes, line() changes at once, and the reveal goes on from where it was (line_serial()
+  /// stays). `translator` must outlive the presenter; null shows the source text.
+  void set_translator(const Translator* translator) { translator_ = translator; }
+
   /// The line being shown; empty when the story waits at something else or has ended.
   [[nodiscard]] const std::optional<DialogueLine>& line() const { return line_; }
   /// How many glyphs of line() show now; 0 without a line.
@@ -80,11 +87,16 @@ class DialoguePresenter {
 
  private:
   void sync();
+  [[nodiscard]] DialogueLine translated(const DialogueLine& source) const;
 
   ScriptRuntime* runtime_;
   GlyphCounter counter_;
   Reveal reveal_;
   double characters_per_second_;
+  const Translator* translator_ = nullptr;
+  // The line as the script said it, and the revision of the translator that line_ shows.
+  std::optional<DialogueLine> source_;
+  std::uint64_t translated_revision_ = 0;
   std::optional<DialogueLine> line_;
   std::size_t glyph_count_ = 0;
   double elapsed_ = 0;

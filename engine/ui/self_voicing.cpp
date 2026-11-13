@@ -160,7 +160,9 @@ void SelfVoicing::update() {
     menu_position_ = runtime_->position();
     std::string said = "Choose";
     for (const std::string& option : menu->options) {
-      said += ". " + option;
+      said += ". " + (translator_ != nullptr
+                          ? translator_->translate(runtime_->position().label, {}, option)
+                          : option);
     }
     tts_->speak(said);
     spoke = true;

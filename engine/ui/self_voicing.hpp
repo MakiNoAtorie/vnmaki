@@ -30,6 +30,10 @@ class SelfVoicing {
   void set_enabled(bool enabled);
   [[nodiscard]] bool enabled() const { return enabled_; }
 
+  /// Speaks the options of a menu in the language of `translator` (the line and the focused node
+  /// are already translated by the presenter and the host). Must outlive this; null: source text.
+  void set_translator(const Translator* translator) { translator_ = translator; }
+
   /// Speaks what changed since the last call.
   void update();
 
@@ -42,6 +46,7 @@ class SelfVoicing {
   const DialoguePresenter* presenter_;
   const Playback* playback_;
   UiHost* ui_;
+  const Translator* translator_ = nullptr;
   bool enabled_ = false;
   bool skipping_ = false;
   std::uint64_t line_serial_ = 0;

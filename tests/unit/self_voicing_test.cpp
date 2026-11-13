@@ -13,10 +13,14 @@
 
 #include "engine/dialogue/dialogue_presenter.hpp"
 #include "engine/dialogue/playback.hpp"
+#include "engine/l10n/extract.hpp"
+#include "engine/l10n/po.hpp"
+#include "engine/l10n/translator.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/input_map.hpp"
 #include "engine/platform/tts.hpp"
 #include "engine/platform/viewport.hpp"
+#include "engine/runtime/project_config.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/saves/persistent_store.hpp"
 #include "engine/ui/preferences.hpp"
@@ -39,6 +43,22 @@ const vnmaki::Viewport kViewport =
 constexpr std::size_t kGlyphs = 20;
 constexpr double kReveal = 100;  // seconds: the typewriter has finished
 
+// The Japanese of the session below: its first line and the first option of its menu.
+std::string ja_po() {
+  vnmaki::PoFile file;
+  file.entries.push_back(vnmaki::po_header("ja"));
+  const auto add = [&](std::string speaker, std::string text, std::string translation) {
+    vnmaki::PoEntry entry;
+    entry.context = vnmaki::translation_key("start", speaker, text);
+    entry.id = std::move(text);
+    entry.str = std::move(translation);
+    file.entries.push_back(std::move(entry));
+  };
+  add("Alice", "Hello {color=#f00}there{/color}.", "Konnichiwa {color=#f00}koko{/color}.");
+  add("", "Stay", "Todomaru");
+  return vnmaki::write_po(file);
+}
+
 // Keeps what it is told, in order. A speak stops the speech before it, as a real backend does.
 class RecordingTts final : public vnmaki::TtsBackend {
  public:
@@ -57,7 +77,8 @@ class RecordingTts final : public vnmaki::TtsBackend {
 struct Game {
   explicit Game(const char* script)
       : directory(vnmaki::test::unique_temp_path("vnmaki_voicing_test_", "game")),
-        vfs(vnmaki::test::memory_vfs({{"scripts/main.lua", script}})),
+        vfs(vnmaki::test::memory_vfs(
+            {{"scripts/main.lua", script}, {"translations/ja.po", ja_po()}})),
         runtime(vfs,
                 {.screens = &host, .canvas_width = kCanvas.width, .canvas_height = kCanvas.height}),
         persistent(runtime, directory, [](std::string_view) {}) {
@@ -248,4 +269,24 @@ TEST_CASE("self-voicing: V is the default key of the input action, and a prefere
   const vnmaki::InputMap controls = vnmaki::read_preferences(game.runtime).controls;
   CHECK(controls.matches(vnmaki::InputAction::kSelfVoicing, f2));
   CHECK_FALSE(controls.matches(vnmaki::InputAction::kSelfVoicing, v));
+}
+
+TEST_CASE("self-voicing: a language is spoken in its own text") {
+  Game game{kSession};
+  const vnmaki::ProjectConfig config{.title = "T", .languages = {"en", "ja"}};
+  vnmaki::Translator translator{game.vfs, config};
+  game.presenter->set_translator(&translator);
+  game.screens->set_translator(&translator);
+  game.voicing->set_translator(&translator);
+  REQUIRE(translator.set_language("ja").empty());
+  game.voicing->set_enabled(true);
+  game.frame();
+  game.press(Key::kSpace);  // advances the line
+  game.press(Key::kSpace);  // advances the narration (no entry: the source text) to the menu
+
+  CHECK(game.tts.spoken == Strings{
+                               "Alice: Konnichiwa koko.",
+                               "The door opens.",
+                               "Choose. Todomaru. Go",  // the focus follows silently
+                           });
 }

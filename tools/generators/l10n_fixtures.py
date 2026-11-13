@@ -9,7 +9,9 @@ OUT_DIR is deleted and recreated, so the output depends only on this script.
 earlier version of the scripts, so the run keeps one translation, moves one as fuzzy (the text of
 its line changed) and makes one obsolete (its label is gone). There is no `de.po` yet.
 `extract.expected/` has the files that the run must write, and `extract.expected/stdout.txt` has
-its output. `broken/` has a `.po` file that cannot be read.
+its output. `broken/` has a `.po` file that cannot be read. `lang/` is a game for `vnmaki run
+--headless --lang`: its `ja.po` has two translations, a fuzzy entry (the source text shows) and no
+entry for one line. `lang.en.transcript` and `lang.ja.transcript` are what the run must print.
 
 The expected files come from the model in this script: the key hash (FNV-1a, 32 bit), the lines of
 the strings (listed here by hand) and the layout of a `.po` file. Nothing here reads the engine's
@@ -151,6 +153,37 @@ def template(language):
     return "\n".join([header(language)] + [template_entry(*item) for item in STRINGS])
 
 
+LANG_PROJECT = 'title = "Lang fixture"\nlanguages = ["en", "ja"]\n'
+LANG_SCRIPT = [
+    'local eileen = character { name = "Eileen" }',  # 1
+    "",  # 2
+    'label("start", function()',  # 3
+    '  say(eileen, "Hello.")',  # 4: translated
+    '  narrate("Silence.")',  # 5: fuzzy in ja.po, so the source text shows
+    '  say("Bob", "Bye {b}now{/b}.")',  # 6: no entry
+    '  say("Eileen", "Thanks.")',  # 7: translated (the speaker is a literal: the exact key)
+    "end, { ending = true })",  # 8
+]
+LANG_TRANSCRIPT = [
+    "label start",
+    "say Eileen: {hello}",
+    "narrate Silence.",
+    "say Bob: Bye {{b}}now{{/b}}.",
+    "say Eileen: {thanks}",
+]
+
+
+def lang_po():
+    return "\n".join([
+        header("ja"),
+        entry(key("start", "eileen", "Hello."), "Hello.", "Konnichiwa.",
+              extracted=["speaker: eileen"]),
+        entry(key("start", "", "Silence."), "Silence.", "Shizukesa.", flags=["fuzzy"]),
+        entry(key("start", "Eileen", "Thanks."), "Thanks.", "Arigatou.",
+              extracted=["speaker: Eileen"]),
+    ])
+
+
 def write(root, files):
     for path, text in files.items():
         target = root / path
@@ -180,6 +213,11 @@ def main():
     })
     broken_po = 'msgid "a"\nmsgstr "b"\n\nmsgid "c"\nmsgstr "d\n'
     write(out / "broken", {"project.toml": PROJECT, MAIN: script, "translations/ja.po": broken_po})
+    write(out / "lang", {"project.toml": LANG_PROJECT, MAIN: "\n".join(LANG_SCRIPT) + "\n",
+                         "translations/ja.po": lang_po()})
+    for code, hello, thanks in (("en", "Hello.", "Thanks."), ("ja", "Konnichiwa.", "Arigatou.")):
+        lines = [line.format(hello=hello, thanks=thanks) for line in LANG_TRANSCRIPT]
+        write(out, {f"lang.{code}.transcript": "\n".join(lines) + "\n"})
     return 0
 
 

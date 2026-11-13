@@ -51,11 +51,21 @@ std::string image_path(std::string_view name, std::string_view extension) {
 
 }  // namespace
 
-std::optional<std::string> resolve_image(const Vfs& vfs, std::string_view name) {
-  for (const std::string_view extension : kImageExtensions) {
-    std::string path = image_path(name, extension);
-    if (vfs.exists(path)) {
-      return path;
+std::optional<std::string> resolve_image(const Vfs& vfs, std::string_view name,
+                                         std::string_view language) {
+  std::string localized;
+  if (!language.empty()) {
+    localized = std::string{language} + "/" + std::string{name};
+  }
+  for (const std::string& candidate : {localized, std::string{name}}) {
+    if (candidate.empty()) {
+      continue;
+    }
+    for (const std::string_view extension : kImageExtensions) {
+      std::string path = image_path(candidate, extension);
+      if (vfs.exists(path)) {
+        return path;
+      }
     }
   }
   // The formats of plugins come after the built-in ones.
@@ -683,7 +693,7 @@ const Scene::GameShader* Scene::shader_by_id(std::uint32_t id) const {
 
 std::string Scene::scene(std::string_view image) {
   capture_old_frame();
-  std::optional<std::string> path = resolve_image(*vfs_, image);
+  std::optional<std::string> path = resolve_image(*vfs_, image, language_);
   if (!path.has_value()) {
     return missing_image(image);
   }
@@ -721,7 +731,7 @@ std::string Scene::layered(const LayeredRequest& request) {
         added.values.push_back({.name = value, .animation = animation->second});
         continue;
       }
-      std::optional<std::string> path = resolve_image(*vfs_, image);
+      std::optional<std::string> path = resolve_image(*vfs_, image, language_);
       if (!path.has_value()) {
         return missing_image(image);
       }
@@ -769,14 +779,14 @@ std::string Scene::animation(const AnimationRequest& request) {
     }
     definition->frames.reserve(request.frames.size());
     for (const std::string& image : request.frames) {
-      std::optional<std::string> path = resolve_image(*vfs_, image);
+      std::optional<std::string> path = resolve_image(*vfs_, image, language_);
       if (!path.has_value()) {
         return missing_image(image);
       }
       definition->frames.push_back({.path = std::move(*path)});
     }
   } else {
-    const std::optional<std::string> path = resolve_image(*vfs_, request.sheet);
+    const std::optional<std::string> path = resolve_image(*vfs_, request.sheet, language_);
     if (!path.has_value()) {
       return missing_image(request.sheet);
     }
@@ -817,7 +827,7 @@ std::string Scene::show(const ShowRequest& request) {
       return problem;
     }
   } else if (definition == definitions_.end() && animation == animations_.end()) {
-    path = resolve_image(*vfs_, request.image);
+    path = resolve_image(*vfs_, request.image, language_);
     if (!path.has_value()) {
       return missing_image(request.image);
     }
@@ -1157,7 +1167,7 @@ std::string Scene::transition(const TransitionRequest& request) {
   }
   ActiveTransition next{.clock = Transition{spec}};
   if (spec.kind == TransitionKind::kMask) {
-    std::optional<std::string> path = resolve_image(*vfs_, spec.mask);
+    std::optional<std::string> path = resolve_image(*vfs_, spec.mask, language_);
     if (!path.has_value()) {
       return missing_image(spec.mask);
     }

@@ -318,6 +318,58 @@ def draw_say_box(canvas: Canvas) -> None:
         draw_text(canvas, [text], (left + offset[0], top + offset[1]), size, tint)
 
 
+# The vertical say box (tests/render/say_box_render_test.cpp): a panel at (10, 10) of the same
+# canvas, the name horizontal as above, and the line "あいう。えabお" at 40 pixels per em in columns
+# 120 pixels long. A column does not start with "。", so "う" goes down with it: "あい", "う。え",
+# "abお". The columns hug the right edge of the text area (x = 10 + 8 + 284 = 302), the first
+# one at the right, each 40 thick. Kana stand upright, centred on the column; "ab" is turned 90
+# degrees clockwise with its em box centred on the column. The reveal has shown seven of the
+# eight glyphs, so "お" is missing.
+SAY_BOX_V_RECT = (10, 10, 300, 160)
+SAY_BOX_V_NAME = ("Eileen", (8, 6), 20, (200, 162, 200, 255))
+SAY_BOX_V_SIZE = 40
+SAY_BOX_V_RIGHT = 302
+SAY_BOX_V_TOP = 40
+SAY_BOX_V_COLUMNS = ["あい", "う。え", "abお"]
+SAY_BOX_V_REVEALED = 7
+SAY_BOX_V_TINT = (255, 255, 255, 255)
+
+
+def draw_vertical_text(canvas: Canvas, columns: list, right: int, top: int, size: int,
+                       visible: int, tint: tuple) -> None:
+    """Draws the boxes of the first `visible` glyphs of columns that run down from `top`, the
+    first column ending at `right` and the others going left, each `size` thick."""
+    units = text_fixtures.UNITS_PER_EM // size  # font units per pixel
+    ascent = text_fixtures.ASCENT // units
+    shown = 0
+    for index, column in enumerate(columns):
+        centre = right - size * index - size // 2
+        pen = top
+        for char in column:
+            advance, box = text_fixtures.glyph_box(char)
+            if box and shown < visible:
+                x0, y0, x1, y1 = (edge // units for edge in box)
+                if char.isascii():  # turned: the glyph's up is to the right
+                    origin = (centre - ascent + size // 2, pen)
+                    canvas.draw(WHITE, (origin[0] + y0, origin[1] + x0, y1 - y0, x1 - x0),
+                                tint=tint)
+                else:  # upright: centred on the column, the cell's top at the pen
+                    origin = (centre - advance // units // 2, pen + ascent)
+                    canvas.draw(WHITE, (origin[0] + x0, origin[1] - y1, x1 - x0, y1 - y0),
+                                tint=tint)
+            shown += 1
+            pen += advance // units
+
+
+def draw_say_box_vertical(canvas: Canvas) -> None:
+    left, top = SAY_BOX_V_RECT[:2]
+    canvas.draw(WHITE, SAY_BOX_V_RECT, tint=SAY_BOX_COLOR)
+    text, offset, size, tint = SAY_BOX_V_NAME
+    draw_text(canvas, [text], (left + offset[0], top + offset[1]), size, tint)
+    draw_vertical_text(canvas, SAY_BOX_V_COLUMNS, SAY_BOX_V_RIGHT, SAY_BOX_V_TOP, SAY_BOX_V_SIZE,
+                       SAY_BOX_V_REVEALED, SAY_BOX_V_TINT)
+
+
 def golden_scenes() -> dict:
     scenes = {}
 
@@ -374,6 +426,9 @@ def golden_scenes() -> dict:
     canvas = Canvas(*SAY_BOX_TARGET, GRAY)
     draw_say_box(canvas)
     scenes["say_box"] = canvas
+    canvas = Canvas(*SAY_BOX_TARGET, GRAY)
+    draw_say_box_vertical(canvas)
+    scenes["say_box_vertical"] = canvas
 
     return {name + ".png": canvas.png() for name, canvas in scenes.items()}
 

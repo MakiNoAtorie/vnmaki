@@ -23,6 +23,7 @@
 #include "engine/tools/inspect.hpp"
 #include "engine/tools/profiler.hpp"
 #include "engine/tools/repl.hpp"
+#include "engine/tools/translation_editor.hpp"
 #include "engine/tools/screen_editor.hpp"
 
 namespace vnmaki {
@@ -66,93 +67,6 @@ constexpr std::size_t kFieldBytes = 1024;  // the longest string that the window
 
 double to_ms(Duration time) {
   return std::chrono::duration<double>(time).count() * kMillisecondsPerSecond;
-}
-
-// The ImGui key of an engine key, or ImGuiKey_None for one it has no use for.
-ImGuiKey to_imgui_key(Key key) {
-  const auto in_run = [key](Key first, Key last, ImGuiKey start) -> ImGuiKey {
-    if (key < first || key > last) {
-      return ImGuiKey_None;
-    }
-    return static_cast<ImGuiKey>(static_cast<int>(start) +
-                                 (static_cast<int>(key) - static_cast<int>(first)));
-  };
-  for (const ImGuiKey run :
-       {in_run(Key::kA, Key::kZ, ImGuiKey_A), in_run(Key::kDigit0, Key::kDigit9, ImGuiKey_0),
-        in_run(Key::kF1, Key::kF12, ImGuiKey_F1)}) {
-    if (run != ImGuiKey_None) {
-      return run;
-    }
-  }
-  switch (key) {
-    case Key::kEscape:
-      return ImGuiKey_Escape;
-    case Key::kEnter:
-      return ImGuiKey_Enter;
-    case Key::kKeypadEnter:
-      return ImGuiKey_KeypadEnter;
-    case Key::kSpace:
-      return ImGuiKey_Space;
-    case Key::kTab:
-      return ImGuiKey_Tab;
-    case Key::kBackspace:
-      return ImGuiKey_Backspace;
-    case Key::kDelete:
-      return ImGuiKey_Delete;
-    case Key::kInsert:
-      return ImGuiKey_Insert;
-    case Key::kHome:
-      return ImGuiKey_Home;
-    case Key::kEnd:
-      return ImGuiKey_End;
-    case Key::kPageUp:
-      return ImGuiKey_PageUp;
-    case Key::kPageDown:
-      return ImGuiKey_PageDown;
-    case Key::kLeft:
-      return ImGuiKey_LeftArrow;
-    case Key::kRight:
-      return ImGuiKey_RightArrow;
-    case Key::kUp:
-      return ImGuiKey_UpArrow;
-    case Key::kDown:
-      return ImGuiKey_DownArrow;
-    case Key::kLeftShift:
-      return ImGuiKey_LeftShift;
-    case Key::kRightShift:
-      return ImGuiKey_RightShift;
-    case Key::kLeftCtrl:
-      return ImGuiKey_LeftCtrl;
-    case Key::kRightCtrl:
-      return ImGuiKey_RightCtrl;
-    case Key::kLeftAlt:
-      return ImGuiKey_LeftAlt;
-    case Key::kRightAlt:
-      return ImGuiKey_RightAlt;
-    case Key::kLeftGui:
-      return ImGuiKey_LeftSuper;
-    case Key::kRightGui:
-      return ImGuiKey_RightSuper;
-    default:
-      return ImGuiKey_None;
-  }
-}
-
-// ImGui's button index: left 0, right 1, middle 2, then the side buttons.
-int to_imgui_button(MouseButton button) {
-  switch (button) {
-    case MouseButton::kLeft:
-      return ImGuiMouseButton_Left;
-    case MouseButton::kRight:
-      return ImGuiMouseButton_Right;
-    case MouseButton::kMiddle:
-      return ImGuiMouseButton_Middle;
-    case MouseButton::kX1:
-      return 3;
-    case MouseButton::kX2:
-      return 4;
-  }
-  return ImGuiMouseButton_Left;
 }
 
 ImVec2 to_imgui_point(PointF point) { return ImVec2{point.x, point.y}; }
@@ -231,41 +145,18 @@ bool DevOverlay::handle_event(const InputEvent& event) {
   if (!visible_) {
     return false;
   }
-  ImGuiIO& io = ImGui::GetIO();
-  if (const auto* key = std::get_if<KeyEvent>(&event)) {
-    const ImGuiKey imgui_key = to_imgui_key(key->key);
-    if (imgui_key != ImGuiKey_None) {
-      io.AddKeyEvent(imgui_key, key->pressed);
+  const bool captured = backend_->handle_event(event);
+  if (const auto* button = std::get_if<PointerButtonEvent>(&event);
+      button != nullptr && pick_ && screen_editor_ != nullptr && viewport_ &&
+      button->button == MouseButton::kLeft && !captured) {
+    if (button->pressed) {
+      editor_message_.clear();
+      static_cast<void>(
+          screen_editor_->select_at(window_to_virtual(viewport_(), button->position)));
     }
-    return io.WantCaptureKeyboard;
+    return true;  // the click and its release are for the editor
   }
-  if (const auto* text = std::get_if<TextInputEvent>(&event)) {
-    io.AddInputCharactersUTF8(text->text.c_str());
-    return io.WantTextInput;
-  }
-  if (const auto* move = std::get_if<PointerMoveEvent>(&event)) {
-    io.AddMousePosEvent(move->position.x, move->position.y);
-    return io.WantCaptureMouse;
-  }
-  if (const auto* button = std::get_if<PointerButtonEvent>(&event)) {
-    io.AddMousePosEvent(button->position.x, button->position.y);
-    io.AddMouseButtonEvent(to_imgui_button(button->button), button->pressed);
-    if (pick_ && screen_editor_ != nullptr && viewport_ && button->button == MouseButton::kLeft &&
-        !io.WantCaptureMouse) {
-      if (button->pressed) {
-        editor_message_.clear();
-        static_cast<void>(
-            screen_editor_->select_at(window_to_virtual(viewport_(), button->position)));
-      }
-      return true;  // the click and its release are for the editor
-    }
-    return io.WantCaptureMouse;
-  }
-  if (const auto* wheel = std::get_if<WheelEvent>(&event)) {
-    io.AddMouseWheelEvent(-wheel->dx, wheel->dy);  // ImGui: a negative x scrolls right
-    return io.WantCaptureMouse;
-  }
-  return false;
+  return captured;
 }
 
 void DevOverlay::draw(Size window_pixels) {
@@ -283,6 +174,9 @@ void DevOverlay::draw(Size window_pixels) {
   }
   if (profiler_ != nullptr) {
     draw_profiler();
+  }
+  if (translations_ != nullptr) {
+    draw_translations();
   }
   if (screen_editor_ != nullptr) {
     draw_screen_editor();
@@ -698,6 +592,67 @@ void DevOverlay::draw_editor_fields(ScreenEditor& editor) {
     editor.clear();
     editor_message_.clear();
   }
+}
+
+void DevOverlay::draw_translations() {
+  constexpr float kTranslationsX = 672;
+  constexpr float kTranslationsY = 16;
+  constexpr float kTranslationsWidth = 520;
+  constexpr float kTranslationsHeight = 420;
+  constexpr std::size_t kTextBytes = 1024;
+  ImGui::SetNextWindowPos(ImVec2{kTranslationsX, kTranslationsY}, ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2{kTranslationsWidth, kTranslationsHeight}, ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("Translations")) {
+    ImGui::Text("Language: %s   Label: %s", translations_->language().c_str(),
+                runtime_->position().label.c_str());
+    if (translation_language_ != translations_->language()) {
+      translation_language_ = translations_->language();
+      translation_drafts_.clear();
+      translation_problem_.clear();
+    }
+    if (!translations_->editable()) {
+      ImGui::TextUnformatted("The source language has no translations. Pick another language.");
+    } else {
+      const std::vector<TranslationRow> rows = translations_->rows();
+      if (rows.empty()) {
+        ImGui::TextWrapped("%s", translations_->problem().empty()
+                                     ? "No entries for this label."
+                                     : translations_->problem().c_str());
+      }
+      if (!translation_problem_.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, kErrorColor);
+        ImGui::TextWrapped("%s", translation_problem_.c_str());
+        ImGui::PopStyleColor();
+      }
+      for (const TranslationRow& row : rows) {
+        ImGui::PushID(row.key.c_str());
+        ImGui::Separator();
+        ImGui::TextWrapped("%s%s%s", row.speaker.c_str(), row.speaker.empty() ? "" : ": ",
+                           row.source.c_str());
+        if (row.fuzzy) {
+          ImGui::SameLine();
+          ImGui::TextColored(ImVec4{1.0F, 0.8F, 0.2F, 1.0F}, "(fuzzy)");
+        }
+        std::string& draft =
+            translation_drafts_.try_emplace(row.key, row.translation).first->second;
+        std::array<char, kTextBytes> buffer{};
+        draft.copy(buffer.data(), buffer.size() - 1);
+        ImGui::SetNextItemWidth(-std::numeric_limits<float>::min());
+        const bool entered = ImGui::InputText("##text", buffer.data(), buffer.size(),
+                                              ImGuiInputTextFlags_EnterReturnsTrue);
+        draft = buffer.data();
+        ImGui::SameLine();
+        if (ImGui::Button("Save") || entered) {
+          translation_problem_ = translations_->edit(row.key, draft);
+          if (translation_problem_.empty()) {
+            translation_drafts_.erase(row.key);
+          }
+        }
+        ImGui::PopID();
+      }
+    }
+  }
+  ImGui::End();
 }
 
 }  // namespace vnmaki

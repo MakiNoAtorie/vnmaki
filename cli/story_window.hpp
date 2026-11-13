@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <optional>
 #include <ostream>
+#include <string>
 #include <string_view>
 
 #include "engine/runtime/project_config.hpp"
@@ -35,10 +36,14 @@ inline constexpr std::string_view kDefaultFontPath = "fonts/default.ttf";
 /// breakpoints, and the debugger (engine/tools/debugger.hpp) reads the client's requests through
 /// it. While the story is stopped the window goes on drawing and handling OS events, and the
 /// game gets no input. The window closes when the client disconnects.
+/// With `language` the game starts in that language (a code of `languages` in project.toml) and the
+/// preference `prefs.language` is set to it; otherwise the preference decides (docs/SPEC.md section
+/// 16).
 int run_story_window(const Vfs& vfs, const std::filesystem::path& project_dir,
                      const ProjectConfig& config, std::optional<std::uint64_t> max_frames,
                      const std::optional<std::filesystem::path>& data_directory, std::ostream& err,
                      const std::optional<std::filesystem::path>& profile_csv = {},
-                     DapChannel* dap = nullptr);
+                     DapChannel* dap = nullptr,
+                     const std::optional<std::string>& language = std::nullopt);
 
 }  // namespace vnmaki::cli

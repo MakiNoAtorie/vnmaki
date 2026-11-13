@@ -3,7 +3,8 @@
 # lint.no_sdl_outside_platform enforces it.
 target_sources(vnmaki_engine PRIVATE geometry.hpp input.hpp input_map.cpp input_map.hpp main_loop.cpp
                                      main_loop.hpp
-                                     platform.cpp platform.hpp viewport.cpp viewport.hpp)
+                                     platform.cpp platform.hpp shell.cpp shell.hpp viewport.cpp
+                                     viewport.hpp)
 
 # SDL3 backend. SDL is linked PRIVATE: no engine header outside this module
 # exposes SDL types.

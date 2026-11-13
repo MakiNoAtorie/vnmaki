@@ -284,6 +284,7 @@ struct Audio::Impl {
   std::vector<AudioCaption> captions;
   bool pending = false;            ///< restore() changed the music; the tracks follow at update().
   std::uint64_t movie_tokens = 0;  ///< The last token start_movie_audio() gave.
+  std::string language;            ///< set_language(); voice() looks in voice/<language>/ first.
   double carry = 0;                ///< The part of a frame update() has not mixed yet.
   std::vector<float> discard;
 
@@ -628,9 +629,25 @@ std::string Audio::sound(const SoundRequest& request) {
 
 std::vector<AudioCaption> Audio::take_captions() { return std::exchange(impl_->captions, {}); }
 
-std::string Audio::voice(std::string_view name) {
+std::string voice_audio_name(const Vfs& vfs, std::string_view name, std::string_view language) {
   std::string file{kVoicePrefix};
+  if (!language.empty()) {
+    std::string localized = file;
+    localized += language;
+    localized += "/";
+    localized += name;
+    if (resolve_audio(vfs, localized)) {
+      return localized;
+    }
+  }
   file += name;
+  return file;
+}
+
+void Audio::set_language(std::string language) { impl_->language = std::move(language); }
+
+std::string Audio::voice(std::string_view name) {
+  const std::string file = voice_audio_name(*impl_->vfs, name, impl_->language);
   std::string problem;
   std::optional<Track> track = impl_->make_track(file, nullptr, problem);
   if (!track) {

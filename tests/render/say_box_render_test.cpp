@@ -37,6 +37,13 @@ constexpr std::uint8_t kBoxGreen = 16;
 constexpr std::uint8_t kBoxBlue = 32;
 constexpr std::uint8_t kBoxAlpha = 204;
 constexpr std::uint8_t kBackdrop = 26;
+// The vertical box: drawn by draw_say_box_vertical() in render_fixtures.py.
+constexpr float kVerticalBoxTop = 10;
+constexpr float kVerticalBoxHeight = 160;
+constexpr float kVerticalTextSize = 40;
+constexpr float kColumnLength = 120;
+constexpr std::size_t kVerticalRevealed = 7;  // all but the last glyph of the line
+constexpr const char* kVerticalLine = "あいう。えabお";
 
 vnmaki::SayBoxStyle test_style() {
   return {.box = {.x = kBoxLeft, .y = kBoxTop, .width = kBoxWidth, .height = kBoxHeight},
@@ -47,6 +54,16 @@ vnmaki::SayBoxStyle test_style() {
           .text_size = kTextSize,
           .wrap_width = kWrapWidth,
           .text_color = vnmaki::kWhite};
+}
+
+vnmaki::SayBoxStyle vertical_style() {
+  vnmaki::SayBoxStyle style = test_style();
+  style.box.y = kVerticalBoxTop;
+  style.box.height = kVerticalBoxHeight;
+  style.text_size = kVerticalTextSize;
+  style.vertical = true;
+  style.wrap_height = kColumnLength;
+  return style;
 }
 
 }  // namespace
@@ -155,4 +172,64 @@ TEST_CASE("say box: a source that gives nothing leaves the built-in box") {
   const vnmaki::FrameStats stats = renderer->end_frame();
 
   CHECK(stats.draw_calls == 2);  // the panel and the line
+}
+
+TEST_CASE("say box: a vertical line runs in columns from the right, and Latin letters turn") {
+  const auto renderer = vnmaki::test::make_headless_renderer();
+  if (!renderer) {
+    return;
+  }
+  vnmaki::Vfs vfs;
+  REQUIRE(
+      vfs.mount(vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_FIXTURES_DIR} / "text")));
+  const vnmaki::Font font = vnmaki::load_font(vfs, "fonts/boxes.ttf");
+  const vnmaki::DialogueLine line{.speaker = "Eileen",
+                                  .color = std::optional<std::uint32_t>{kLilac},
+                                  .text = kVerticalLine};
+
+  const vnmaki::TextureId target =
+      renderer->create_render_target(kTargetSize, vnmaki::TextureFilter::kNearest);
+  vnmaki::SayBoxView view{*renderer, font, vertical_style()};
+  REQUIRE(view.glyph_count(line) == 8);  // "あいう。え", "ab" and "お"
+
+  renderer->begin_frame();
+  renderer->begin_pass({.target = target, .clear = vnmaki::rgba8(kBackdrop, kBackdrop, kBackdrop)});
+  view.draw(line, kVerticalRevealed, 1);
+  const vnmaki::FrameStats stats = renderer->end_frame();
+
+  CHECK(stats.draw_calls == 3);  // the panel, the name and the columns
+  vnmaki::test::check_golden(renderer->read_pixels(target), "say_box_vertical");
+}
+
+TEST_CASE("say box: a vertical screen from a script draws like the built-in box") {
+  const auto renderer = vnmaki::test::make_headless_renderer();
+  if (!renderer) {
+    return;
+  }
+  vnmaki::Vfs vfs;
+  REQUIRE(
+      vfs.mount(vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_FIXTURES_DIR} / "text")));
+  const vnmaki::Font font = vnmaki::load_font(vfs, "fonts/boxes.ttf");
+  const vnmaki::DialogueLine line{.speaker = "Eileen",
+                                  .color = std::optional<std::uint32_t>{kLilac},
+                                  .text = kVerticalLine};
+
+  const vnmaki::TextureId target =
+      renderer->create_render_target(kTargetSize, vnmaki::TextureFilter::kNearest);
+  vnmaki::SayBoxView view{*renderer, font, vnmaki::SayBoxStyle::for_resolution(kTargetSize)};
+  view.set_screen_source(
+      [](const vnmaki::DialogueLine& shown) -> std::optional<vnmaki::UiNode> {
+        vnmaki::UiNode tree = vnmaki::make_say_screen(vertical_style(), shown);
+        tree.children.front().children.back().reveal = true;  // the line is the panel's last node
+        return tree;
+      },
+      kTargetSize);
+  REQUIRE(view.glyph_count(line) == 8);
+
+  renderer->begin_frame();
+  renderer->begin_pass({.target = target, .clear = vnmaki::rgba8(kBackdrop, kBackdrop, kBackdrop)});
+  view.draw(line, kVerticalRevealed, 1);
+  static_cast<void>(renderer->end_frame());
+
+  vnmaki::test::check_golden(renderer->read_pixels(target), "say_box_vertical");
 }

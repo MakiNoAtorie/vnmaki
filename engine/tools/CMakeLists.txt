@@ -41,6 +41,8 @@ if(VNMAKI_DEV_TOOLS)
             overlay.hpp
             repl.cpp
             repl.hpp
+            translation_editor.cpp
+            translation_editor.hpp
             screen_editor.cpp
             screen_editor.hpp)
 

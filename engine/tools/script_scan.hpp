@@ -56,6 +56,7 @@ enum class ScanCallKind : std::uint8_t {
   kSound,
   kVoice,
   kMovie,
+  kAmbient,
 };
 
 /// One positional value of a table, as in `menu { "a", "b" }`. A `name = value` is not one.
