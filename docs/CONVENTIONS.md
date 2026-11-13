@@ -77,6 +77,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Fuzz targets use `vnmaki_add_fuzzer(<name> <sources>)`. ctest gives each target a smoke test of 10,000 runs.
   - A fuzz target checks properties of the output, for example idempotence or an independent oracle. If a property is false, it calls `std::abort()`.
   - `fuzz_image` and `fuzz_webp` share `fuzz/image_properties.hpp` (also run by `tests/unit/image_test.cpp`). `fuzz_webp` adds the RIFF/VP8L container to the input, so the bytes are the chunk data. libwebp is a vcpkg library, so it has no fuzz instrumentation; only the engine code around it has.
+  - `fuzz_script_scan` (the Lua tokenizer and the story scan) has `fuzz/script_scan_properties.hpp`, which `tests/unit/script_scan_test.cpp` also runs on samples and on 3000 seeded random scripts. The properties: lines and sizes are in bounds; the tokens written as source (`render_lua_tokens`) tokenize to the same tokens with the same lines and scan to the same labels. Its dictionary is `fuzz/script_scan.dict`.
   - To check a new fuzz target, add a bug and make sure that the smoke test finds it.
 - Threaded tests put a timeout on each wait. If `!JobSystem::threads_supported()`, they return immediately, because jobs run inline.
 - GPU tests are in `tests/render/` (`vnmaki_render_tests`).
@@ -392,6 +393,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - It counts the step and calls `ScriptObserver::on_blocked`.
   - Steps start at 1 for each label activation.
 - `jump`, `call` and `ret` are transfers, not steps.
+- `ScriptObserver::on_label_entered` is called for `start()`, for each `jump` and `call` target, and for `replay()` to step 0. `on_label_resumed` is called when a called label returns. Neither is called while `replaying()`. `TraceRecorder` (see Dev tools) reads them.
+- `label(name, fn, { ending = true })`: the third argument has no effect at run time (the prelude ignores it). The story graph reads it from the source as the mark of a label that ends the story on purpose.
 - The sandbox has no `io`, `debug`, `package` or `require`. `vfs.*` is the only file access.
 - `store` is the only game state.
   - It keeps booleans, numbers, strings and tables with scalar keys.
@@ -486,3 +489,21 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - An asset must be MIT, OFL or CC0, or be made by a generator. `templates/default/ASSETS.txt` records the license.
 - The end-to-end test is `tests/unit/new_project_test.cpp` (`SampleGame`): `create_project`, then a `ScriptRuntime` with `Scene`, `Audio` and `Saves` (in a temporary directory) plays both branches, rolls back over the menu, saves, loads and rolls back again. It needs no window and no GPU, so it runs on every CI platform. `cli.new_makes_a_game_and_stops_at_a_second_one` and `cli.new_game_runs_in_a_window` (a GPU test) use `tests/cli/run_new.cmake`.
 - The sample story starts with `call_screen("title", ...)`, so `vnmaki run <game> --headless` stops there. Use a unit test to play it.
+
+### Dev tools (`engine/tools/`)
+
+- The module builds in every preset: its code needs no ImGui. The overlay (task 30) adds its files here later. `VNMAKI_DEV_TOOLS` does not apply to the scan and the graph, because `vnmaki graph` is a command of the normal executable.
+- `tokenize_lua(source)` (`script_scan.hpp`) never throws and accepts any bytes. Tokens: name, number, string (decoded, except `\u{...}`), one-byte symbol. A line ends at LF, CR, CRLF or LFCR. A string or a long bracket that is not closed ends at the end of the line or of the source.
+- `scan_labels(source)` finds `label`, `jump`, `call`, `ret`, `menu`, `say` and `show` calls in the function of each `label("name", function() ... end)`. It runs nothing.
+  - A call is `name(...)`, `name "text"` or `name { ... }`, and not after `.` or `:`. `ScanCall::arguments` has one entry for each top-level argument: its text if it is one string literal, else nothing. `ScanCall::depth` counts `function`, `if`, `do` and `repeat` blocks open inside the label function.
+  - A label with a computed name has no name. A `label` call inside a label function is not a label; its calls belong to the outer label. `ending = true` in a table (the third argument) after the function marks `ScanLabel::ending`.
+- `build_story_graph(read_scripts(vfs))` (`story_graph.hpp`): `read_scripts` lists `scripts/` as the runtime does (all `.lua` files, sorted by path).
+  - Edges: `jump`, `call`, and `menu` (a `jump` or `call` that is deeper than the last `menu` call of the same label, so it is in a block that opens after it). A `menu` edge does not say if it is a jump or a call. A target that is not a string literal is a `dynamic` edge (`to` is empty).
+  - A label is unreachable if no path of edges from `start` reaches it (dynamic edges lead nowhere). It is a dead end if it has no `jump` and no `ret`, is not `ending`, and no `call` names it. A label that a `call` names runs to its end and returns, so it is not a dead end. This does not find a branch that runs to the end while another branch jumps.
+  - The first definition of a label wins. A label with a computed name is not in the graph.
+- Run-time traces: set `TraceRecorder` as the `ScriptRuntimeOptions::observer`, or call it from the observer. It records the labels entered and the edge from the label that ran to the one entered, once each. A `ret` goes back to the caller, so the next edge starts there. The runtime does not report a replay, so call `break_trace()` before a load, or the first label after it gets an edge from the label that ran before.
+  - `apply_trace(graph, trace)` marks the labels and the edges seen. A traced edge that has no edge in the scripts is added as `kTrace`. It also makes the labels that traced edges reach reachable. It starts from the scripts each time, so call it again with a longer trace.
+  - The overlay panel (task 30) shows `seen` edges in a second color. It reads a `StoryGraph`; the story window must pass the `TraceRecorder` to its observer.
+- `to_dot(graph)` and `to_csv(graph)` print the graph. CSV: `type,from,to,script,line,flags` (RFC 4180, LF), a row for each label and then for each edge. Flags join with `;`. The text of both is in `story_graph.hpp`.
+- `vnmaki graph <dir> [--format dot|csv]` (`cli/graph_command.*`) prints the graph of the scripts of the project folder (DOT by default). It runs no story, so it shows no traces. Exit 0, 1 if `<dir>` is not a folder, 2 for a usage error.
+- The tests: `tests/unit/script_scan_test.cpp` and `tests/unit/story_graph_test.cpp` (they also read `templates/default`: no unreachable label), and the CLI tests `cli.graph_*` on `tools/generators/graph_fixtures.py`. The generator writes the Lua and notes the line of each edge while it writes. A small model of the rules gives the expected CSV and DOT, so the tokenizer is not its own oracle. The `random` project comes from a fixed seed.
