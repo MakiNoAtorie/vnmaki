@@ -475,7 +475,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - The headless runner has `RollbackInput`. It fails the run when there is nothing to go back to.
 - `skip("seen" | "all" | "off" | false)` and `auto(bool)` queue a `PlaybackRequest`. `take_playback_requests()` gives them to the host. They are dropped during a replay.
 - `character { auto_multiplier = n }` goes to `SayRequest::auto_multiplier` (default 1).
-- `drop_callers()` makes the running label the outermost label. A load calls it before `replay()`.
+- `drop_callers()` makes the running label the outermost label.
+- `begin_load()` is `drop_callers()` that keeps the callers and the rollback history aside. A load calls it before `replay()` and `end_load(undo)` after. If the replay fails and the story goes back to its old position, `end_load(true)` puts the callers and the history back, so a failed load changes nothing. Otherwise they are dropped.
 
 ### Saves (`engine/saves/`)
 

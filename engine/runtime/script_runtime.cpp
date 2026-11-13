@@ -2064,6 +2064,8 @@ class ScriptRuntime::Impl {
   [[nodiscard]] bool can_roll_back() const;
   [[nodiscard]] std::span<const RollbackStep> rollback_steps() const { return rollback_; }
   void drop_callers();
+  void begin_load();
+  void end_load(bool undo);
   [[nodiscard]] std::string run_on_load(LabelSnapshot& snapshot, std::string_view old_version);
   [[nodiscard]] std::vector<SaveRequest> take_save_requests() {
     return std::exchange(save_requests_, {});
@@ -2228,6 +2230,8 @@ class ScriptRuntime::Impl {
   std::vector<SaveRequest> save_requests_;
   std::vector<PlaybackRequest> playback_requests_;
   std::vector<Frame> frames_;  // back() is the running label; the rest called it
+  std::vector<Frame> held_callers_;  // begin_load()'s, until end_load()
+  std::vector<RollbackStep> held_rollback_;
   std::optional<std::variant<BlockingRequest, Transfer>> pending_;
   bool started_ = false;
   RunState state_ = RunState::kIdle;
@@ -3253,6 +3257,26 @@ void ScriptRuntime::Impl::drop_callers() {
   }
 }
 
+void ScriptRuntime::Impl::begin_load() {
+  held_callers_.clear();
+  if (frames_.size() > 1) {
+    held_callers_.assign(std::make_move_iterator(frames_.begin()),
+                         std::make_move_iterator(frames_.end() - 1));
+  }
+  held_rollback_ = rollback_;
+  drop_callers();
+}
+
+void ScriptRuntime::Impl::end_load(bool undo) {
+  if (undo && !frames_.empty()) {
+    frames_.insert(frames_.begin(), std::make_move_iterator(held_callers_.begin()),
+                   std::make_move_iterator(held_callers_.end()));
+    rollback_ = std::move(held_rollback_);
+  }
+  held_callers_.clear();
+  held_rollback_.clear();
+}
+
 // Runs the hook on a scratch copy of the store: the snapshot's store is restored, migrated and
 // captured again, and the live store comes back at the end.
 std::string ScriptRuntime::Impl::run_on_load(LabelSnapshot& snapshot,
@@ -3617,6 +3641,8 @@ std::span<const RollbackStep> ScriptRuntime::rollback_steps() const {
   return impl_->rollback_steps();
 }
 void ScriptRuntime::drop_callers() { impl_->drop_callers(); }
+void ScriptRuntime::begin_load() { impl_->begin_load(); }
+void ScriptRuntime::end_load(bool undo) { impl_->end_load(undo); }
 std::string ScriptRuntime::run_on_load(LabelSnapshot& snapshot, std::string_view old_version) {
   return impl_->run_on_load(snapshot, old_version);
 }

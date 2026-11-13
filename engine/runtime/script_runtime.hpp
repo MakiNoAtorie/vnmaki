@@ -836,6 +836,12 @@ class ScriptRuntime {
   /// Makes the running label the outermost one, so a load does not return into the labels that
   /// called the label it replaced. Call it before replay() when a story is already running.
   void drop_callers();
+  /// drop_callers() that keeps the callers and the history until end_load(), so a load whose
+  /// replay fails can undo them. Call end_load() after the load, whatever its result.
+  void begin_load();
+  /// With `undo`, the callers and the history come back under the running label (it must be
+  /// the label a failed load went back to). Without it they are dropped for good.
+  void end_load(bool undo);
 
   /// Runs the script's `on_load(old_version, store)` hook (if it registered one) on the store of
   /// `snapshot` and puts the result back into `snapshot`. The current `store` is untouched.

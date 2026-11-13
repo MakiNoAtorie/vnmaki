@@ -218,7 +218,7 @@ std::string Saves::load(std::string_view slot) {
   const bool can_go_back = capture(before, false).empty();
 
   const bool source_changed = runtime_->label_source_hash(data.label) != data.source_hash;
-  runtime_->drop_callers();
+  runtime_->begin_load();
   if (source_changed) {
     warn(where + ": label '" + data.label +
          "' changed since the game was saved; starting it from the beginning");
@@ -229,14 +229,18 @@ std::string Saves::load(std::string_view slot) {
   if (runtime_->state() == RunState::kFailed) {
     std::string problem =
         where + ": the story could not follow the save (" + runtime_->error() + ")";
+    bool went_back = false;
     if (can_go_back) {
       runtime_->replay(before.snapshot, before.inputs, before.step);
-      if (runtime_->state() == RunState::kFailed) {
+      went_back = runtime_->state() != RunState::kFailed;
+      if (!went_back) {
         problem += "; and it could not go back (" + runtime_->error() + ")";
       }
     }
+    runtime_->end_load(went_back);
     return problem;
   }
+  runtime_->end_load(false);
   last_position_ = runtime_->position();
   return {};
 }

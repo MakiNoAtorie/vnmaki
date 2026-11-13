@@ -622,6 +622,48 @@ TEST_CASE("saves: a load that cannot be replayed goes back to the earlier positi
   CHECK(new_game.narrated() == "a");
 }
 
+TEST_CASE("saves: a load that cannot be replayed keeps the callers and the history") {
+  // The helper is outside the label function, so editing it does not change the source hash.
+  const auto story = [](std::string_view helper_lines) {
+    return "local function intro()\n" + std::string{helper_lines} + R"(end
+label("start", function()
+  narrate("s1")
+  call("aside")
+  narrate("s2")
+end)
+label("aside", function()
+  intro()
+  narrate("after")
+end)
+)";
+  };
+  const TempDir dir{"replay_fails_callers"};
+  Game old_game{story("narrate('a')\nnarrate('b')\n"), dir.path()};
+  old_game.runtime.start("start");
+  old_game.runtime.advance();
+  old_game.runtime.advance();
+  old_game.runtime.advance();
+  REQUIRE(old_game.narrated() == "after");
+  CHECK(old_game.saves.save("1").empty());
+
+  Game new_game{story("narrate('a')\n"), dir.path()};
+  new_game.runtime.start("start");
+  new_game.runtime.advance();
+  REQUIRE(new_game.narrated() == "a");
+  const std::size_t history = new_game.runtime.rollback_steps().size();
+
+  CHECK(new_game.saves.load("1").find("could not follow") != std::string::npos);
+  CHECK(new_game.narrated() == "a");
+  CHECK(new_game.runtime.rollback_steps().size() == history);
+  CHECK(new_game.runtime.can_roll_back());
+  new_game.runtime.advance();
+  CHECK(new_game.narrated() == "after");
+  new_game.runtime.advance();
+  CHECK(new_game.narrated() == "s2");  // the caller is still there
+  CHECK(new_game.runtime.roll_back());
+  CHECK(new_game.narrated() == "after");
+}
+
 TEST_CASE("saves: a load drops the labels that called the running label") {
   constexpr std::string_view kCallStory = R"(
 label("start", function()
