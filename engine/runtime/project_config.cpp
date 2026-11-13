@@ -160,7 +160,8 @@ std::map<std::string, bool> read_vertical(const toml::node& node,
   for (auto&& [key, value] : *table) {
     const std::string language{key.str()};
     if (std::ranges::find(languages, language) == languages.end()) {
-      fail_at(value, "'vertical' has language '" + language + "', which 'languages' does not list");
+      fail_at(value,
+              "'vertical' has language '" + language + "', which 'languages' does not list");
     }
     const std::optional<bool> flag = value.value_exact<bool>();
     if (!flag) {

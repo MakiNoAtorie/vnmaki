@@ -84,7 +84,8 @@ TEST_CASE("vertical text: upright glyphs run down a column, centred on it") {
   const vnmaki::TextLine& column = layout.lines[0];
   // The origin is the glyph's left end on the baseline: the em box is 20 wide and 20 below its
   // top, whose baseline is 16 down.
-  CHECK(origins(column) == std::vector<PointF>{{.x = 0, .y = 16}, {.x = 0, .y = 36}, {.x = 0, .y = 56}});
+  CHECK(origins(column) ==
+        std::vector<PointF>{{.x = 0, .y = 16}, {.x = 0, .y = 36}, {.x = 0, .y = 56}});
   CHECK(column.width == 60);
   CHECK(column.top == 0);
   CHECK(column.height == 20);
@@ -165,7 +166,8 @@ TEST_CASE("vertical text: ruby goes to the right of its column, centred on its b
   // 10 pixels of ruby column right of the 20 of the base column.
   CHECK(column.height == 30);
   CHECK(column.baseline == 10);
-  CHECK(origins(column) == std::vector<PointF>{{.x = 0, .y = 16}, {.x = 0, .y = 36}, {.x = 0, .y = 56}});
+  CHECK(origins(column) ==
+        std::vector<PointF>{{.x = 0, .y = 16}, {.x = 0, .y = 36}, {.x = 0, .y = 56}});
   REQUIRE(column.ruby.size() == 1);
   const vnmaki::RubyText& ruby = column.ruby[0];
   CHECK(ruby.base_glyph == 0);
