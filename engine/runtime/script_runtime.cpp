@@ -3198,6 +3198,7 @@ bool ScriptRuntime::Impl::roll_back() {
 void ScriptRuntime::Impl::begin_replay(const LabelSnapshot& snapshot,
                                        std::span<const InputResult> inputs, std::uint32_t step,
                                        std::uint32_t ordinal) {
+  observer_->on_replay();
   // Copies first: the arguments may belong to the frame replaced below.
   LabelSnapshot entry = snapshot;
   Replay replay{.inputs = {inputs.begin(), inputs.end()}, .step = step, .ordinal = ordinal};

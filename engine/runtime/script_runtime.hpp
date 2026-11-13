@@ -576,6 +576,9 @@ class ScriptObserver {
   virtual void on_label_entered(std::string_view /*label*/) {}
   /// A called label returned, so `label` (its caller) runs again.
   virtual void on_label_resumed(std::string_view /*label*/) {}
+  /// A replay (a load, a rollback) starts, before any label of it is reported. The label that
+  /// runs next was not reached by a `jump` or `call` from the label that ran before.
+  virtual void on_replay() {}
   /// The running label reached a yield point and waits at `position`.
   virtual void on_blocked(const BlockingRequest& /*request*/, const ScriptPosition& /*position*/) {}
   /// A `scene`, `show`, `hide`, `tween`, `sequence` or `parallel` call was done. `command` is its
