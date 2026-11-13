@@ -146,12 +146,12 @@ All tasks add Lua API to `script_runtime.cpp` and `SceneCommands`. Add new code 
 
 Files: new `engine/anim/`, `engine/scene/scene.*`, `engine/scene/displayable.*`, `engine/runtime/script_runtime.*`.
 
-- [ ] `Scene` keeps `std::unique_ptr<Displayable>`, not only images. The scene snapshot is a map with one key for each part, so later tasks can add keys.
-- [ ] `tween(tag, { x, y, anchor, scale, rotation, alpha, tint, crop, duration, ease, delay, loop, yoyo })` uses the same units as `show`. `sequence{...}` and `parallel{...}` group tweens. Easings: linear, plus sine, quad, cubic, back and bounce, each as `in`, `out` and `in_out`.
-- [ ] `wait(tag)` and `wait_all()` yield until those tweens end. A click or skip mode ends them at once. A tween that has no `wait` does not block.
-- [ ] Replay and load put each tween at its end value. A loop tween restarts at time 0. Active loop tweens are in the snapshot.
-- [ ] Rollback goes back over `wait` steps to the previous `say` or `menu`.
-- [ ] Unit tests with a fake clock: each easing at t = 0, 0.5 and 1. Sequence, parallel, loop, yoyo and delay. Equal values for 1/60 s and 1/7 s steps. Snapshot round trip.
+- [x] `Scene` keeps `std::unique_ptr<Displayable>`, not only images. The scene snapshot is a map with one key for each part, so later tasks can add keys.
+- [x] `tween(tag, { x, y, anchor, scale, rotation, alpha, tint, crop, duration, ease, delay, loop, yoyo })` uses the same units as `show`. `sequence{...}` and `parallel{...}` group tweens. Easings: linear, plus sine, quad, cubic, back and bounce, each as `in`, `out` and `in_out`.
+- [x] `wait(tag)` and `wait_all()` yield until those tweens end. A click or skip mode ends them at once. A tween that has no `wait` does not block.
+- [x] Replay and load put each tween at its end value. A loop tween restarts at time 0. Active loop tweens are in the snapshot.
+- [ ] Rollback goes back over `wait` steps to the previous `say` or `menu`. Not done: it needs task 13. Wait steps are marked with `ScriptPosition::wait` (from `ScriptObserver::on_blocked` and `position()`). Rollback must skip them.
+- [x] Unit tests with a fake clock: each easing at t = 0, 0.5 and 1. Sequence, parallel, loop, yoyo and delay. Equal values for 1/60 s and 1/7 s steps. Snapshot round trip.
 
 ### 21: Transitions (SPEC §10, §9)
 
