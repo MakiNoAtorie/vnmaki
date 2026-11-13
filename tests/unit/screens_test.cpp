@@ -242,6 +242,12 @@ TEST_CASE("bind: prefs read as defaults until the player sets them, and persist 
   CHECK(game.runtime.set_binding("prefs", "fullscreen", true).empty());
   CHECK(game.runtime.persistent_snapshot().tables.size() == 2);  // persistent and persistent.prefs
 
+  // The values come back from the persistent snapshot, as after a restart.
+  Game restarted{"prefs_restarted", kStory};
+  CHECK(restarted.runtime.restore_persistent(game.runtime.persistent_snapshot()).empty());
+  CHECK(restarted.number("prefs", "text_speed") == kSomeSpeed);
+  CHECK(restarted.flag("prefs", "fullscreen"));
+
   // Setting nil takes the key away, and the default is back.
   CHECK(game.runtime.set_binding("prefs", "text_speed", ScreenValue{}).empty());
   CHECK(game.number("prefs", "text_speed") == vnmaki::Preferences{}.text_speed);
