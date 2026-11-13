@@ -14,6 +14,10 @@ project/        a small game: two labels, a `store` value, a local table.
                 taken from the engine: each body is spelled out below. JSON keys are sorted and
                 there are no spaces, as nlohmann-json writes them.
 
+template.in.dap, template.out.dap: a session on templates/default itself (the Phase 4 demo): a
+                breakpoint in `start`, a step, `store.affection`, and a goto to `warm`. Its lines are
+                found by searching main.lua of the template.
+
 The headless player answers each line at once, so the story runs on until it stops at a breakpoint
 or ends. Line numbers of start.lua are found by searching for a marker, so editing the script does
 not leave a wrong number behind.
@@ -45,11 +49,14 @@ end, { ending = true })
 '''
 
 
-def line_of(marker):
-    for number, line in enumerate(START.split("\n"), 1):
+TEMPLATE_MAIN = Path(__file__).resolve().parents[2] / "templates" / "default" / "scripts" / "main.lua"
+
+
+def line_of(marker, text=START):
+    for number, line in enumerate(text.splitlines(), 1):
         if marker in line:
             return number
-    raise SystemExit(f"start.lua has no line with {marker!r}")
+    raise SystemExit(f"no line with {marker!r}")
 
 
 def compact(value):
@@ -94,7 +101,7 @@ class Session:
     def frames(self, line, name):
         path = self.source_path
         return {"stackFrames": [{"id": 1, "name": name, "line": line, "column": 1,
-                                 "source": {"name": "start.lua", "path": path}}],
+                                 "source": {"name": Path(path).name, "path": path}}],
                 "totalFrames": 1}
 
     def write(self, out, name):
@@ -184,6 +191,43 @@ def finish_session(project):
     return s
 
 
+def template_session(template):
+    """The template: a breakpoint in `start`, a step, `store.affection` and a goto to `warm`."""
+    source = template + "/scripts/main.lua"
+    text = TEMPLATE_MAIN.read_text(encoding="utf-8")
+    first = line_of('call_screen("title"', text)  # the first line of `start`
+    second = line_of('jump("classroom")', text)
+    warm = line_of("I'm glad", text)  # the first say of `warm`
+    s = Session(source)
+    s.request("initialize", {"adapterID": "vnmaki"}, CAPABILITIES)
+    s.event("initialized")
+    s.request("launch")
+    s.request("setBreakpoints", {"source": {"path": source}, "breakpoints": [{"line": first}]},
+              {"breakpoints": [{"verified": True, "line": first}]})
+    s.request("configurationDone")
+    s.stopped("breakpoint")
+    s.request("stackTrace", {"threadId": 1}, s.frames(first, "start"))
+    s.request("scopes", {"frameId": 1}, SCOPES)
+    s.request("variables", {"variablesReference": 1}, {"variables": []})  # `start` has no local
+    s.request("variables", {"variablesReference": 2},
+              {"variables": [variable("__rng", str(RNG_SEED)), variable("affection", "0")]})
+    s.request("next", {"threadId": 1})  # the headless player closes the title screen at once
+    s.stopped("step")
+    s.request("stackTrace", {"threadId": 1}, s.frames(second, "start"))
+    s.request("evaluate", {"expression": "store.affection", "frameId": 1},
+              {"result": "0", "variablesReference": 0})
+    s.request("vnmaki/goto", {"label": "warm"}, {"label": "warm", "step": 1})
+    s.stopped("goto")
+    s.request("stackTrace", {"threadId": 1}, s.frames(warm, "warm"))
+    s.request("evaluate", {"expression": "store.affection"},
+              {"result": "0", "variablesReference": 0})
+    s.request("continue", {"threadId": 1}, {"allThreadsContinued": True})
+    s.event("exited", {"exitCode": 0})
+    s.event("terminated")
+    s.request("disconnect")
+    return s
+
+
 def main():
     out = Path(sys.argv[1])
     if out.exists():
@@ -194,6 +238,8 @@ def main():
     project = os.path.abspath(out / "project").replace("\\", "/")
     debug_session(project).write(out, "session")
     finish_session(project).write(out, "finish")
+    template = str(TEMPLATE_MAIN.parents[1]).replace("\\", "/")
+    template_session(template).write(out, "template")
 
 
 main()
