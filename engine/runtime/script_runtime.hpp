@@ -29,10 +29,16 @@ namespace vnmaki {
 
 class Vfs;
 
-/// `say(who, text)`: a line spoken by a named character.
+/// `say(who, text)`: a line spoken by a named character. `color` and `voice_tag` come from a
+/// `character { name =, color = "#rrggbb", voice_tag = }` table; a plain string speaker has
+/// neither.
 struct SayRequest {
-  std::string speaker;
-  std::string text;
+  std::string speaker{};
+  std::string text{};
+  /// The speaker's name colour as 0xRRGGBB.
+  std::optional<std::uint32_t> color{};
+  /// Only stored: audio will use it to pick the voice.
+  std::string voice_tag{};
 
   friend bool operator==(const SayRequest&, const SayRequest&) = default;
 };
@@ -248,12 +254,12 @@ struct ScriptRuntimeOptions {
 /// the `vfs` table (`vfs.read`, `vfs.exists`, `vfs.list`), which uses the
 /// engine Vfs. `print` goes to ScriptObserver::on_print.
 ///
-/// The engine API: `label(name, fn)`, `jump(name)`, `call(name)`, `ret()`,
-/// `say(who, text)`, `narrate(text)`, `menu { "option", ... }` (returns the
-/// number of the chosen option, from 1), `rand` (the same function as
-/// `math.random`) and the `store` table. Visuals: `scene(image)`,
-/// `show(tag, { image =, at =, x =, y =, layer = })` and `hide(tag)`; option
-/// keys they do not know are ignored (later tickets add `with`, `outfit`...).
+/// The engine API: `character { name =, color = "#rrggbb", voice_tag = }`, `label(name, fn)`,
+/// `jump(name)`, `call(name)`, `ret()`, `say(who, text)`, `narrate(text)`, `menu { "option", ... }`
+/// (returns the number of the chosen option, from 1), `rand` (the same function as `math.random`)
+/// and the `store` table. Visuals: `scene(image)`, `show(tag, { image =, at =, x =, y =, layer =
+/// })` and `hide(tag)`; option keys they do not know are ignored (later tickets add `with`,
+/// `outfit`...).
 /// Text: `say` and `narrate` take inline tags (docs/TEXT_TAGS.md), and a bad
 /// tag is a script error at that line. `on_link(fn)` sets the function that
 /// activate_link() calls.

@@ -42,6 +42,8 @@ target_sources(vnmaki_unit_tests PRIVATE unit/headless_runner_test.cpp
                                          unit/project_config_test.cpp)
 vnmaki_add_fixture_generator(
   runtime SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/runtime_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
 
 # Text: layout, glyph atlas, typewriter reveal (ticket 07).
@@ -61,3 +63,7 @@ vnmaki_add_fixture_generator(
 
 # Scene graph, layers and displayables (ticket 09).
 target_sources(vnmaki_unit_tests PRIVATE unit/scene_test.cpp)
+
+# Say box: characters, the dialogue presenter and the say box view (ticket 08).
+target_sources(vnmaki_unit_tests PRIVATE unit/character_test.cpp
+                                         unit/dialogue_test.cpp)
