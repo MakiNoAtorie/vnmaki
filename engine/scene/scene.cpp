@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -13,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+#include "engine/anim/easing.hpp"
+#include "engine/anim/timeline.hpp"
 #include "engine/core/byte_stream.hpp"
 #include "engine/render/image.hpp"
 #include "engine/vfs/vfs.hpp"
@@ -101,11 +105,17 @@ std::string quoted(std::string_view prefix, std::string_view name, std::string_v
 }
 
 // --- Serialized form -------------------------------------------------------------------------
-// Little-endian. A u32 format version, a u32 count, then for each displayable (layer by layer,
-// back to front): u8 layer, tag, image path (each a u32 length and the bytes) and the
-// properties as 16 f32: position, anchor, scale, rotation, alpha, tint, crop.
+// Little-endian. A u32 format version, a u32 count of parts, then for each part in the order of
+// its name: the name (a u32 length and the bytes) and its bytes (a u32 length and the bytes).
+//
+// "displayables": a u32 count, then for each displayable (layer by layer, back to front): u8
+// layer, tag, image path (each a u32 length and the bytes) and the properties as 16 f32:
+// position, anchor, scale, rotation, alpha, tint, crop.
+// "tweens": Timeline::capture().
 
-constexpr std::uint32_t kFormatVersion = 1;
+constexpr std::uint32_t kFormatVersion = 2;
+constexpr std::string_view kDisplayablesPart = "displayables";
+constexpr std::string_view kTweensPart = "tweens";
 
 class Writer : public ByteWriter {
  public:
@@ -159,6 +169,91 @@ class Reader : public ByteReader {
   }
 };
 
+// --- Tweens ----------------------------------------------------------------------------------
+
+constexpr float kByteMax = 255.0F;
+constexpr unsigned kRedShift = 16;
+constexpr unsigned kGreenShift = 8;
+constexpr std::uint32_t kByteMask = 0xFF;
+
+float tint_channel(std::uint32_t rgb, unsigned shift) {
+  return static_cast<float>((rgb >> shift) & kByteMask) / kByteMax;
+}
+
+std::string out_of_time(std::string_view option) {
+  std::string message = "option '";
+  message += option;
+  message += "' must be a number from 0 to 86400";
+  return message;
+}
+
+// Fills `node` from `request`, or returns why that cannot be done. Positions are fractions of the
+// virtual resolution.
+std::string tween_node(const TweenRequest& request, Size virtual_size, TweenNode& node) {
+  if (!(request.delay >= 0 && request.delay <= kMaxTweenSeconds)) {
+    return out_of_time("delay");
+  }
+  node.delay = request.delay;
+  node.loop = request.loop;
+  if (request.kind != TweenRequest::Kind::kTween) {
+    node.kind = request.kind == TweenRequest::Kind::kSequence ? TweenNode::Kind::kSequence
+                                                              : TweenNode::Kind::kParallel;
+    node.children.reserve(request.children.size());
+    for (const TweenRequest& child : request.children) {
+      if (std::string problem = tween_node(child, virtual_size, node.children.emplace_back());
+          !problem.empty()) {
+        return problem;
+      }
+    }
+    return {};
+  }
+
+  node.tag = request.tag;
+  node.yoyo = request.yoyo;
+  if (!(request.duration >= 0 && request.duration <= kMaxTweenSeconds)) {
+    return out_of_time("duration");
+  }
+  node.duration = request.duration;
+  const std::optional<Ease> ease = ease_from_name(request.ease);
+  if (!ease.has_value()) {
+    return quoted("unknown easing '", request.ease,
+                  "' (use linear, or in_, out_ or in_out_ followed by sine, quad, cubic, back or "
+                  "bounce)");
+  }
+  node.ease = *ease;
+
+  std::string problem;
+  const auto set = [&](Channel channel, const std::optional<double>& value, std::string_view name,
+                       float extent) {
+    if (!value.has_value() || !problem.empty()) {
+      return;
+    }
+    if (const std::optional<float> converted = coordinate(*value, extent)) {
+      node.to.at(slot(channel)) = *converted;
+    } else {
+      problem = out_of_range(name);
+    }
+  };
+  set(Channel::kX, request.x, "x", static_cast<float>(virtual_size.width));
+  set(Channel::kY, request.y, "y", static_cast<float>(virtual_size.height));
+  set(Channel::kAnchorX, request.anchor_x, "anchor.x", 1);
+  set(Channel::kAnchorY, request.anchor_y, "anchor.y", 1);
+  set(Channel::kScaleX, request.scale_x, "scale.x", 1);
+  set(Channel::kScaleY, request.scale_y, "scale.y", 1);
+  set(Channel::kRotation, request.rotation, "rotation", 1);
+  set(Channel::kAlpha, request.alpha, "alpha", 1);
+  set(Channel::kCropX, request.crop_x, "crop.x", 1);
+  set(Channel::kCropY, request.crop_y, "crop.y", 1);
+  set(Channel::kCropWidth, request.crop_width, "crop.width", 1);
+  set(Channel::kCropHeight, request.crop_height, "crop.height", 1);
+  if (request.tint.has_value()) {
+    node.to.at(slot(Channel::kTintR)) = tint_channel(*request.tint, kRedShift);
+    node.to.at(slot(Channel::kTintG)) = tint_channel(*request.tint, kGreenShift);
+    node.to.at(slot(Channel::kTintB)) = tint_channel(*request.tint, 0);
+  }
+  return problem;
+}
+
 }  // namespace
 
 std::string_view layer_name(Layer layer) { return kLayerNames.at(static_cast<std::size_t>(layer)); }
@@ -193,6 +288,24 @@ std::optional<Scene::Slot> Scene::locate(std::string_view tag) const {
   return std::nullopt;
 }
 
+Timeline::Lookup Scene::lookup() {
+  return [this](std::string_view tag) -> DisplayProperties* {
+    Displayable* shown = find(tag);
+    return shown != nullptr ? &shown->properties() : nullptr;
+  };
+}
+
+Displayable* Scene::find_in(Layers& layers, std::string_view tag) {
+  for (std::vector<Entry>& shown : layers) {
+    for (Entry& entry : shown) {
+      if (entry.tag == tag) {
+        return entry.displayable.get();
+      }
+    }
+  }
+  return nullptr;
+}
+
 std::string Scene::scene(std::string_view image) {
   std::optional<std::string> path = resolve_image(*vfs_, image);
   if (!path.has_value()) {
@@ -204,7 +317,8 @@ std::string Scene::scene(std::string_view image) {
   }
   entries(Layer::kBackground)
       .push_back(Entry{.tag = std::string{kBackgroundTag},
-                       .displayable = ImageDisplayable{std::move(*path)}});
+                       .displayable = std::make_unique<ImageDisplayable>(std::move(*path))});
+  timeline_.prune(lookup());
   return {};
 }
 
@@ -223,7 +337,7 @@ std::string Scene::show(const ShowRequest& request) {
   properties.anchor = kBottomCenter;
   if (shown.has_value()) {
     layer = shown->layer;
-    properties = entries(layer).at(shown->index).displayable.properties();
+    properties = entries(layer).at(shown->index).displayable->properties();
   }
   if (request.layer.has_value()) {
     const std::optional<Layer> named = layer_from_name(*request.layer);
@@ -257,8 +371,8 @@ std::string Scene::show(const ShowRequest& request) {
     properties.position.y = *y;
   }
 
-  ImageDisplayable displayable{std::move(*path)};
-  displayable.properties() = properties;
+  auto displayable = std::make_unique<ImageDisplayable>(std::move(*path));
+  displayable->properties() = properties;
   if (shown.has_value() && shown->layer == layer) {
     entries(layer).at(shown->index).displayable = std::move(displayable);
     return {};
@@ -272,53 +386,128 @@ void Scene::hide(std::string_view tag) {
   for (std::vector<Entry>& shown : layers_) {
     std::erase_if(shown, [tag](const Entry& entry) { return entry.tag == tag; });
   }
+  timeline_.prune(lookup());
 }
 
-std::vector<std::byte> Scene::capture() const {
-  std::size_t count = 0;
-  for (const std::vector<Entry>& shown : layers_) {
-    count += shown.size();
+std::string Scene::tween(const TweenRequest& request) {
+  TweenNode node;
+  if (std::string problem = tween_node(request, virtual_size_, node); !problem.empty()) {
+    return problem;
   }
-  Writer writer;
-  writer.u32(kFormatVersion);
-  writer.u32(static_cast<std::uint32_t>(count));
+  return timeline_.start(node, lookup(), request.replaying);
+}
+
+void Scene::finish_tweens(std::string_view tag) { timeline_.finish(tag, lookup()); }
+
+bool Scene::tweening(std::string_view tag) const { return timeline_.busy(tag); }
+
+std::vector<std::byte> Scene::capture() const {
+  // The properties as a replay would leave them (see the class comment), worked out on copies.
+  Timeline settled = timeline_;
+  std::map<std::string, DisplayProperties, std::less<>> resting;
+  for (const std::string& tag : settled.tags()) {
+    if (const Displayable* shown = find(tag)) {
+      resting.emplace(tag, shown->properties());
+    }
+  }
+  settled.settle([&resting](std::string_view tag) -> DisplayProperties* {
+    const auto found = resting.find(tag);
+    return found == resting.end() ? nullptr : &found->second;
+  });
+
+  // ponytail: only images are kept. A displayable of another kind saves itself as a part of its
+  // own when it exists.
+  const auto image_of = [](const Entry& entry) {
+    return dynamic_cast<const ImageDisplayable*>(entry.displayable.get());
+  };
+  std::uint32_t count = 0;
+  for (const std::vector<Entry>& shown : layers_) {
+    count += static_cast<std::uint32_t>(std::ranges::count_if(
+        shown, [&image_of](const Entry& entry) { return image_of(entry) != nullptr; }));
+  }
+  Writer displayables;
+  displayables.u32(count);
   for (const Layer layer : kLayerOrder) {
     for (const Entry& entry : entries(layer)) {
-      writer.u8(static_cast<std::uint8_t>(layer));
-      writer.string(entry.tag);
-      writer.string(entry.displayable.path());
-      writer.properties(entry.displayable.properties());
+      if (const ImageDisplayable* image = image_of(entry)) {
+        displayables.u8(static_cast<std::uint8_t>(layer));
+        displayables.string(entry.tag);
+        displayables.string(image->path());
+        const auto adjusted = resting.find(entry.tag);
+        displayables.properties(adjusted != resting.end() ? adjusted->second : image->properties());
+      }
     }
+  }
+
+  const std::map<std::string, std::vector<std::byte>> parts{
+      {std::string{kDisplayablesPart}, displayables.take()},
+      {std::string{kTweensPart}, timeline_.capture()},
+  };
+  Writer writer;
+  writer.u32(kFormatVersion);
+  writer.u32(static_cast<std::uint32_t>(parts.size()));
+  for (const auto& [key, bytes] : parts) {
+    writer.string(key);
+    writer.block(bytes);
   }
   return writer.take();
 }
 
+Scene::Layers Scene::read_displayables(std::span<const std::byte> bytes) {
+  Layers layers;
+  Reader reader{bytes};
+  const std::uint32_t count = reader.u32();
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const std::size_t layer = reader.u8();
+    if (layer >= layers.size()) {
+      throw std::invalid_argument{"scene state: unknown layer"};
+    }
+    std::string tag = reader.string();
+    auto displayable = std::make_unique<ImageDisplayable>(reader.string());
+    displayable->properties() = reader.properties();
+    // push_back without reserve(): `count` is untrusted and may be huge.
+    layers.at(layer).push_back(Entry{.tag = std::move(tag), .displayable = std::move(displayable)});
+  }
+  if (!reader.at_end()) {
+    throw std::invalid_argument{"scene state: unexpected data after the last displayable"};
+  }
+  return layers;
+}
+
 void Scene::restore(std::span<const std::byte> state) {
   Layers layers;
+  Timeline tweens;
   // A snapshot taken without a scene has no bytes: nothing was shown.
   if (!state.empty()) {
     Reader reader{state};
     if (reader.u32() != kFormatVersion) {
       throw std::invalid_argument{"scene state: unknown format version"};
     }
-    const std::uint32_t count = reader.u32();
-    for (std::uint32_t i = 0; i < count; ++i) {
-      const std::size_t layer = reader.u8();
-      if (layer >= layers.size()) {
-        throw std::invalid_argument{"scene state: unknown layer"};
+    const std::uint32_t part_count = reader.u32();
+    std::map<std::string, std::span<const std::byte>, std::less<>> parts;
+    for (std::uint32_t i = 0; i < part_count; ++i) {
+      std::string key = reader.string();
+      const std::span<const std::byte> bytes = reader.block();
+      if (!parts.emplace(std::move(key), bytes).second) {
+        throw std::invalid_argument{"scene state: a part appears twice"};
       }
-      std::string tag = reader.string();
-      ImageDisplayable displayable{reader.string()};
-      displayable.properties() = reader.properties();
-      // push_back without reserve(): `count` is untrusted and may be huge.
-      layers.at(layer).push_back(
-          Entry{.tag = std::move(tag), .displayable = std::move(displayable)});
     }
     if (!reader.at_end()) {
-      throw std::invalid_argument{"scene state: unexpected data after the last displayable"};
+      throw std::invalid_argument{"scene state: unexpected data after the last part"};
+    }
+    // A part this version does not know is left out; a part that is missing is empty.
+    if (const auto found = parts.find(kDisplayablesPart); found != parts.end()) {
+      layers = read_displayables(found->second);
+    }
+    if (const auto found = parts.find(kTweensPart); found != parts.end()) {
+      tweens.restore(found->second, [&layers](std::string_view tag) -> DisplayProperties* {
+        Displayable* shown = find_in(layers, tag);
+        return shown != nullptr ? &shown->properties() : nullptr;
+      });
     }
   }
   layers_ = std::move(layers);
+  timeline_ = std::move(tweens);
 }
 
 std::vector<std::string> Scene::tags(Layer layer) const {
@@ -339,20 +528,21 @@ std::optional<Layer> Scene::layer_of(std::string_view tag) const {
   return slot->layer;
 }
 
-ImageDisplayable* Scene::find(std::string_view tag) {
+Displayable* Scene::find(std::string_view tag) {
   const std::optional<Slot> slot = locate(tag);
-  return slot.has_value() ? &entries(slot->layer).at(slot->index).displayable : nullptr;
+  return slot.has_value() ? entries(slot->layer).at(slot->index).displayable.get() : nullptr;
 }
 
-const ImageDisplayable* Scene::find(std::string_view tag) const {
+const Displayable* Scene::find(std::string_view tag) const {
   const std::optional<Slot> slot = locate(tag);
-  return slot.has_value() ? &entries(slot->layer).at(slot->index).displayable : nullptr;
+  return slot.has_value() ? entries(slot->layer).at(slot->index).displayable.get() : nullptr;
 }
 
 void Scene::update(double seconds) {
+  timeline_.update(seconds, lookup());
   for (std::vector<Entry>& shown : layers_) {
     for (Entry& entry : shown) {
-      entry.displayable.update(seconds);
+      entry.displayable->update(seconds);
     }
   }
 }
@@ -360,19 +550,20 @@ void Scene::update(double seconds) {
 void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
   for (std::vector<Entry>& shown : layers_) {
     for (Entry& entry : shown) {
-      if (entry.displayable.has_texture()) {
+      auto* image = dynamic_cast<ImageDisplayable*>(entry.displayable.get());
+      if (image == nullptr || image->has_texture()) {
         continue;
       }
-      const std::string& path = entry.displayable.path();
+      const std::string& path = image->path();
       auto found = textures_.find(path);
       if (found == textures_.end()) {
         // ponytail: decodes while the main thread waits and never frees a texture. Preload on
         // jobs and evict by memory budget when a real game hitches or runs out.
-        const Image image = load_image(*vfs_, jobs, path).get();
-        const TextureId texture = renderer.create_texture(image, TextureFilter::kLinear);
-        found = textures_.emplace(path, Texture{.id = texture, .size = image.size}).first;
+        const Image decoded = load_image(*vfs_, jobs, path).get();
+        const TextureId texture = renderer.create_texture(decoded, TextureFilter::kLinear);
+        found = textures_.emplace(path, Texture{.id = texture, .size = decoded.size}).first;
       }
-      entry.displayable.set_texture(found->second.id, found->second.size);
+      image->set_texture(found->second.id, found->second.size);
     }
   }
 }
@@ -380,7 +571,7 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
 void Scene::draw(IRenderer& renderer) const {
   for (const Layer layer : kLayerOrder) {
     for (const Entry& entry : entries(layer)) {
-      entry.displayable.draw(renderer);
+      entry.displayable->draw(renderer);
     }
   }
 }

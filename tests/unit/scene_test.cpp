@@ -90,13 +90,13 @@ std::string line_error(const std::string& line) {
 }
 
 const DisplayProperties& properties_of(const Scene& scene, std::string_view tag) {
-  const vnmaki::ImageDisplayable* displayable = scene.find(tag);
+  const vnmaki::Displayable* displayable = scene.find(tag);
   REQUIRE(displayable != nullptr);
   return displayable->properties();
 }
 
 std::string path_of(const Scene& scene, std::string_view tag) {
-  const vnmaki::ImageDisplayable* displayable = scene.find(tag);
+  const auto* displayable = dynamic_cast<const vnmaki::ImageDisplayable*>(scene.find(tag));
   REQUIRE(displayable != nullptr);
   return displayable->path();
 }
