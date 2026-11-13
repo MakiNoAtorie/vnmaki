@@ -1770,6 +1770,10 @@ class ScriptRuntime::Impl {
   [[nodiscard]] std::vector<PlaybackRequest> take_playback_requests() {
     return std::exchange(playback_requests_, {});
   }
+  [[nodiscard]] EvalResult eval(std::string_view code);
+  void set_observer(ScriptObserver* observer) {
+    observer_ = observer != nullptr ? observer : &null_observer();
+  }
   [[nodiscard]] ScreenValue binding(std::string_view table, std::string_view key);
   [[nodiscard]] std::string set_binding(std::string_view table, std::string_view key,
                                         ScreenValue value);
@@ -3171,6 +3175,73 @@ void CompositeSceneState::restore(std::span<const std::byte> state) {
   }
 }
 
+
+namespace {
+
+// Most entries of a table that the REPL prints.
+constexpr int kReplTableEntries = 16;
+
+// A value as the REPL prints it. A table is listed one level deep.
+std::string describe(const sol::state_view& lua, const sol::object& value, int depth) {
+  switch (value.get_type()) {
+    case sol::type::lua_nil:
+      return "nil";
+    case sol::type::string: {
+      const auto text = value.as<std::string>();
+      return depth == 0 ? text : '"' + text + '"';
+    }
+    case sol::type::table: {
+      if (depth > 0) {
+        return "{...}";
+      }
+      std::string text = "{";
+      int count = 0;
+      value.as<sol::table>().for_each([&](const sol::object& key, const sol::object& entry) {
+        if (++count > kReplTableEntries) {
+          return;
+        }
+        text += count == 1 ? "" : ", ";
+        text += key.get_type() == sol::type::string ? key.as<std::string>()
+                                                    : '[' + describe(lua, key, 1) + ']';
+        text += " = " + describe(lua, entry, depth + 1);
+      });
+      return text + (count > kReplTableEntries ? ", ...}" : "}");
+    }
+    default: {
+      const sol::protected_function to_string = lua["tostring"];
+      const sol::protected_function_result result = to_string(value);
+      return result.valid() && result.get_type() == sol::type::string ? result.get<std::string>()
+                                                                      : "(value)";
+    }
+  }
+}
+
+}  // namespace
+
+EvalResult ScriptRuntime::Impl::eval(std::string_view code) {
+  reset_instruction_budget();
+  const MemoryLimitScope limited{allocator_, true};
+  sol::load_result chunk = lua_.load("return " + std::string{code}, "=repl", sol::load_mode::text);
+  if (!chunk.valid()) {
+    chunk = lua_.load(code, "=repl", sol::load_mode::text);
+  }
+  if (!chunk.valid()) {
+    return {.ok = false, .text = chunk.get<sol::error>().what()};
+  }
+  const sol::protected_function function = chunk;
+  const sol::protected_function_result result = function();
+  if (!result.valid()) {
+    return {.ok = false, .text = error_text(result)};
+  }
+  const MemoryLimitScope unlimited{allocator_, false};
+  EvalResult evaluated{.ok = true};
+  for (const auto& value : result) {
+    evaluated.text += evaluated.text.empty() ? "" : "\t";
+    evaluated.text += describe(lua_, value.get<sol::object>(), 0);
+  }
+  return evaluated;
+}
+
 ScriptRuntime::ScriptRuntime(const Vfs& vfs, ScriptRuntimeOptions options)
     : impl_(std::make_unique<Impl>(vfs, options)) {}
 
@@ -3227,5 +3298,7 @@ RunState ScriptRuntime::state() const { return impl_->state(); }
 const BlockingRequest* ScriptRuntime::request() const { return impl_->request(); }
 ScriptPosition ScriptRuntime::position() const { return impl_->position(); }
 const std::string& ScriptRuntime::error() const { return impl_->error(); }
+EvalResult ScriptRuntime::eval(std::string_view code) { return impl_->eval(code); }
+void ScriptRuntime::set_observer(ScriptObserver* observer) { impl_->set_observer(observer); }
 
 }  // namespace vnmaki

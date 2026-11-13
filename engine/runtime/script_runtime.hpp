@@ -630,6 +630,13 @@ struct ScriptRuntimeOptions {
   std::uint64_t random_seed = kDefaultRandomSeed;
 };
 
+/// The outcome of ScriptRuntime::eval.
+struct EvalResult {
+  bool ok = false;
+  /// The returned values, tab-separated (empty for a statement), or the error message.
+  std::string text{};
+};
+
 /// One Lua VM running a game's scripts.
 ///
 /// Game scripts see a restricted standard library: base (without `dofile`,
@@ -835,6 +842,14 @@ class ScriptRuntime {
   [[nodiscard]] ScriptPosition position() const;
   /// Why the runtime failed; empty unless kFailed.
   [[nodiscard]] const std::string& error() const;
+
+  /// Dev tools: runs `code` in the script sandbox, as a chunk of the REPL. Tries it as an
+  /// expression (`return <code>`) first, then as statements. A change to `store` stays until
+  /// the next rollback or load (neither is in the input log); a blocking call is an error.
+  /// Never throws; a script error is `ok == false`.
+  [[nodiscard]] EvalResult eval(std::string_view code);
+  /// Replaces the observer (null: none). Pass one that outlives the runtime or reset it first.
+  void set_observer(ScriptObserver* observer);
 
  private:
   class Impl;
