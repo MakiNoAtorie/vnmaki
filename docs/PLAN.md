@@ -496,11 +496,11 @@ Files: new `engine/plugin/`, `cmake/VnmakiPlugins.cmake`, runtime, `plugins/exam
 
 This task is the Phase 5 acceptance demo.
 
-- [ ] Add a `content` label to `templates/default/`. It has a generated Japanese `.po`, a language switch, captions, a 3D model with a clip, and a Lua plugin transition.
-- [ ] End-to-end headless test on Windows: `build windows`, then play `content` from packs in both languages with the fake TTS.
-- [ ] `vnmaki check` on the template gives no findings.
-- [ ] GPU goldens of the demo at three fixed frames.
-- [ ] Write `docs/localization.md`, `docs/accessibility.md`, `docs/plugins.md` and `docs/build.md`.
+- [x] Add a `content` label to `templates/default/`. It has a generated Japanese `.po`, a language switch, captions, a 3D model with a clip, and a Lua plugin transition.
+- [x] End-to-end headless test on Windows: `build windows`, then play `content` from packs in both languages with the fake TTS.
+- [x] `vnmaki check` on the template gives no findings.
+- [x] GPU goldens of the demo at three fixed frames.
+- [x] Write `docs/localization.md`, `docs/accessibility.md`, `docs/plugins.md` and `docs/build.md`.
 
 ### Deferred
 
