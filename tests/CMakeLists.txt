@@ -290,6 +290,12 @@ if(VNMAKI_DEV_TOOLS)
   target_sources(vnmaki_unit_tests PRIVATE unit/tools_demo_test.cpp)
 endif()
 
+# The Phase 7 demo (ticket 53): the screen editor on the template quick menu. The launcher and the
+# vertical say box are in launcher_test.cpp and tests/render/template_vertical_render_test.cpp.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/later_demo_test.cpp)
+endif()
+
 # Profiler: frame phases with a fake clock, the CSV text and the load timing (ticket 33). It needs
 # no ImGui, so it is in every build.
 target_sources(vnmaki_unit_tests PRIVATE unit/profiler_test.cpp)
