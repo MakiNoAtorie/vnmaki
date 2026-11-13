@@ -29,8 +29,10 @@ option(VNMAKI_SHADER_COMPILER "Link the run-time shader compiler (SDL_shadercros
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(VnmakiOptions)
+include(VnmakiPlugins)
 
 add_subdirectory(engine)
+add_subdirectory(plugins)
 add_subdirectory(cli)
 
 enable_testing()

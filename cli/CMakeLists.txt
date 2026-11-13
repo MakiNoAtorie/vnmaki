@@ -1,5 +1,6 @@
 add_executable(vnmaki main.cpp)
 target_link_libraries(vnmaki PRIVATE vnmaki::engine vnmaki::options)
+vnmaki_link_plugins(vnmaki)
 target_sources(vnmaki PRIVATE window_command.cpp window_command.hpp)
 target_sources(vnmaki PRIVATE image_view.cpp image_view.hpp)
 target_sources(vnmaki PRIVATE new_command.cpp new_command.hpp)
