@@ -95,7 +95,9 @@ std::string LayeredSprite::set_attributes(const LayerAttributes& changes, bool c
       continue;
     }
     layer.previous = layer.current;
+    layer.previous_play = layer.play;
     layer.current = value;
+    layer.play = 0;
     layer.fading = fades;
     layer.elapsed = 0;
     if (!fades) {
@@ -121,8 +123,49 @@ std::optional<float> LayeredSprite::fade_progress(std::string_view group) const 
   return std::nullopt;
 }
 
-const std::string& LayeredSprite::path_of(std::size_t group, std::size_t value) const {
-  return definition_->groups.at(group).values.at(value).path;
+LayeredSprite::Picture LayeredSprite::picture_of(std::size_t group, std::size_t value,
+                                                 double play) const {
+  const LayeredDefinition::Value& chosen = definition_->groups.at(group).values.at(value);
+  if (chosen.animation == nullptr) {
+    return Picture{.path = &chosen.path};
+  }
+  const AnimationDefinition::Frame& frame =
+      chosen.animation->frames.at(chosen.animation->frame_at(play));
+  return Picture{.path = &frame.path, .uv = frame.uv, .animation = chosen.animation.get()};
+}
+
+Size LayeredSprite::picture_size(const Picture& picture) const {
+  const Texture* texture = texture_of(*picture.path);
+  if (texture == nullptr) {
+    return {};
+  }
+  return picture.animation != nullptr ? picture.animation->frame_size(texture->size)
+                                      : texture->size;
+}
+
+bool LayeredSprite::animating() const {
+  for (std::size_t group = 0; group < layers_.size(); ++group) {
+    if (!layers_[group].current.has_value()) {
+      continue;
+    }
+    const auto& animation = definition_->groups[group].values.at(*layers_[group].current).animation;
+    if (animation != nullptr && animation->running_at(layers_[group].play)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void LayeredSprite::finish_animations() {
+  for (std::size_t group = 0; group < layers_.size(); ++group) {
+    if (!layers_[group].current.has_value()) {
+      continue;
+    }
+    const auto& animation = definition_->groups[group].values.at(*layers_[group].current).animation;
+    if (animation != nullptr && !animation->loop) {
+      layers_[group].play = std::max(layers_[group].play, animation->duration());
+    }
+  }
 }
 
 const LayeredSprite::Texture* LayeredSprite::texture_of(const std::string& path) const {
@@ -135,8 +178,22 @@ std::vector<std::string> LayeredSprite::missing_paths() const {
   for (std::size_t group = 0; group < layers_.size(); ++group) {
     const Layer& layer = layers_[group];
     for (const std::optional<std::size_t>& value : {layer.current, layer.previous}) {
-      if (value.has_value() && texture_of(path_of(group, *value)) == nullptr) {
-        missing.push_back(path_of(group, *value));
+      if (!value.has_value()) {
+        continue;
+      }
+      const LayeredDefinition::Value& chosen = definition_->groups.at(group).values.at(*value);
+      const auto need = [&](const std::string& path) {
+        if (texture_of(path) == nullptr && std::ranges::find(missing, path) == missing.end()) {
+          missing.push_back(path);
+        }
+      };
+      // An animation needs all its frames at once, so none loads while it plays.
+      if (chosen.animation == nullptr) {
+        need(chosen.path);
+        continue;
+      }
+      for (const AnimationDefinition::Frame& frame : chosen.animation->frames) {
+        need(frame.path);
       }
     }
   }
@@ -149,6 +206,7 @@ void LayeredSprite::set_texture(const std::string& path, TextureId texture, Size
 
 void LayeredSprite::update(double seconds) {
   for (Layer& layer : layers_) {
+    layer.play += seconds;
     if (!layer.fading) {
       continue;
     }
@@ -164,22 +222,22 @@ Size LayeredSprite::base_size() const {
   if (layers_.empty() || !layers_.front().current.has_value()) {
     return {};
   }
-  const Texture* base = texture_of(path_of(0, *layers_.front().current));
-  return base != nullptr ? base->size : Size{};
+  return picture_size(picture_of(0, *layers_.front().current, layers_.front().play));
 }
 
-void LayeredSprite::draw_layer(IRenderer& renderer, const std::string& path, Size base,
+void LayeredSprite::draw_layer(IRenderer& renderer, const Picture& picture, Size base,
                                float opacity) const {
-  const Texture* texture = texture_of(path);
+  const Texture* texture = texture_of(*picture.path);
   if (texture == nullptr) {
     return;
   }
+  const Size size = picture_size(picture);
   // The window of the crop and the layer, both in pixels from the sprite's origin.
   const RectF& crop = properties().crop;
   const auto base_width = static_cast<float>(base.width);
   const auto base_height = static_cast<float>(base.height);
-  const auto layer_width = static_cast<float>(texture->size.width);
-  const auto layer_height = static_cast<float>(texture->size.height);
+  const auto layer_width = static_cast<float>(size.width);
+  const auto layer_height = static_cast<float>(size.height);
   const float window_left = crop.x * base_width;
   const float window_top = crop.y * base_height;
   const float window_width = crop.width * base_width;
@@ -195,10 +253,10 @@ void LayeredSprite::draw_layer(IRenderer& renderer, const std::string& path, Siz
                    .y = (top - window_top) / window_height,
                    .width = (right - left) / window_width,
                    .height = (bottom - top) / window_height};
-  const RectF uv{.x = left / layer_width,
-                 .y = top / layer_height,
-                 .width = (right - left) / layer_width,
-                 .height = (bottom - top) / layer_height};
+  const RectF uv = uv_within(picture.uv, RectF{.x = left / layer_width,
+                                               .y = top / layer_height,
+                                               .width = (right - left) / layer_width,
+                                               .height = (bottom - top) / layer_height});
   Color tint = properties().tint;
   tint.a *= properties().alpha * opacity;
   renderer.draw(Quad{.corners = place_corners(properties(), base, part), .uv = uv, .tint = tint},
@@ -216,12 +274,12 @@ void LayeredSprite::draw(IRenderer& renderer) const {
     if (layer.fading) {
       // The new image fades in over the old one, which stays whole: no see-through dip.
       if (layer.previous.has_value()) {
-        draw_layer(renderer, path_of(group, *layer.previous), base, 1);
+        draw_layer(renderer, picture_of(group, *layer.previous, layer.previous_play), base, 1);
       }
       opacity = std::min(1.0F, static_cast<float>(layer.elapsed / definition_->crossfade));
     }
     if (layer.current.has_value()) {
-      draw_layer(renderer, path_of(group, *layer.current), base, opacity);
+      draw_layer(renderer, picture_of(group, *layer.current, layer.play), base, opacity);
     }
   }
 }
