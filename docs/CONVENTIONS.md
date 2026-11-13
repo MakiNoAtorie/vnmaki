@@ -422,3 +422,16 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `load()` runs before `load_scripts()`. `flush()` writes the file only if `persistent` or the seen set changed. Call it whenever the story waits. The destructor calls it too.
   - A seen step is `{label, step, source hash of the label}` (`SeenStep`). An edited label has a new hash, so all its steps are unseen.
 - Hosts call `Saves::poll()` and `PersistentStore::flush()` once for each frame (`vnmaki run`) or after each input (`run_headless` with `HeadlessOptions::saves`).
+
+### `vnmaki new` and templates (`engine/runtime/new_project.*`, `cli/new_command.*`, `templates/`)
+
+- `vnmaki new <name>` copies `templates/default/` to `<name>`. The title is the last part of `<name>` (`project_title`). It stops (exit 1, nothing written) if the target exists and is not an empty folder.
+- `create_project(template_dir, target_dir, title)` replaces `{{title}}` in `.toml` and `.lua` files. It escapes `\` and `"` for a quoted string, which is the same in TOML and Lua. Other files are copied byte for byte.
+- `find_template(name, executable_dir, source_templates_dir)` tries `<folder of vnmaki>/templates/<name>`, then the source tree. The CLI target gets the source tree path from the definition `VNMAKI_SOURCE_TEMPLATES_DIR`. `executable_directory()` is in `sdl_platform.hpp`.
+- A template is a game: `project.toml`, `scripts/`, assets. It uses the default screens of the engine and does not define its own. Add a template as a folder of `templates/` with a `project.toml`.
+- The binary assets of a template come from a generator, not from files that someone drew or downloaded. `tools/generators/template_assets.py OUT_DIR` writes the assets of `templates/default/` (it only adds files). Run it on `templates/default` again after you change it, and commit the result. `.gitattributes` keeps `templates/` free of line-ending changes.
+  - It reuses `text_fixtures.build_font` for `fonts/default.ttf`, a 5 by 7 pixel font (ASCII only). A glyph shape can be a list of boxes.
+  - A test (`unit.template: the assets are ...`) runs the generator into `fixtures/template` and compares it with the template. PNG files are compared by name only, because zlib versions differ.
+  - An asset must be MIT, OFL or CC0, or be made by a generator. `templates/default/ASSETS.txt` records the license.
+- The end-to-end test is `tests/unit/new_project_test.cpp` (`SampleGame`): `create_project`, then a `ScriptRuntime` with `Scene`, `Audio` and `Saves` (in a temporary directory) plays both branches, rolls back over the menu, saves, loads and rolls back again. It needs no window and no GPU, so it runs on every CI platform. `cli.new_makes_a_game_and_stops_at_a_second_one` and `cli.new_game_runs_in_a_window` (a GPU test) use `tests/cli/run_new.cmake`.
+- The sample story starts with `call_screen("title", ...)`, so `vnmaki run <game> --headless` stops there. Use a unit test to play it.
