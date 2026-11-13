@@ -481,6 +481,7 @@ end
 -- size, color, background, padding, gap, margin, width, height, grow, align, justify, fill,
 -- border = { width, color }, focus = { background, color, border } and hover = { ... }; `extends`
 -- names a style whose options come first. A node takes `style = "name"`; its own options win.
+-- A style for text nodes can have vertical = true (columns, right to left).
 -- The styles that the engine's default screens declare are the defaults of every theme.
 local styles, default_styles = {}, {}
 local apply_language_styles  -- set below: runs the style override file of the language
@@ -489,13 +490,15 @@ local apply_language_styles  -- set below: runs the style override file of the l
 local overlaying = false
 local plain_style_options = {
   font = true, size = true, color = true, padding = true, gap = true, margin = true, width = true,
-  height = true, grow = true, align = true, justify = true, fill = true,
+  height = true, grow = true, align = true, justify = true, fill = true, vertical = true,
 }
 local border_style_options = { width = "border_width", color = "border_color" }
 local state_style_options = { background = "bg", color = "color", border = "border" }
 -- Only nodes that take the focus have focus options.
 local focus_node_options = { focus_bg = true, focus_color = true, focus_border = true }
 local focus_node_kinds = { button = true, toggle = true, slider = true, input = true }
+-- Only text nodes can be vertical.
+local text_node_options = { vertical = true }
 
 local function style_group(group, value, names, prefix)
   if type(value) ~= "table" then
@@ -617,12 +620,19 @@ local function resolve_style(kind, name)
   local props = {}
   for i = #chain, 1, -1 do
     for key, value in pairs(chain[i].props) do
-      if focus_node_kinds[kind] or not focus_node_options[key] then
+      if (focus_node_kinds[kind] or not focus_node_options[key])
+         and (kind == "text" or not text_node_options[key]) then
         props[key] = value
       end
     end
   end
   return props
+end
+
+-- style_option(name, key): option `key` of style `name` as a text node gets it, or nil. The default
+-- say and NVL screens read `vertical` of say_text and nvl_text with it.
+function style_option(name, key)
+  return resolve_style("text", name)[key]
 end
 
 -- theme("name") makes the styles of the engine's screens, then runs styles/<name>.lua, which
@@ -653,14 +663,15 @@ end
 -- Languages (docs/SPEC.md section 16). languages() lists the codes of project.toml, the source
 -- language first. engine.set_language_styles(chunk) puts the styles back as the scripts and the theme
 -- made them, then runs `chunk`, the style override file of the player's language (nil: none).
+-- `vertical` (project.toml [vertical]) then sets vertical = true in the styles say_text and nvl_text.
 -- A theme() call runs the override again. A chunk that fails is dropped and its error raised.
 local language_list, language_unpack = engine.languages, table.unpack
 function languages()
   return { language_unpack(language_list) }
 end
-local language_chunk, styles_without_language
+local language_chunk, language_vertical, styles_without_language
 function apply_language_styles()
-  if language_chunk == nil then
+  if language_chunk == nil and not language_vertical then
     styles_without_language = nil
     return
   end
@@ -669,20 +680,35 @@ function apply_language_styles()
   for key, entry in pairs(styles_without_language) do
     styles[key] = entry
   end
-  local ok, problem = pcall(language_chunk)
-  if not ok then
-    styles, styles_without_language, language_chunk = styles_without_language, nil, nil
-    error(problem, 0)
+  if language_chunk ~= nil then
+    local ok, problem = pcall(language_chunk)
+    if not ok then
+      styles, styles_without_language, language_chunk = styles_without_language, nil, nil
+      error(problem, 0)
+    end
+  end
+  if language_vertical then
+    for name in pairs({ say_text = true, nvl_text = true }) do
+      local entry = styles[name]
+      if entry ~= nil then
+        local props = {}
+        for key, value in pairs(entry.props) do
+          props[key] = value
+        end
+        props.vertical = true
+        styles[name] = { props = props, extends = entry.extends }
+      end
+    end
   end
 end
-function engine.set_language_styles(chunk)
+function engine.set_language_styles(chunk, vertical)
   if contrast_on then  -- high contrast goes over the language: it is set again when styles resolve
     styles, plain_styles, contrast_on = plain_styles or styles, nil, false
   end
   if styles_without_language ~= nil then
     styles = styles_without_language
   end
-  language_chunk = chunk
+  language_chunk, language_vertical = chunk, vertical == true
   apply_language_styles()
 end
 )lua" R"lua(
@@ -2475,7 +2501,7 @@ class ScriptRuntime::Impl {
                                          ScreenNodeDef& tree);
   // Remembers `path` (empty: none) as the style override file, and applies it if the scripts are
   // loaded. Returns why it cannot.
-  [[nodiscard]] std::string set_language_styles(std::string_view path);
+  [[nodiscard]] std::string set_language_styles(std::string_view path, bool vertical);
   [[nodiscard]] StoreSnapshot capture_persistent() const {
     return capture_table(persistent_, "persistent");
   }
@@ -2634,6 +2660,7 @@ class ScriptRuntime::Impl {
   bool started_ = false;
   bool scripts_loaded_ = false;
   std::string language_style_path_;
+  bool language_vertical_ = false;
   RunState state_ = RunState::kIdle;
   std::uint32_t hook_period_ = 0;
   BlockingRequest request_;
@@ -3544,14 +3571,16 @@ void ScriptRuntime::Impl::load_scripts() {
     load_script(path);
   }
   scripts_loaded_ = true;
-  if (const std::string problem = set_language_styles(language_style_path_); !problem.empty()) {
+  if (const std::string problem = set_language_styles(language_style_path_, language_vertical_);
+      !problem.empty()) {
     observer_->on_warning(problem);
   }
 }
 
-std::string ScriptRuntime::Impl::set_language_styles(std::string_view requested) {
+std::string ScriptRuntime::Impl::set_language_styles(std::string_view requested, bool vertical) {
   const std::string path{requested};  // a copy: `requested` can be language_style_path_ itself
   language_style_path_ = path;
+  language_vertical_ = vertical;
   if (!scripts_loaded_) {
     return {};  // load_scripts() applies it after the game's styles
   }
@@ -3576,7 +3605,7 @@ std::string ScriptRuntime::Impl::set_language_styles(std::string_view requested)
   }
   const MemoryLimitScope limited{allocator_, true};
   sol::protected_function apply = engine_["set_language_styles"];
-  const sol::protected_function_result result = apply(chunk);
+  const sol::protected_function_result result = apply(chunk, vertical);
   return result.valid() ? std::string{} : error_text(result);
 }
 
@@ -3859,6 +3888,7 @@ std::unique_ptr<ScriptRuntime::Impl> ScriptRuntime::Impl::reload(std::string& pr
   auto fresh = std::make_unique<Impl>(*vfs_, options_);
   fresh->observer_ = observer_;
   fresh->language_style_path_ = language_style_path_;
+  fresh->language_vertical_ = language_vertical_;
   try {
     problem = fresh->restore_persistent(capture_persistent());
     if (problem.empty()) {
@@ -4270,8 +4300,8 @@ std::string ScriptRuntime::build_screen(std::string_view name, const ScreenNodeD
   return impl_->build_screen(name, args, tree);
 }
 
-std::string ScriptRuntime::set_language_styles(std::string_view path) {
-  return impl_->set_language_styles(path);
+std::string ScriptRuntime::set_language_styles(std::string_view path, bool vertical) {
+  return impl_->set_language_styles(path, vertical);
 }
 StoreSnapshot ScriptRuntime::persistent_snapshot() const { return impl_->capture_persistent(); }
 std::string ScriptRuntime::restore_persistent(const StoreSnapshot& snapshot) {

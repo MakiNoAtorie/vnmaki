@@ -30,7 +30,8 @@ class UiBuildError : public std::runtime_error {
 ///               font (a family of the FontSet); border_width (length) and border_color
 ///               (colour; unset: `color`); hover_bg, hover_color, hover_border (colours)
 ///   text        markup (boolean: the text has text tags), reveal (boolean: the typewriter
-///               shows this node's glyphs one by one; see SayBoxView)
+///               shows this node's glyphs one by one; see SayBoxView), vertical (boolean: the
+///               text runs in columns, the first at the right, and wraps at the node's `height`)
 ///   button      returns (what the screen returns when the button is activated; unset, the button
 ///               does nothing), focus_bg, focus_color, focus_border (colours), disabled (boolean)
 ///   toggle      a caption like a button, and bind_table and bind_key (what the script's

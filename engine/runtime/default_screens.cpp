@@ -97,19 +97,24 @@ end)
 -- `reveal = true` is the one the typewriter shows glyph by glyph.
 -- A text scale above 1 (prefs.text_scale) makes the name line taller and the box grow upward, up to
 -- 60% of the canvas, so the line wraps in a bigger box.
+-- If the style say_text has vertical = true (project.toml [vertical], or a language's style file),
+-- the line runs in columns from the right and wraps at the box's height, so the box is taller.
 screen("say", function(args)
   local w = canvas.width
   local margin, pad = w // 16, w // 64
   local scale = math.max(prefs.text_scale, 1)
-  local box_height = math.min(h * 7 // 24 * scale, h * 6 // 10)
+  local vertical = style_option("say_text", "vertical")
+  local box_height = math.min((vertical and h * 5 // 12 or h * 7 // 24) * scale, h * 6 // 10)
   local name_size = h // 32 * scale
+  local text_y = pad + name_size + pad // 2
   return box {
     box {
       style = "say_box",
       x = margin, y = h - h // 24 - box_height, width = w - 2 * margin, height = box_height,
       text { args.speaker or "", style = "say_name", x = pad, y = pad, color = args.color },
       text { args.text or "", style = "say_text", markup = true, reveal = true, x = pad,
-             y = pad + name_size + pad // 2, width = w - 2 * margin - 2 * pad },
+             y = text_y, width = w - 2 * margin - 2 * pad,
+             height = vertical and (box_height - text_y - pad) or nil },
     },
   }
 end)
@@ -275,16 +280,32 @@ end)
 -- The NVL screen: the page of lines over the whole canvas. `args` has `lines` (how many page
 -- lines come first), `typing` (the last line is on the typewriter: its text node has `reveal`),
 -- the lines (speaker, text, color) and then the options of a menu (text). An option returns its
--- number, from 1.
+-- number, from 1. If the style nvl_text has vertical = true (see the say screen), each line is a
+-- column, the newest at the left, and a speaker's name is a column at the right of its line.
 screen("nvl", function(args)
   local nodes = {}
-  for i = 1, args.lines do
-    local line = args[i]
-    if line.speaker ~= "" then
-      nodes[#nodes + 1] = text { line.speaker, style = "nvl_name", color = line.color }
+  if style_option("nvl_text", "vertical") then
+    local columns = {}
+    local length = h - 200 * u - (#args > args.lines and h * 3 // 10 or 0)
+    for i = args.lines, 1, -1 do
+      local line = args[i]
+      columns[#columns + 1] = text { line.text, style = "nvl_text", markup = true, height = length,
+                                     reveal = args.typing and i == args.lines }
+      if line.speaker ~= "" then
+        columns[#columns + 1] = text { line.speaker, style = "nvl_name", color = line.color,
+                                       vertical = true, height = length }
+      end
     end
-    nodes[#nodes + 1] = text { line.text, style = "nvl_text", markup = true,
-                               reveal = args.typing and i == args.lines }
+    nodes[1] = hbox { gap = 24 * u, justify = "end", height = length, table.unpack(columns) }
+  else
+    for i = 1, args.lines do
+      local line = args[i]
+      if line.speaker ~= "" then
+        nodes[#nodes + 1] = text { line.speaker, style = "nvl_name", color = line.color }
+      end
+      nodes[#nodes + 1] = text { line.text, style = "nvl_text", markup = true,
+                                 reveal = args.typing and i == args.lines }
+    end
   end
   for i = args.lines + 1, #args do
     nodes[#nodes + 1] = button { args[i].text, returns = i - args.lines, style = "nvl_choice" }

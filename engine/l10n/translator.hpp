@@ -70,6 +70,11 @@ class Translator {
   [[nodiscard]] const std::string& source_language() const { return languages_.front(); }
   [[nodiscard]] const std::vector<std::string>& languages() const { return languages_; }
   [[nodiscard]] TextDirection direction() const { return direction_; }
+  /// Whether the language's story text is vertical (the `[vertical]` entry of project.toml).
+  [[nodiscard]] bool vertical() const {
+    const auto found = vertical_.find(language_);
+    return found != vertical_.end() && found->second;
+  }
   /// The style override file of the language, or empty: the `[styles]` entry of project.toml, else
   /// `styles/<code>.lua` if it exists.
   [[nodiscard]] std::string style_file() const;
@@ -90,6 +95,7 @@ class Translator {
   std::vector<std::string> languages_;
   std::map<std::string, TextDirection> directions_;
   std::map<std::string, std::string> styles_;
+  std::map<std::string, bool> vertical_;
   std::string language_;
   TextDirection direction_ = TextDirection::kLtr;
   Catalog catalog_;

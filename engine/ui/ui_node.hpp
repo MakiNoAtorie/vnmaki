@@ -100,6 +100,9 @@ struct UiStyle {
   /// The filled part of a slider or bar, and the mark of a checked toggle.
   Color fill = kWhite;
   float text_size = kDefaultTextSize;
+  /// A text node sets its text in columns that run down and from right to left
+  /// (TextOrientation::kVertical). `height` is the column length: the text wraps there.
+  bool vertical = false;
 };
 
 /// The datum a toggle, slider or bar shows and changes: `table` is "store", "persistent" or

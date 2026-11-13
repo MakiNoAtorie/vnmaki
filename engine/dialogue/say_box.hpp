@@ -31,6 +31,10 @@ struct SayBoxStyle {
   /// The line wraps at this width.
   float wrap_width = 0;
   Color text_color = kWhite;
+  /// The line runs in columns, the first at the right edge of the text area, and wraps at
+  /// `wrap_height` (the column length) in place of `wrap_width`. The name stays horizontal.
+  bool vertical = false;
+  float wrap_height = 0;
 
   /// The look for a virtual resolution: a box across the bottom with margins on a 16:9 canvas.
   [[nodiscard]] static SayBoxStyle for_resolution(Size virtual_size);

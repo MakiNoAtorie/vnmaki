@@ -33,8 +33,11 @@ using YogaTree = std::unique_ptr<std::remove_pointer_t<YGNodeRef>, YogaDeleter>;
 YGSize measure_node(YGNodeConstRef yoga, float width, YGMeasureMode width_mode, float height,
                     YGMeasureMode height_mode) {
   const auto* context = static_cast<const MeasureContext*>(YGNodeGetContext(yoga));
-  const float max_width = width_mode == YGMeasureModeUndefined ? kNoLimit : width;
-  MeasuredSize size = (*context->measure)(*context->node, max_width);
+  // Vertical text wraps at its height: the column length.
+  const bool vertical = context->node->style.vertical;
+  const float limit = vertical ? height : width;
+  const bool limited = (vertical ? height_mode : width_mode) != YGMeasureModeUndefined;
+  MeasuredSize size = (*context->measure)(*context->node, limited ? limit : kNoLimit);
   if (context->node->kind == NodeKind::kToggle) {
     size.width += context->node->style.text_size * kToggleMarkEm;
   } else if (context->node->kind == NodeKind::kInput) {

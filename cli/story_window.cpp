@@ -207,7 +207,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
         warn(problem);
       }
     }
-    static_cast<void>(runtime.set_language_styles(translator.style_file()));
+    static_cast<void>(runtime.set_language_styles(translator.style_file(), translator.vertical()));
     FontSet fonts = fonts_of(translator.language()).set;  // a missing font fails before the window
     runtime.load_scripts();
 #if VNMAKI_DEV_TOOLS
@@ -297,7 +297,8 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       ui_renderer.set_fonts(chosen);
       say_box.set_language(chosen, translator.direction());
       ui.relayout();
-      if (const std::string problem = runtime.set_language_styles(translator.style_file());
+      if (const std::string problem =
+              runtime.set_language_styles(translator.style_file(), translator.vertical());
           !problem.empty()) {
         warn(problem);
       }

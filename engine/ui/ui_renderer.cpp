@@ -56,6 +56,12 @@ float content_width(const UiNode& node) {
   return std::max(node.rect.width - (2 * node.style.padding), kMinWrapWidth);
 }
 
+// The wrap limit of a text node's content: its width, or for vertical text its height.
+float content_limit(const UiNode& node) {
+  const float length = node.style.vertical ? node.rect.height : node.rect.width;
+  return std::max(length - (2 * node.style.padding), kMinWrapWidth);
+}
+
 float widest_line(const TextLayout& layout) {
   float widest = 0;
   for (const TextLine& line : layout.lines) {
@@ -98,7 +104,7 @@ void UiRenderer::set_fonts(FontSet fonts) {
 
 const TextLayout& UiRenderer::layout(const UiNode& node, float wrap_width) {
   auto key = std::make_tuple(display_text(node), node.markup, node.style.text_size, wrap_width,
-                             node.style.font);
+                             node.style.font, node.style.vertical);
   const auto found = layouts_.find(key);
   if (found != layouts_.end()) {
     return found->second;
@@ -119,7 +125,9 @@ const TextLayout& UiRenderer::layout(const UiNode& node, float wrap_width) {
       }
     }
   }
-  TextLayout laid_out = layout_text(fonts_, styled, node.style.text_size, wrap_width);
+  TextLayout laid_out = layout_text(
+      fonts_, styled, node.style.text_size, wrap_width,
+      node.style.vertical ? TextOrientation::kVertical : TextOrientation::kHorizontal);
   return layouts_.emplace(std::move(key), std::move(laid_out)).first->second;
 }
 
@@ -129,8 +137,8 @@ TextMeasure UiRenderer::text_measure() {
       return MeasuredSize{};
     }
     const TextLayout& text = layout(node, std::max(max_width, kMinWrapWidth));
-    const float height = text.lines.empty() ? 0 : text.lines.back().top + text.lines.back().height;
-    return MeasuredSize{.width = widest_line(text), .height = height};
+    const PointF extent = layout_extent(text);
+    return MeasuredSize{.width = extent.x, .height = extent.y};
   };
 }
 
@@ -167,7 +175,7 @@ std::optional<TextureId> UiRenderer::image_texture(const std::string& name) {
 
 void UiRenderer::prepare(const UiNode& root, float scale) {
   if (shows_text(root)) {
-    const TextLayout& text = layout(root, content_width(root));
+    const TextLayout& text = layout(root, content_limit(root));
     SizeAtlas& entry = atlases_[root.style.text_size];
     if (text.glyph_count > 0 && (entry.atlas.prepare(text, scale) || !entry.texture)) {
       if (entry.texture) {
@@ -191,7 +199,7 @@ void UiRenderer::draw_fill(RectF rect, Color color) {
 }
 
 void UiRenderer::draw_text(const UiNode& node, float scale, PointF origin) {
-  const TextLayout& text = layout(node, content_width(node));
+  const TextLayout& text = layout(node, content_limit(node));
   const SizeAtlas& entry = atlases_[node.style.text_size];
   if (text.glyph_count == 0 || !entry.texture) {
     return;
@@ -201,6 +209,8 @@ void UiRenderer::draw_text(const UiNode& node, float scale, PointF origin) {
     indent = std::max((content_width(node) - widest_line(text)) / 2, 0.0F);  // centred caption
   } else if (node.kind == NodeKind::kToggle) {
     indent = node.style.text_size * kToggleMarkEm;  // room for the mark
+  } else if (node.style.vertical) {
+    indent = content_width(node) - layout_extent(text).x;  // the first column is at the right edge
   }
   const PointF at{.x = origin.x + ((node.rect.x + node.style.padding + indent) * scale),
                   .y = origin.y + ((node.rect.y + node.style.padding) * scale)};
