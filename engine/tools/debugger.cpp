@@ -22,6 +22,7 @@
 #include <nlohmann/json.hpp>
 #include <sol/sol.hpp>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/tools/inspect.hpp"
 
@@ -467,16 +468,16 @@ class Debugger::Impl {
   // The client's path of a script as the VFS path, lower case (paths are not case-sensitive on
   // Windows, and so the compare is not either).
   [[nodiscard]] std::string vfs_path(std::string_view client_path) const {
-    const fs::path path{client_path};
+    const fs::path path = utf8_path(client_path);
     if (path.is_absolute()) {
       std::error_code error;
       const fs::path relative =
           fs::weakly_canonical(path, error).lexically_relative(fs::weakly_canonical(project_dir_));
       if (!relative.empty() && *relative.begin() != "..") {
-        return lower(relative.generic_string());
+        return lower(to_generic_utf8(relative));
       }
     }
-    return lower(path.generic_string());
+    return lower(to_generic_utf8(path));
   }
 
   void set_breakpoints(const Json& request, const Json& args) {
@@ -522,7 +523,7 @@ class Debugger::Impl {
            {"line", frame.line},
            {"column", 1},
            {"source",
-            {{"name", file.filename().generic_string()}, {"path", file.generic_string()}}}});
+            {{"name", to_generic_utf8(file.filename())}, {"path", to_generic_utf8(file)}}}});
     }
     respond(request, {{"stackFrames", std::move(list)}, {"totalFrames", frames_.size()}});
   }

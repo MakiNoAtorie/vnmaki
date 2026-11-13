@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/core/utf8_path.hpp"
 #include "engine/l10n/extract.hpp"
 #include "engine/text/markup.hpp"
 
@@ -36,7 +37,7 @@ std::string write_file(const std::filesystem::path& path, const std::string& tex
   }
   std::error_code error;
   std::filesystem::rename(temporary, path, error);
-  return error ? "cannot write " + path.string() + ": " + error.message() : std::string{};
+  return error ? "cannot write " + to_utf8(path) + ": " + error.message() : std::string{};
 }
 
 }  // namespace
