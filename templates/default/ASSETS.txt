@@ -1,16 +1,26 @@
 Assets of this project
 =====================
 
-images/, audio/ and fonts/default.ttf were made by the script
+images/, audio/, shaders/ and fonts/default.ttf were made by the script
 tools/generators/template_assets.py of VNMaki (https://github.com/MakiNoAtorie/vnmaki), from
-rectangles, ellipses and sine waves. No other artwork, music or font file was used.
+rectangles, ellipses and sine waves. No other artwork, music, voice or font file was used.
+
+movies/clip.webm is the tiny test clip of VNMaki (tests/fixtures/video/): six solid-color frames
+and a 440 Hz tone, AV1 and Opus in WebM. The ffmpeg command that made it is in
+tests/fixtures/video/README.md of the repository.
 
 They are dedicated to the public domain under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).
 You may use, change and sell them with your game, with no credit. Replace them with your own.
 
   images/bg/classroom.png            backdrop
-  images/eileen/*.png                layers of the sprite "eileen"
+  images/bg/rooftop.png              backdrop of the presentation demo
+  images/eileen/*.png                layers of the sprite "eileen": base, outfit, face, eyelids
+                                     (the frames of the blink) and mouth (the frames of lip sync)
+  images/mask/iris.png               mask of a transition
   audio/bgm/theme.wav                music loop
+  audio/voice/eileen/hello.wav       a voice line of tone bursts, for lip sync
+  shaders/sepia.frag.hlsl            a game shader
+  movies/clip.webm                   a short movie
   fonts/default.ttf                  5 by 7 pixel font, ASCII only
 
 The font has no accents or non-Latin letters. For a game in another language, use a font that
