@@ -14,4 +14,11 @@ namespace vnmaki::shaders {
 /// sdf_text_shader() in engine/text/text.hpp).
 [[nodiscard]] ShaderBytecode sdf_text_frag();
 
+/// shaders/transition_*.frag.hlsl: the built-in transitions (engine/anim/transition.hpp).
+[[nodiscard]] ShaderBytecode transition_dissolve_frag();
+[[nodiscard]] ShaderBytecode transition_fade_frag();
+[[nodiscard]] ShaderBytecode transition_slide_frag();
+[[nodiscard]] ShaderBytecode transition_wipe_frag();
+[[nodiscard]] ShaderBytecode transition_mask_frag();
+
 }  // namespace vnmaki::shaders

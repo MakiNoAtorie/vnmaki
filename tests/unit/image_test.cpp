@@ -17,14 +17,19 @@
 #include "engine/jobs/job_system.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/vfs/vfs.hpp"
+#include "fuzz/image_properties.hpp"
 
 namespace {
 
 const std::filesystem::path kImages =
     std::filesystem::path{VNMAKI_FIXTURES_DIR} / "render" / "images";
 
+const std::filesystem::path kWebpImages =
+    std::filesystem::path{VNMAKI_FIXTURES_DIR} / "webp" / "images";
+
 std::vector<std::byte> read_fixture(const std::string& name) {
-  std::ifstream file{kImages / name, std::ios::binary};
+  const std::filesystem::path directory = name.ends_with(".webp") ? kWebpImages : kImages;
+  std::ifstream file{directory / name, std::ios::binary};
   REQUIRE(file);
   std::vector<char> chars{std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}};
   std::vector<std::byte> bytes;
@@ -106,8 +111,27 @@ TEST_CASE("image: a JPEG decodes to opaque RGBA") {
   CHECK(near(pixel_at(image, 15, 7), teal, kTolerance));
 }
 
-TEST_CASE("image: data that is not a whole PNG or JPEG is an ImageError") {
-  for (const char* name : {"not_an_image.png", "truncated.png", "empty.png"}) {
+TEST_CASE("image: a lossless WebP decodes to RGBA with premultiplied alpha") {
+  // tools/generators/webp_fixtures.py: red, green / blue, white at alpha 128.
+  const vnmaki::Image image = vnmaki::decode_image(read_fixture("rgba_2x2.webp"));
+  REQUIRE(image.size == vnmaki::Size{.width = 2, .height = 2});
+  const std::vector<std::uint8_t> expected{255, 0,   0,   255,  //
+                                           0,   255, 0,   255,  //
+                                           0,   0,   255, 255,  //
+                                           128, 128, 128, 128};
+  CHECK(image.pixels == expected);
+}
+
+TEST_CASE("image: the fuzz properties hold for every fixture") {
+  for (const char* name : {"rgba_2x2.png", "rgb_3x1.png", "blocks_16x8.jpg", "rgba_2x2.webp",
+                           "truncated.webp", "not_an_image.png"}) {
+    CAPTURE(name);
+    vnmaki::fuzz::check_image_properties(read_fixture(name));
+  }
+}
+
+TEST_CASE("image: data that is not a whole PNG, JPEG or WebP is an ImageError") {
+  for (const char* name : {"not_an_image.png", "truncated.png", "empty.png", "truncated.webp"}) {
     CAPTURE(name);
     CHECK_THROWS_AS(static_cast<void>(vnmaki::decode_image(read_fixture(name))),
                     vnmaki::ImageError);

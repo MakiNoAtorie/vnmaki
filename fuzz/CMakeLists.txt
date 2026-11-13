@@ -17,13 +17,27 @@ vnmaki_add_fuzzer(vfs_path vfs_path_fuzzer.cpp)
 # Image decoder (ticket 05). Random bytes rarely get past a PNG or JPEG header, so a second
 # smoke run starts from the decoder test fixtures (seeds, never written to) and keeps what it
 # finds in a corpus directory in the build tree.
-vnmaki_add_fuzzer(image image_fuzzer.cpp)
+vnmaki_add_fuzzer(image image_fuzzer.cpp image_properties.hpp)
 if(TARGET vnmaki_fixtures_render)
-  add_dependencies(fuzz_image vnmaki_fixtures_render)
+  add_dependencies(fuzz_image vnmaki_fixtures_render vnmaki_fixtures_webp)
   set(vnmaki_image_corpus "${CMAKE_CURRENT_BINARY_DIR}/corpus/image")
   file(MAKE_DIRECTORY "${vnmaki_image_corpus}")
-  add_test(NAME fuzz.image.seeded COMMAND fuzz_image -runs=10000 -seed=1 "${vnmaki_image_corpus}"
-                                          "${PROJECT_BINARY_DIR}/fixtures/render/images")
+  add_test(NAME fuzz.image.seeded
+           COMMAND fuzz_image -runs=10000 -seed=1 "${vnmaki_image_corpus}"
+                   "${PROJECT_BINARY_DIR}/fixtures/render/images"
+                   "${PROJECT_BINARY_DIR}/fixtures/webp/images")
+endif()
+
+# WebP (ticket 31). The input is the data of the VP8L chunk (the target adds the RIFF container),
+# so the second smoke run starts from the VP8L fixture.
+vnmaki_add_fuzzer(webp webp_fuzzer.cpp image_properties.hpp)
+if(TARGET vnmaki_fixtures_webp)
+  add_dependencies(fuzz_webp vnmaki_fixtures_webp)
+  set(vnmaki_webp_corpus "${CMAKE_CURRENT_BINARY_DIR}/corpus/webp")
+  file(MAKE_DIRECTORY "${vnmaki_webp_corpus}")
+  add_test(NAME fuzz.webp.seeded
+           COMMAND fuzz_webp -runs=10000 -seed=1 "${vnmaki_webp_corpus}"
+                   "${PROJECT_BINARY_DIR}/fixtures/webp/seeds")
 endif()
 
 # Script runtime (ticket 06).

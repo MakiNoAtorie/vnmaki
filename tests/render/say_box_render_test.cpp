@@ -99,3 +99,60 @@ TEST_CASE("say box: narration has no name and the same panel") {
 
   CHECK(stats.draw_calls == 2);  // the panel and the line
 }
+
+TEST_CASE("say box: a screen from a script draws like the built-in box") {
+  const auto renderer = vnmaki::test::make_headless_renderer();
+  if (!renderer) {
+    return;
+  }
+  vnmaki::Vfs vfs;
+  REQUIRE(
+      vfs.mount(vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_FIXTURES_DIR} / "text")));
+  const vnmaki::Font font = vnmaki::load_font(vfs, "fonts/boxes.ttf");
+  const vnmaki::DialogueLine line{
+      .speaker = "Eileen", .color = std::optional<std::uint32_t>{kLilac}, .text = "You came back."};
+
+  const vnmaki::TextureId target =
+      renderer->create_render_target(kTargetSize, vnmaki::TextureFilter::kNearest);
+  // A different style: the screen from the source must win over it.
+  vnmaki::SayBoxView view{*renderer, font, vnmaki::SayBoxStyle::for_resolution(kTargetSize)};
+  view.set_screen_source(
+      [](const vnmaki::DialogueLine& shown) -> std::optional<vnmaki::UiNode> {
+        vnmaki::UiNode tree = vnmaki::make_say_screen(test_style(), shown);
+        tree.children.front().children.back().reveal = true;  // the line is the panel's last node
+        return tree;
+      },
+      kTargetSize);
+  REQUIRE(view.glyph_count(line) == line.text.size());
+
+  renderer->begin_frame();
+  renderer->begin_pass({.target = target, .clear = vnmaki::rgba8(kBackdrop, kBackdrop, kBackdrop)});
+  view.draw(line, kRevealed, 1);
+  static_cast<void>(renderer->end_frame());
+
+  vnmaki::test::check_golden(renderer->read_pixels(target), "say_box");
+}
+
+TEST_CASE("say box: a source that gives nothing leaves the built-in box") {
+  const auto renderer = vnmaki::test::make_headless_renderer();
+  if (!renderer) {
+    return;
+  }
+  vnmaki::Vfs vfs;
+  REQUIRE(
+      vfs.mount(vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_FIXTURES_DIR} / "text")));
+  const vnmaki::Font font = vnmaki::load_font(vfs, "fonts/boxes.ttf");
+  const vnmaki::DialogueLine line{.speaker = {}, .color = std::nullopt, .text = "Rain."};
+
+  const vnmaki::TextureId target =
+      renderer->create_render_target(kTargetSize, vnmaki::TextureFilter::kNearest);
+  vnmaki::SayBoxView view{*renderer, font, test_style()};
+  view.set_screen_source(
+      [](const vnmaki::DialogueLine&) { return std::optional<vnmaki::UiNode>{}; }, kTargetSize);
+  renderer->begin_frame();
+  renderer->begin_pass({.target = target, .clear = vnmaki::rgba8(kBackdrop, kBackdrop, kBackdrop)});
+  view.draw(line, view.glyph_count(line), 1);
+  const vnmaki::FrameStats stats = renderer->end_frame();
+
+  CHECK(stats.draw_calls == 2);  // the panel and the line
+}

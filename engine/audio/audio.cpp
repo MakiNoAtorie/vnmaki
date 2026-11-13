@@ -107,6 +107,7 @@ struct Track {
 struct Channel {
   double volume = 1;
   double duck = 1;
+  double preference = 1;  // the player's volume setting: not state, restore() leaves it
   std::optional<MusicSpec> music{};
   std::vector<Track> tracks{};
 };
@@ -475,7 +476,7 @@ void Audio::Impl::mix_block(std::span<float> out) {
       target.duck = target.duck < goal ? std::min(target.duck + step, goal)
                                        : std::max(target.duck - step, goal);
     }
-    const double level = target.volume * target.duck;
+    const double level = target.volume * target.duck * target.preference;
     for (Track& track : target.tracks) {
       mix_track(track, level, out);
     }
@@ -662,6 +663,18 @@ void Audio::stop_movie_audio(std::uint64_t token) {
   std::erase_if(target.tracks, [token](const Track& old) { return old.movie == token; });
 }
 
+std::string Audio::set_preference_volume(std::string_view channel_name, double level) {
+  if (channel_name.empty()) {
+    return "the channel name is empty";
+  }
+  if (!(level >= 0 && level <= 1)) {
+    return "volume must be a number from 0 to 1";
+  }
+  const std::scoped_lock lock{impl_->mutex};
+  impl_->channel(channel_name).preference = level;
+  return {};
+}
+
 std::vector<std::byte> Audio::capture() const {
   const std::scoped_lock lock{impl_->mutex};
   const auto changed = [](const Channel& entry) {
@@ -751,6 +764,7 @@ AudioChannelState Audio::channel(std::string_view name) const {
   const Channel& entry = found->second;
   state.volume = entry.volume;
   state.duck = entry.duck;
+  state.preference = entry.preference;
   state.music = entry.music ? entry.music->name : std::string{};
   state.tracks.reserve(entry.tracks.size());
   for (const Track& track : entry.tracks) {

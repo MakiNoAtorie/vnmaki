@@ -67,8 +67,9 @@ struct MenuRequest {
 using ScreenValue = std::variant<std::monostate, bool, std::int64_t, double, std::string>;
 
 /// One node of a screen tree, as the scripts wrote it (docs/SPEC.md section 15). `kind` is
-/// `box`, `hbox`, `vbox`, `text`, `image` or `button`; `text` is the content a node was given
-/// first (a caption, an image name); `props` are the named options. engine/ui/ interprets them.
+/// `box`, `hbox`, `vbox`, `grid`, `text`, `image`, `button`, `toggle`, `slider` or `bar`; `text` is
+/// the content a node was given first (a caption, an image name); `props` are the named options.
+/// engine/ui/ interprets them.
 struct ScreenNodeDef {
   std::string kind{};
   std::string text{};
@@ -90,7 +91,8 @@ struct CallScreenRequest {
 /// `wait(tag)` or `wait_all()`: the script waits until the tweens of `tag` (all tweens when `tag`
 /// is empty) have ended. A wait is always a step, also when nothing is tweening, so a replay
 /// counts the same steps as live play. Answered with ScriptRuntime::advance(); see
-/// engine/anim/wait_presenter.hpp. Rollback skips wait steps (ScriptPosition::wait).
+/// engine/anim/wait_presenter.hpp. Rollback skips wait steps (ScriptPosition::wait). A transition
+/// is a wait too, for the tag kTransitionTag.
 struct WaitRequest {
   std::string tag{};
 
@@ -272,6 +274,23 @@ struct ShaderRequest {
   std::vector<UniformValue> uniforms{};
 };
 
+/// `transition(name, options)`, or the `with` option of `scene`, `show` and `hide`. Fields the
+/// script left out are empty.
+struct TransitionRequest {
+  /// A built-in transition (engine/anim/transition.hpp) or the name of a declared game shader.
+  std::string name{};
+  std::optional<double> duration{};      ///< Seconds.
+  std::optional<std::uint32_t> color{};  ///< 0xRRGGBB: what `fade` goes through.
+  std::optional<std::string> mask{};     ///< An image name: the mask of `mask`.
+  std::optional<double> softness{};      ///< The soft edge of `wipe_*` and `mask`, from 0 to 1.
+  std::vector<UniformValue> uniforms{};  ///< The uniforms of a custom shader, but "progress".
+  /// Set while the runtime replays: the transition is checked and not shown.
+  bool replaying = false;
+};
+
+/// The tag of the WaitRequest that a transition makes: the script blocks like `wait`.
+inline constexpr std::string_view kTransitionTag = "@transition";
+
 /// `tween(tag, options)`, or the group `sequence{...}` or `parallel{...}` of tweens. Fields the
 /// script left out are empty. Positions are fractions of the virtual resolution, as for `show`;
 /// `anchor` and `crop` are fractions of the displayable.
@@ -303,6 +322,18 @@ struct TweenRequest {
   std::vector<TweenRequest> children{};  ///< The members of a group.
   /// Set on the outermost request while the runtime replays: tweens that end go to their end
   /// value at once, and loops start at time 0.
+  bool replaying = false;
+  /// As `replaying`, for a request that is not a replay: a camera move that is instant.
+  bool instant = false;
+};
+
+/// `shake { strength, duration }`: the camera shakes for `duration` seconds, from `strength`
+/// down to nothing. The shake is a fixed function of time; it is not part of any snapshot.
+struct ShakeRequest {
+  double strength = 0;    ///< The largest offset, as a fraction of the virtual height.
+  double duration = 0.5;  ///< Seconds.
+  /// Set while the runtime replays, or when motion is reduced: the request is checked and
+  /// nothing shakes.
   bool replaying = false;
 };
 
@@ -357,6 +388,24 @@ class SceneCommands {
   /// Sets the shader and uniform values of a displayable or a layer. Returns why it cannot (an
   /// unknown tag, shader or uniform).
   [[nodiscard]] virtual std::string set_shader(const ShaderRequest& /*request*/) { return {}; }
+
+  /// Checks a transition and starts it: it mixes the frame as it was before the changes of this
+  /// step with the frame after them (engine/anim/transition.hpp). Returns why it cannot (an
+  /// unknown name or a bad option), as for `show`. The runtime then waits like `wait`: the tag
+  /// of that wait is kTransitionTag (`tweening(kTransitionTag)` is true while it runs, and
+  /// `finish_tweens(kTransitionTag)` ends it). The default does nothing, for implementations
+  /// that cannot draw transitions.
+  [[nodiscard]] virtual std::string transition(const TransitionRequest& /*request*/) { return {}; }
+
+  /// `layer(name, { parallax = f })`: the pan of the layer is `f` times the camera's pan. Returns
+  /// why it cannot (an unknown layer, one the camera does not move, a number out of range). The
+  /// default does nothing, for implementations without a camera.
+  [[nodiscard]] virtual std::string set_parallax(std::string_view /*layer*/, double /*factor*/) {
+    return {};
+  }
+  /// Starts a camera shake. `tweening("@camera")` is true while it runs, and
+  /// `finish_tweens("@camera")` ends it. The default does nothing.
+  [[nodiscard]] virtual std::string shake(const ShakeRequest& /*request*/) { return {}; }
 };
 
 /// What `show_screen`, `hide_screen` and `call_screen` need from the engine (engine/ui/ui_host.hpp
@@ -572,6 +621,10 @@ struct ScriptRuntimeOptions {
   /// calls only reach the observer. Must outlive the runtime. An Audio goes here, and in
   /// `scene_state` (inside a CompositeSceneState when there is a Scene too).
   AudioCommands* audio = nullptr;
+  /// The virtual resolution, as the read-only global `canvas` (`canvas.width`, `canvas.height`)
+  /// that screens size themselves by.
+  int canvas_width = 1920;
+  int canvas_height = 1080;
   /// The first state of the script RNG (`rand`, `math.random`). The same seed,
   /// scripts and inputs always give the same story.
   std::uint64_t random_seed = kDefaultRandomSeed;
@@ -624,6 +677,18 @@ struct ScriptRuntimeOptions {
 /// Playback: `skip("seen")`, `skip("all")` and `skip(false)` (also `"off"`) set the skip mode;
 /// `auto(true)` and `auto(false)` turn auto-advance on and off. They queue a PlaybackRequest.
 /// `character { auto_multiplier = }` scales the auto-advance time of that character's lines.
+///
+/// Bindings and preferences: `bind(table, key)` is a node option that follows `store`,
+/// `persistent` or `prefs` and writes it back (`toggle`, `slider`, `bar`; `grid { columns = n }`
+/// lays children out in rows). `prefs` is `persistent.prefs` with defaults: text_speed (characters
+/// a second, 40), auto_delay (seconds, 1), volume_music, volume_sound, volume_voice,
+/// volume_ambient and volume_ui (0 to 1, 1), fullscreen (false), skip_unseen (false: the skip
+/// key stops at unread text), window_opacity (0.3 to 1, 1) and reduce_motion (false). The engine
+/// applies them.
+///
+/// `load_scripts()` loads the engine's default screens first (engine/runtime/default_screens.cpp:
+/// title, say, choice, save, load, preferences, quick_menu, confirm, nvl, gallery), so a game
+/// replaces one by defining a screen of that name.
 ///
 /// `persistent` is a second table like `store`, but for data that outlives a playthrough (seen
 /// text, unlocks, preferences). Snapshots, saves, rollback and load never change it; the host
@@ -724,6 +789,20 @@ class ScriptRuntime {
 
   /// The `skip` and `auto` requests scripts made since the last call, in order.
   [[nodiscard]] std::vector<PlaybackRequest> take_playback_requests();
+  /// The boolean, number or string in field `key` of `table` ("store", "persistent" or "prefs");
+  /// nil (std::monostate) for anything else. `prefs` reads give the default of a key the player
+  /// never set.
+  [[nodiscard]] ScreenValue binding(std::string_view table, std::string_view key) const;
+  /// Writes `value` (nil removes the key) to field `key` of `table`. Returns why it cannot (an
+  /// unknown table, a value of the wrong type for a pref), or an empty string. A write to `store`
+  /// is not in the input log, so a rollback or a load takes it back like any other change.
+  [[nodiscard]] std::string set_binding(std::string_view table, std::string_view key,
+                                        ScreenValue value);
+  /// Builds screen `name` for the arguments `args` (the table the screen function gets: `props`
+  /// are its named fields, `children` its list, each a table of the same form) into `tree`.
+  /// Returns why it cannot, or an empty string. Runs the screen's Lua function.
+  [[nodiscard]] std::string build_screen(std::string_view name, const ScreenNodeDef& args,
+                                         ScreenNodeDef& tree);
   /// A copy of `persistent` as it is now. Throws ScriptError like store_snapshot().
   [[nodiscard]] StoreSnapshot persistent_snapshot() const;
   /// Makes `persistent` equal to `snapshot`. Call it before load_scripts() so that scripts that

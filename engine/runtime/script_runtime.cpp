@@ -22,6 +22,7 @@
 #include <sol/sol.hpp>
 
 #include "engine/core/byte_stream.hpp"
+#include "engine/runtime/default_screens.hpp"
 #include "engine/text/markup.hpp"
 #include "engine/vfs/vfs.hpp"
 
@@ -257,18 +258,22 @@ end
 
 -- Defined with the layered sprites below: the attributes `show` gives a layered sprite.
 local layered_attributes
+-- Defined with the transitions below: the `with` option of scene, show and hide.
+local begin_with, end_with
 
 function scene(image, options)
   if type(image) ~= "string" then
     bad_argument("scene", 1, "string", image)
   end
-  options_argument("scene", options)
+  options = options_argument("scene", options)
   require_label("scene")
+  local with = begin_with("scene", options, 3)
   local problem = engine.scene(image)
   if problem then
     error(problem, 2)
   end
   engine.scene_command("scene " .. image)
+  end_with(with)
 end
 
 function show(tag, options)
@@ -285,6 +290,7 @@ function show(tag, options)
   local loop = option("show", options, "loop", "boolean")
   local attributes, attribute_text = layered_attributes(options, image or tag)
   require_label("show")
+  local with = begin_with("show", options, 3)
   local problem = engine.show(tag, image or tag, at, x, y, layer, movie, loop, attributes)
   if problem then
     error(problem, 2)
@@ -310,15 +316,19 @@ function show(tag, options)
   end
   command = command .. engine.shader_options("show", tag, false, options)
   engine.scene_command(command .. attribute_text)
+  end_with(with)
 end
 
-function hide(tag)
+function hide(tag, options)
   if type(tag) ~= "string" then
     bad_argument("hide", 1, "string", tag)
   end
+  options = options_argument("hide", options)
   require_label("hide")
+  local with = begin_with("hide", options, 3)
   engine.hide(tag)
   engine.scene_command("hide " .. tag)
+  end_with(with)
 end
 
 -- Audio. Times are in seconds.
@@ -443,7 +453,7 @@ end
 -- Screens (docs/SPEC.md section 15). A node is a plain table the engine reads: kind, text (the
 -- caption or image name), props (booleans, numbers and strings) and children.
 local pairs, math_type = pairs, math.type
-local node_takes_text = { text = true, button = true, image = true }
+local node_takes_text = { text = true, button = true, image = true, toggle = true }
 local function is_node(value)
   return type(value) == "table" and type(value.kind) == "string" and type(value.props) == "table"
          and type(value.children) == "table"
@@ -470,7 +480,9 @@ local function node_constructor(kind)
       end
     end
     for key, value in pairs(spec) do
-      if type(key) == "string" then
+      if key == "bind" and type(value) == "table" and value.bind_table ~= nil then
+        node.props.bind_table, node.props.bind_key = value.bind_table, value.bind_key
+      elseif type(key) == "string" then
         local value_type = type(value)
         if value_type ~= "boolean" and value_type ~= "number" and value_type ~= "string" then
           error(format("bad option '%s' to '%s' (boolean, number or string expected, got %s)", key,
@@ -486,6 +498,8 @@ local function node_constructor(kind)
 end
 box, hbox, vbox = node_constructor("box"), node_constructor("hbox"), node_constructor("vbox")
 text, image, button = node_constructor("text"), node_constructor("image"), node_constructor("button")
+toggle, slider, bar = node_constructor("toggle"), node_constructor("slider"), node_constructor("bar")
+grid = node_constructor("grid")
 
 local screens = {}
 local function register_screen(name, definition)
@@ -517,7 +531,9 @@ local function screen_root(fname, name, args)
   if args ~= nil and type(args) ~= "table" then
     bad_argument(fname, 2, "table or nil", args, 1)
   end
-  require_label(fname, 1)
+  if fname ~= nil then
+    require_label(fname, 1)
+  end
   local root = screens[name]
   if root == nil then
     error(format("unknown screen '%s'", name), 3)
@@ -618,6 +634,9 @@ local function tween_node(fname, tag, options, level)
       error(format("bad option 'tint' to '%s' (\"#rrggbb\" expected)", fname), level)
     end
     node.tint = tonumber(tint:sub(2), 16)
+  end
+  if tag == "@camera" then
+    engine.camera_options(fname, options, node, level)
   end
   return node
 end
@@ -759,7 +778,139 @@ function layer(name, options)
   end
   options = options_argument("layer", options)
   require_label("layer")
+  engine.layer_parallax(name, options)
   engine.scene_command("layer " .. name .. engine.shader_options("layer", name, true, options))
+end
+)lua" R"lua(
+-- Transitions (docs/SPEC.md section 10). transition(name, options) mixes the frame from before
+-- the changes of this step into the frame after them, and blocks like `wait` until it ends: the
+-- script waits for the tag "@transition". The `with` option of scene, show and hide does the same
+-- after its own change: with = "dissolve", or with = { "wipe_left", duration = 1 }.
+-- The options are duration, color ("#rrggbb"), mask (an image name), softness and uniforms.
+local function transition_request(fname, options, level)
+  local spec = {}
+  spec.duration = typed(fname, options, "duration", "number", level)
+  spec.softness = typed(fname, options, "softness", "number", level)
+  spec.mask = typed(fname, options, "mask", "string", level)
+  spec.uniforms = typed(fname, options, "uniforms", "table", level)
+  local color = typed(fname, options, "color", "string", level)
+  if color ~= nil then
+    if not color:match("^#%x%x%x%x%x%x$") then
+      error(format("bad option 'color' to '%s' (\"#rrggbb\" expected)", fname), level)
+    end
+    spec.color = tonumber(color:sub(2), 16)
+  end
+  return spec
+end
+
+-- `level` is the error() level that reaches the script from this function.
+local function start_transition(fname, name, options, level)
+  local spec = transition_request(fname, options, level + 1)
+  local problem = engine.transition(name, spec)
+  if problem then
+    error(problem, level)
+  end
+end
+
+local function finish_transition(name)
+  engine.scene_command("transition " .. name)
+  engine.wait("@transition")
+end
+
+function transition(name, options)
+  if type(name) ~= "string" then
+    bad_argument("transition", 1, "string", name)
+  end
+  options = options_argument("transition", options)
+  require_label("transition")
+  start_transition("transition", name, options, 3)
+  finish_transition(name)
+end
+
+-- Starts the transition of a `with` option before the change, so that a bad name changes nothing,
+-- and returns its name. end_with(name) then blocks for it.
+begin_with = function(fname, options, level)
+  local with = options.with
+  if with == nil then
+    return nil
+  end
+  local name = type(with) == "table" and with[1] or with
+  if type(name) ~= "string" then
+    error(format("bad option 'with' to '%s' (a transition name, or a table { name, ... } expected)",
+                 fname), level)
+  end
+  start_transition(fname, name, type(with) == "table" and with or {}, level + 1)
+  return name
+end
+end_with = function(name)
+  if name ~= nil then
+    finish_transition(name)
+  end
+end
+)lua" R"lua(
+-- Camera (docs/SPEC.md sections 10 and 17). camera { x, y, zoom, rotation, duration, ease } moves
+-- the view of the layers from the background to the overlay: it is a tween of the tag "@camera",
+-- instant without a duration. shake { strength, duration } shakes it. layer(name, { parallax = f })
+-- makes the pan of one layer f times the camera's. The prefs flag reduce_motion (persistent.prefs,
+-- which a game or the default screens may not have) stops shakes and makes camera moves instant.
+function engine.reduce_motion()
+  local prefs = persistent.prefs
+  return type(prefs) == "table" and prefs.reduce_motion ~= nil and prefs.reduce_motion ~= false
+end
+
+-- The options of a tween of "@camera" that other tags do not have. `level` is as for tween_node.
+function engine.camera_options(fname, options, node, level)
+  local zoom = typed(fname, options, "zoom", "number", level + 1)
+  if zoom ~= nil then
+    node.scale_x, node.scale_y = zoom, zoom
+  end
+  if engine.reduce_motion() then
+    node.duration, node.delay, node.loop, node.yoyo = 0, 0, false, false
+    node.instant = true
+  end
+end
+
+-- The `parallax` option of `layer`. Errors reach the script that called `layer`.
+function engine.layer_parallax(name, options)
+  local parallax = options.parallax
+  if parallax == nil then
+    return
+  end
+  if type(parallax) ~= "number" then
+    error(format("bad option 'parallax' to 'layer' (number expected, got %s)", type(parallax)), 3)
+  end
+  local problem = engine.set_parallax(name, parallax)
+  if problem then
+    error(problem, 3)
+  end
+end
+
+function camera(options)
+  if type(options) ~= "table" then
+    bad_argument("camera", 1, "table", options)
+  end
+  require_label("camera")
+  local node = tween_node("camera", "@camera", options, 3)
+  node.duration = node.duration or 0
+  node.instant = node.duration == 0 and (node.delay or 0) == 0
+  start_tween(node, "camera")
+end
+
+function shake(options)
+  if type(options) ~= "table" then
+    bad_argument("shake", 1, "table", options)
+  end
+  require_label("shake")
+  local strength = typed("shake", options, "strength", "number", 2)
+  local duration = typed("shake", options, "duration", "number", 2)
+  if strength == nil then
+    error("shake() needs a strength", 2)
+  end
+  local problem = engine.shake(strength, duration or 0.5, engine.reduce_motion())
+  if problem then
+    error(problem, 2)
+  end
+  engine.scene_command("shake")
 end
 )lua" R"lua(
 -- Layered sprites: layered(name, { order = { group, ... }, <group> = "image" or
@@ -768,7 +919,7 @@ end
 local pairs, ipairs, sort = pairs, ipairs, table.sort
 local layered_defs = {}
 local show_options = { image = true, at = true, x = true, y = true, layer = true,
-                       shader = true, uniforms = true, movie = true, loop = true }
+                       shader = true, uniforms = true, movie = true, loop = true, with = true }
 
 -- `level` is the error() level of the caller of this function.
 local function layered_option(key, expected, value, level)
@@ -1083,7 +1234,107 @@ string.dump = nil
 
 -- Globals the engine owns: scripts read them but cannot replace them.
 local persistent = {}
-local reserved = { store = store, persistent = persistent }
+)lua" R"lua(
+-- Preferences, bindings and the bridge the engine calls (docs/SPEC.md sections 15 and 17).
+-- `prefs` keeps what the player changed in persistent.prefs; a value never set reads as its
+-- default. The engine reads these keys: text_speed (characters a second), auto_delay (seconds),
+-- volume_<channel> (0 to 1), fullscreen, skip_unseen, window_opacity (0.3 to 1)
+-- and reduce_motion.
+local pref_defaults = {
+  text_speed = 40, auto_delay = 1, volume_music = 1, volume_sound = 1, volume_voice = 1,
+  volume_ambient = 1, volume_ui = 1, fullscreen = false, skip_unseen = false, window_opacity = 1,
+  reduce_motion = false,
+}
+local prefs = setmetatable({}, {
+  __index = function(_, key)
+    local saved, value = rawget(persistent, "prefs"), nil
+    if type(saved) == "table" then
+      value = saved[key]
+    end
+    if value == nil then
+      return pref_defaults[key]
+    end
+    return value
+  end,
+  __newindex = function(_, key, value)
+    if type(key) ~= "string" then
+      error("prefs keys must be strings", 2)
+    end
+    local default = pref_defaults[key]
+    local value_type = type(value)
+    local scalar = value_type == "boolean" or value_type == "number" or value_type == "string"
+    if value ~= nil and (not scalar or (default ~= nil and value_type ~= type(default))) then
+      error(format("bad value for prefs.%s (%s expected, got %s)", key,
+                   default ~= nil and type(default) or "boolean, number or string", value_type), 2)
+    end
+    local saved = rawget(persistent, "prefs")
+    if type(saved) ~= "table" then
+      saved = {}
+      persistent.prefs = saved
+    end
+    saved[key] = value
+  end,
+  __metatable = false,
+})
+
+-- The virtual resolution, for screens that size themselves.
+local canvas = setmetatable({}, {
+  __index = { width = engine.canvas_width, height = engine.canvas_height },
+  __newindex = function()
+    error("canvas is read-only", 2)
+  end,
+  __metatable = false,
+})
+
+-- bind(table, key): a node option that follows store, persistent or prefs and writes it back
+-- (toggle, slider and bar). `table` must be one of those three.
+local bind_roots = { store = store, persistent = persistent, prefs = prefs }
+function bind(target, key)
+  local name
+  for candidate, root in next, bind_roots do
+    if rawequal(root, target) then
+      name = candidate
+    end
+  end
+  if name == nil then
+    bad_argument("bind", 1, "store, persistent or prefs", target)
+  end
+  if type(key) ~= "string" then
+    bad_argument("bind", 2, "string", key)
+  end
+  return { bind_table = name, bind_key = key }
+end
+
+-- What the engine calls from C++: read and write a bound datum, and build a screen.
+local bridge = {}
+function bridge.get(name, key)
+  local root = bind_roots[name]
+  if root == nil then
+    return nil
+  end
+  local value = root[key]
+  local value_type = type(value)
+  if value_type == "boolean" or value_type == "number" or value_type == "string" then
+    return value
+  end
+  return nil
+end
+function bridge.set(name, key, value)
+  local root = bind_roots[name]
+  if root == nil then
+    return format("unknown table '%s' (use store, persistent or prefs)", tostring(name))
+  end
+  local ok, problem = pcall(function() root[key] = value end)
+  return not ok and tostring(problem) or nil
+end
+function bridge.build(name, args)
+  if screens[name] == nil then
+    return nil
+  end
+  return screen_root(nil, name, args)
+end
+)lua" R"lua(
+local reserved = { store = store, persistent = persistent, prefs = prefs, canvas = canvas }
 do
   local warned = {}
   setmetatable(_G, {
@@ -1143,6 +1394,7 @@ end
 function limits.reset(ticks)
   ticks_left = ticks
 end
+limits.bridge = bridge
 function limits.link(id)
   if link_handler == nil then
     return false
@@ -1393,6 +1645,7 @@ std::string read_tween(const sol::table& table, int depth, TweenRequest& request
   request.ease = table.get_or<std::string>("ease", request.ease);
   request.loop = table.get_or("loop", false);
   request.yoyo = table.get_or("yoyo", false);
+  request.instant = table.get_or("instant", false);
   if (const auto children = table.get<sol::optional<sol::table>>("children")) {
     const std::size_t count = children->size();
     request.children.reserve(count);
@@ -1496,6 +1749,7 @@ class ScriptRuntime::Impl {
   ~Impl() = default;
 
   void load_script(std::string_view path);
+  void run_chunk(std::string_view source, const std::string& chunk_name);
   void load_scripts();
   [[nodiscard]] bool has_label(std::string_view name) const { return labels_.contains(name); }
   void start(std::string_view name);
@@ -1516,6 +1770,11 @@ class ScriptRuntime::Impl {
   [[nodiscard]] std::vector<PlaybackRequest> take_playback_requests() {
     return std::exchange(playback_requests_, {});
   }
+  [[nodiscard]] ScreenValue binding(std::string_view table, std::string_view key);
+  [[nodiscard]] std::string set_binding(std::string_view table, std::string_view key,
+                                        ScreenValue value);
+  [[nodiscard]] std::string build_screen(std::string_view name, const ScreenNodeDef& args,
+                                         ScreenNodeDef& tree);
   [[nodiscard]] StoreSnapshot capture_persistent() const {
     return capture_table(persistent_, "persistent");
   }
@@ -1652,6 +1911,9 @@ class ScriptRuntime::Impl {
   sol::protected_function limits_watch_;
   sol::protected_function limits_reset_;
   sol::protected_function link_;
+  sol::protected_function bridge_get_;
+  sol::protected_function bridge_set_;
+  sol::protected_function bridge_build_;
 
   std::map<std::string, Label, std::less<>> labels_;
   // Script path -> source text, for the label source hashes; kept only while
@@ -1728,6 +1990,10 @@ ScriptRuntime::Impl::Impl(const Vfs& vfs, const ScriptRuntimeOptions& options)
   limits_watch_ = limits_table["watch"];
   limits_reset_ = limits_table["reset"];
   link_ = limits_table["link"];
+  const sol::table bridge = limits_table["bridge"];
+  bridge_get_ = bridge["get"];
+  bridge_set_ = bridge["set"];
+  bridge_build_ = bridge["build"];
   if (options_.instruction_limit != 0) {
     hook_period_ = std::min(options_.instruction_limit, kHookPeriod);
     limits_configure_(hook_period_);
@@ -1736,6 +2002,8 @@ ScriptRuntime::Impl::Impl(const Vfs& vfs, const ScriptRuntimeOptions& options)
 
 void ScriptRuntime::Impl::bind_engine() {
   engine_ = lua_.create_table();
+  engine_["canvas_width"] = options_.canvas_width;
+  engine_["canvas_height"] = options_.canvas_height;
   engine_["in_label"] = [this](sol::this_state state) { return in_label(state); };
   engine_["has_label"] = [this](const std::string& name) { return has_label(name); };
   // Primitives that create Lua values do so inside an unlimited scope and
@@ -1955,6 +2223,52 @@ void ScriptRuntime::Impl::bind_engine() {
       }
     }
     return problem_or_nil(state, options_.scene->set_shader(request));
+  };
+  // A transition is checked during a replay too, and not shown.
+  engine_["transition"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
+                                                 const sol::table& spec) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    if (options_.scene == nullptr) {
+      return problem_or_nil(state, {});
+    }
+    TransitionRequest request{.name = name, .replaying = replaying_};
+    if (const auto duration = spec.get<sol::optional<double>>("duration")) {
+      request.duration = *duration;
+    }
+    if (const auto softness = spec.get<sol::optional<double>>("softness")) {
+      request.softness = *softness;
+    }
+    if (const auto mask = spec.get<sol::optional<std::string>>("mask")) {
+      request.mask = *mask;
+    }
+    if (const auto color = spec.get<sol::optional<std::int64_t>>("color")) {
+      request.color = static_cast<std::uint32_t>(*color);
+    }
+    if (const auto uniforms = spec.get<sol::optional<sol::table>>("uniforms")) {
+      if (std::string problem = read_uniforms(*uniforms, request.uniforms); !problem.empty()) {
+        return problem_or_nil(state, problem);
+      }
+    }
+    return problem_or_nil(state, options_.scene->transition(request));
+  };
+  // The parallax of a layer is state: it changes during a replay too.
+  engine_["set_parallax"] = [this, problem_or_nil](sol::this_state state, const std::string& layer,
+                                                   double factor) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    return problem_or_nil(state, options_.scene == nullptr
+                                     ? std::string{}
+                                     : options_.scene->set_parallax(layer, factor));
+  };
+  // A replay, or reduced motion (`still`), checks a shake and does not show it.
+  engine_["shake"] = [this, problem_or_nil](sol::this_state state, double strength,
+                                            double duration, bool still) {
+    const MemoryLimitScope unlimited{allocator_, false};
+    return problem_or_nil(
+        state, options_.scene == nullptr
+                   ? std::string{}
+                   : options_.scene->shake({.strength = strength,
+                                            .duration = duration,
+                                            .replaying = replaying_ || still}));
   };
   engine_["wait"] = sol::yielding([this](sol::this_state state, const std::string& tag) {
     yield_at(state, WaitRequest{.tag = tag});
@@ -2253,6 +2567,89 @@ std::string ScriptRuntime::Impl::restore_persistent(const StoreSnapshot& snapsho
   return {};
 }
 
+namespace {
+
+// Pushes a ScreenValue as a Lua value.
+sol::object to_lua(lua_State* lua, const ScreenValue& value) {
+  return std::visit(
+      [lua](const auto& held) -> sol::object {
+        if constexpr (std::is_same_v<std::decay_t<decltype(held)>, std::monostate>) {
+          return sol::make_object(lua, sol::lua_nil);
+        } else {
+          return sol::make_object(lua, held);
+        }
+      },
+      value);
+}
+
+// The table a screen function gets: the props as fields, the children as list entries.
+sol::table args_to_table(sol::state& lua, const ScreenNodeDef& def, int depth) {
+  sol::table table = lua.create_table();
+  for (const auto& [name, value] : def.props) {
+    table[name] = to_lua(lua.lua_state(), value);
+  }
+  if (depth < kMaxScreenDepth) {
+    std::size_t index = 1;
+    for (const ScreenNodeDef& child : def.children) {
+      table[index++] = args_to_table(lua, child, depth + 1);
+    }
+  }
+  return table;
+}
+
+}  // namespace
+
+ScreenValue ScriptRuntime::Impl::binding(std::string_view table, std::string_view key) {
+  reset_instruction_budget();
+  const MemoryLimitScope limited{allocator_, true};
+  const sol::protected_function_result result = bridge_get_(std::string{table}, std::string{key});
+  ScreenValue value;
+  if (result.valid() && result.get_type() != sol::type::lua_nil) {
+    const sol::object object = result.get<sol::object>();
+    static_cast<void>(read_screen_value(object, value));
+  }
+  return value;
+}
+
+std::string ScriptRuntime::Impl::set_binding(std::string_view table, std::string_view key,
+                                             ScreenValue value) {
+  reset_instruction_budget();
+  sol::object lua_value;
+  {
+    const MemoryLimitScope unlimited{allocator_, false};
+    lua_value = to_lua(lua_.lua_state(), value);
+  }
+  const MemoryLimitScope limited{allocator_, true};
+  const sol::protected_function_result result =
+      bridge_set_(std::string{table}, std::string{key}, lua_value);
+  if (!result.valid()) {
+    return error_text(result);
+  }
+  return result.get_type() == sol::type::string ? result.get<std::string>() : std::string{};
+}
+
+std::string ScriptRuntime::Impl::build_screen(std::string_view name, const ScreenNodeDef& args,
+                                              ScreenNodeDef& tree) {
+  reset_instruction_budget();
+  sol::table lua_args;
+  {
+    const MemoryLimitScope unlimited{allocator_, false};
+    lua_args = args_to_table(lua_, args, 0);
+  }
+  const MemoryLimitScope limited{allocator_, true};
+  const sol::protected_function_result result = bridge_build_(std::string{name}, lua_args);
+  if (!result.valid()) {
+    return error_text(result);
+  }
+  const sol::object root = result.get<sol::object>();
+  if (root.get_type() != sol::type::table) {
+    return "unknown screen '" + std::string{name} + "'";
+  }
+  const MemoryLimitScope unlimited{allocator_, false};
+  tree = {};
+  return read_screen_node(root.as<sol::table>(), 0, tree);
+}
+
 bool ScriptRuntime::Impl::in_label(sol::this_state state) const {
   return !frames_.empty() && state.lua_state() == frames_.back().thread.thread_state();
 }
@@ -2292,9 +2689,13 @@ void ScriptRuntime::Impl::load_script(std::string_view path) {
   }
   const std::string& source =
       sources_.insert_or_assign(std::string{path}, to_string(*bytes)).first->second;
+  run_chunk(source, "@" + std::string{path});
+}
+
+void ScriptRuntime::Impl::run_chunk(std::string_view source, const std::string& chunk_name) {
   reset_instruction_budget();
   const MemoryLimitScope limited{allocator_, true};
-  sol::load_result chunk = lua_.load(source, "@" + std::string{path}, sol::load_mode::text);
+  sol::load_result chunk = lua_.load(source, chunk_name, sol::load_mode::text);
   if (!chunk.valid()) {
     const sol::error error = chunk;
     throw ScriptError(error.what());
@@ -2307,6 +2708,9 @@ void ScriptRuntime::Impl::load_script(std::string_view path) {
 }
 
 void ScriptRuntime::Impl::load_scripts() {
+  if (!started_) {
+    run_chunk(default_screens_source(), "=engine/screens.lua");  // a game's screens come later
+  }
   std::vector<std::string> paths;
   std::vector<std::string> directories{"scripts"};
   while (!directories.empty()) {
@@ -2796,6 +3200,17 @@ std::string ScriptRuntime::run_on_load(LabelSnapshot& snapshot, std::string_view
 std::vector<SaveRequest> ScriptRuntime::take_save_requests() { return impl_->take_save_requests(); }
 std::vector<PlaybackRequest> ScriptRuntime::take_playback_requests() {
   return impl_->take_playback_requests();
+}
+ScreenValue ScriptRuntime::binding(std::string_view table, std::string_view key) const {
+  return impl_->binding(table, key);
+}
+std::string ScriptRuntime::set_binding(std::string_view table, std::string_view key,
+                                       ScreenValue value) {
+  return impl_->set_binding(table, key, std::move(value));
+}
+std::string ScriptRuntime::build_screen(std::string_view name, const ScreenNodeDef& args,
+                                        ScreenNodeDef& tree) {
+  return impl_->build_screen(name, args, tree);
 }
 StoreSnapshot ScriptRuntime::persistent_snapshot() const { return impl_->capture_persistent(); }
 std::string ScriptRuntime::restore_persistent(const StoreSnapshot& snapshot) {

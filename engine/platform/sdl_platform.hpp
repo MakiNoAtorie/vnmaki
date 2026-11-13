@@ -40,6 +40,10 @@ struct WindowConfig {
 [[nodiscard]] std::filesystem::path user_data_directory(std::string_view organization,
                                                         std::string_view application);
 
+/// The folder of the running executable (SDL's base path). Needs no SdlPlatform. Throws
+/// PlatformError if the OS gives none.
+[[nodiscard]] std::filesystem::path executable_directory();
+
 /// Opens a resizable, high-density-aware window and turns SDL events (keyboard, mouse, gamepad,
 /// window) into InputEvents. Gamepads are opened as they connect.
 ///
@@ -61,6 +65,8 @@ class SdlPlatform final : public Platform {
   [[nodiscard]] WindowMetrics window_metrics() const override;
   std::optional<InputEvent> poll_event() override;
   void set_text_input(bool enabled) override;
+  void set_fullscreen(bool fullscreen) override;
+  void set_window_opacity(float opacity) override;
 
   /// The SDL window, for the SDL GPU renderer backend. Never null.
   [[nodiscard]] SDL_Window* sdl_window() const;

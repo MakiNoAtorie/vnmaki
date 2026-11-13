@@ -96,18 +96,33 @@ def checksum(data: bytes) -> int:
     return sum(struct.unpack(f">{len(data) // 4}I", data)) & 0xFFFFFFFF
 
 
+def boxes_of(box) -> list:
+    """The boxes of a glyph shape: none, one (x0, y0, x1, y1), or a list of them."""
+    if not box:
+        return []
+    return list(box) if isinstance(box[0], (tuple, list)) else [box]
+
+
 def glyf_and_loca(glyphs: list) -> tuple:
     glyf = b""
     offsets = [0]
     for _, box in glyphs:
-        if box:
-            x0, y0, x1, y1 = box
-            # One contour of four on-curve points, clockwise from the bottom-left corner, as
-            # 16-bit coordinate deltas; no instructions.
-            glyf += struct.pack(">hhhhh", 1, x0, y0, x1, y1)
-            glyf += struct.pack(">HH4B", 3, 0, 1, 1, 1, 1)
-            glyf += struct.pack(">4h", x0, 0, x1 - x0, 0)
-            glyf += struct.pack(">4h", y0, y1 - y0, 0, y0 - y1)
+        boxes = boxes_of(box)
+        if boxes:
+            # One contour of four on-curve points for each box, clockwise from the bottom-left
+            # corner, as 16-bit coordinate deltas; no instructions.
+            points = [p for x0, y0, x1, y1 in boxes
+                      for p in ((x0, y0), (x0, y1), (x1, y1), (x1, y0))]
+            glyf += struct.pack(">hhhhh", len(boxes), min(b[0] for b in boxes),
+                                min(b[1] for b in boxes), max(b[2] for b in boxes),
+                                max(b[3] for b in boxes))
+            glyf += struct.pack(f">{len(boxes)}H", *(4 * n - 1 for n in range(1, len(boxes) + 1)))
+            glyf += struct.pack(">H", 0) + bytes([1]) * len(points)
+            for axis in (0, 1):
+                last = 0
+                for point in points:
+                    glyf += struct.pack(">h", point[axis] - last)
+                    last = point[axis]
             glyf = pad4(glyf)
         offsets.append(len(glyf))
     return glyf, struct.pack(f">{len(offsets)}I", *offsets)
@@ -123,7 +138,8 @@ def cmap(shapes: dict) -> bytes:
 
 def build_font(shapes: dict) -> bytes:
     glyphs = glyph_list(shapes)
-    boxes = [box for _, box in glyphs if box]
+    boxes = [b for _, box in glyphs for b in boxes_of(box)]
+    max_contours = max(len(boxes_of(box)) for _, box in glyphs)
     x_min, y_min = min(b[0] for b in boxes), min(b[1] for b in boxes)
     x_max, y_max = max(b[2] for b in boxes), max(b[3] for b in boxes)
     advance_max = max(advance for advance, _ in glyphs)
@@ -136,11 +152,12 @@ def build_font(shapes: dict) -> bytes:
                              UNITS_PER_EM, 0, 0, x_min, y_min, x_max, y_max, 0, 8, 2, 1, 0),
         b"hhea": struct.pack(">IhhhHhhhhhh4hhH", 0x00010000, ASCENT, DESCENT, 0, advance_max,
                              x_min, 0, x_max, 1, 0, 0, 0, 0, 0, 0, 0, len(glyphs)),
-        b"hmtx": b"".join(struct.pack(">Hh", advance, box[0] if box else 0)
-                          for advance, box in glyphs),
+        b"hmtx": b"".join(
+            struct.pack(">Hh", advance, min((b[0] for b in boxes_of(box)), default=0))
+            for advance, box in glyphs),
         b"loca": loca,
-        b"maxp": struct.pack(">IH13H", 0x00010000, len(glyphs), 4, 1, 0, 0, 2, 0, 0, 0, 0, 0, 0,
-                             0, 0),
+        b"maxp": struct.pack(">IH13H", 0x00010000, len(glyphs), 4 * max_contours, max_contours,
+                             0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0),
         b"post": struct.pack(">IIhhIIIII", 0x00030000, 0, -100, 50, 0, 0, 0, 0, 0),
     }
     count = len(tables)

@@ -25,7 +25,8 @@ bool FrameRecorder::joins_last_batch(const DrawState& state) const {
     return false;
   }
   const Batch& last = batches_.back();
-  if (last.texture != state.texture || last.shader != state.shader || last.blend != state.blend) {
+  if (last.texture != state.texture || last.more_textures != state.more_textures ||
+      last.shader != state.shader || last.blend != state.blend) {
     return false;
   }
   const std::span<const std::byte> last_uniforms =
@@ -41,6 +42,7 @@ void FrameRecorder::add(std::span<const Quad> quads, const DrawState& state) {
     const std::size_t uniform_offset = uniform_bytes_.size();
     uniform_bytes_.insert(uniform_bytes_.end(), state.uniforms.begin(), state.uniforms.end());
     batches_.push_back(Batch{.texture = state.texture,
+                             .more_textures = state.more_textures,
                              .shader = state.shader,
                              .blend = state.blend,
                              .uniform_offset = uniform_offset,

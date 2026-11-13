@@ -16,7 +16,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - While you work, run only the tests for the changed code: `ctest --test-dir build/debug -R <pattern>`.
 - Before a push, run `cmake --workflow --preset debug`. CI runs the other presets, clang-tidy and the format check.
 - CI (`.github/workflows/ci.yml`) runs:
-  - Windows, MSVC: debug, release.
+  - Windows, MSVC: debug (with `/analyze`), release.
   - Linux, Clang 18: asan-ubsan, tsan, fuzz, release, a build without threads.
   - macOS, Apple Clang: debug, asan-ubsan.
   - A clang-tidy job and a format check.
@@ -26,6 +26,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Lua is 5.4.8, because the specification requires 5.4.
   - `sdl3` has no default features. On Linux, it has `x11` and `wayland`.
   - mpack has no vcpkg port, and `third_party/` has no copy of it. The save format (`engine/saves/save_file.cpp`) has a small MessagePack reader and writer of its own. It is plain MessagePack, so mpack can replace it.
+  - libwebp is a vcpkg dependency. `engine/render/CMakeLists.txt` finds it with `find_package(WebP CONFIG REQUIRED)` (target `WebP::webp`). Debian: `libwebp-dev`.
   - dav1d (AV1) and libwebm (WebM, its `mkvparser`) are vcpkg dependencies. Neither has a CMake config that the engine uses, so `engine/video/CMakeLists.txt` finds both with `find_path` and `find_library` (libwebm's headers are in `include/webm`).
   - dav1d 1.5.4 does not build with MSVC 14.5 (Visual Studio 2026): its `stdatomic.h` shim uses `__has_include_next` in a non-clang build. `vcpkg-configuration.json` adds the overlay port `tools/vcpkg-overlay/dav1d`, which is the vcpkg port with one patch for this. Remove the overlay when the vcpkg baseline has a dav1d that builds.
   - zstd is a vcpkg dependency. `engine/saves/CMakeLists.txt` finds `zstd::libzstd` (vcpkg) or the plain library (Debian: `libzstd-dev`).
@@ -41,6 +42,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Includes use the path from the repository root, for example `"engine/vfs/vfs.hpp"`.
 - Include order: the header of the file, `<std>`, `<third/party.h>`, `"engine/..."`.
 - All warnings are errors. clang-tidy uses `WarningsAsErrors: '*'`. Correct the findings. Do not suppress them.
+  - MSVC `/analyze` runs in the Windows debug CI job. Locally: `tools\dev\vsenv.cmd cmake --preset debug -B build/analyze -DVNMAKI_MSVC_ANALYZE=ON`, then build in `build/analyze`. The option adds `/analyze /analyze:external-` to `vnmaki::options` only, so third-party headers (SYSTEM includes) are not analyzed. Its warnings are errors. Correct them. Do not suppress them. Put a dependency's headers on a SYSTEM include path (imported targets do this).
   - Give names to literal constants, also in tests. Integer literals in doctest `CHECK(...)` are permitted.
   - Floating-point literals other than 0 and 1 always need a name.
   - Declare a variable with a cast initializer as `auto`.
@@ -58,6 +60,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 ## Tests
 
 - Tests use doctest. Each doctest executable needs `DOCTEST_CONFIG_USE_STD_HEADERS`.
+- Every `main` calls `vnmaki::disable_crt_dialogs()` (`engine/core/no_crt_dialogs.hpp`) first. MSVC debug builds otherwise open a modal dialog on `abort()` or an assert, which blocks the run on the desktop. This also applies to throwaway programs. Run them with a timeout.
 - Unit tests are in `tests/unit/*_test.cpp`. They run in `vnmaki_unit_tests`. The ctest name of each test is `unit.<name>`.
 - Platform tests are in `tests/platform/` and have their own executable. On Linux, they use `SDL_VIDEO_DRIVER=offscreen`.
 - CLI tests use `vnmaki_add_cli_test(name ARGS ... EXIT n [STDOUT_LINE t | NO_STDOUT] [STDERR_REGEX r] [EXPECTED_FILES f...])`.
@@ -73,6 +76,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Threaded tests that wait for a job poll with a timeout (`settle` in `tests/unit/video_test.cpp`).
 - Fuzz targets use `vnmaki_add_fuzzer(<name> <sources>)`. ctest gives each target a smoke test of 10,000 runs.
   - A fuzz target checks properties of the output, for example idempotence or an independent oracle. If a property is false, it calls `std::abort()`.
+  - `fuzz_image` and `fuzz_webp` share `fuzz/image_properties.hpp` (also run by `tests/unit/image_test.cpp`). `fuzz_webp` adds the RIFF/VP8L container to the input, so the bytes are the chunk data. libwebp is a vcpkg library, so it has no fuzz instrumentation; only the engine code around it has.
   - To check a new fuzz target, add a bug and make sure that the smoke test finds it.
 - Threaded tests put a timeout on each wait. If `!JobSystem::threads_supported()`, they return immediately, because jobs run inline.
 - GPU tests are in `tests/render/` (`vnmaki_render_tests`).
@@ -80,7 +84,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - If there is no device, it prints `VNMAKI_SKIP:` and ctest skips the test. `VNMAKI_REQUIRE_GPU=1` stops the skip. Linux CI sets it, because it has lavapipe.
   - Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png`.
   - `tools/generators/render_fixtures.py` makes the golden images with a reference rasterizer.
-  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`, `frame_anim_fixtures.py`.
+  - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`, `frame_anim_fixtures.py`, `transition_fixtures.py`, `camera_fixtures.py`.
+  - `webp_fixtures.py` is stand-alone. It writes a tiny lossless WebP (VP8L: no transforms, no colour cache, one simple prefix code per channel, so each channel has at most two values) with the standard library only. The test pixels in `image_test.cpp` are the specification.
 
 ## Module contracts
 
@@ -109,6 +114,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Pointer positions are in window pixels. Convert them with `window_to_virtual(compute_viewport(...), pos)`.
 - Clicks in the letterbox bars are outside the virtual area.
 - Text input is off when no text field has the focus.
+- `set_fullscreen(bool)` and `set_window_opacity(float)` apply the player's preferences. `HeadlessPlatform` only records them (`fullscreen()`, `window_opacity()`).
 - `user_data_directory(organization, application)` (`sdl_platform.hpp`) is SDL's per-user preference path. Saves go there.
 - Only one `SdlPlatform` can exist. Other SDL users call `SDL_InitSubSystem` and `SDL_QuitSubSystem`. They do not call `SDL_Quit`.
 
@@ -127,14 +133,15 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Then draw that target to `kScreen` at `compute_viewport(virtual, window_metrics().pixels, mode).rect`.
 - Shaders are HLSL in `shaders/`. shadercross compiles them at build time through `vnmaki_add_shaders(...)`.
 - Custom fragment shaders include `vnmaki.hlsli`. They can have one constant buffer at `register(b0, space3)`.
+- A custom shader can read up to `kMaxShaderTextures` (3) textures. `DrawState::texture` is slot 0 (`sample_sprite`). `DrawState::more_textures` are slots 1 and 2 (`sample_texture1(uv)`, `sample_texture2(uv)`). An id of zero binds `texture` there. Every draw binds all three slots, because `vnmaki.hlsli` declares them all. So a shader reports 3 samplers.
 - Game shaders compile at run time, not at build time (`shader_compiler.hpp`).
   - `compile_fragment_shader(name, hlsl)` uses the SDL_shadercross library (`sdl3-shadercross` in `vcpkg.json` is a target dependency, not only a host tool). It returns a `CompiledShader` that owns SPIR-V, MSL and DXIL. `bytecode()` is the view for `IRenderer::create_shader`.
   - `#include "vnmaki.hlsli"` finds the engine header. The build embeds `shaders/*.hlsli` as text (`shader_headers.cpp.in`), so a game needs no engine shader files.
   - A compile error throws `ShaderCompileError`. The message has the file, the line, the column and the compiler message. Example: `shaders/sepia.frag.hlsl:5:18: error: use of undeclared identifier 'x'`.
-  - A shader may use one texture and one constant buffer at `register(b0, space3)`. Storage textures and buffers are errors.
+  - A shader may use up to three textures and one constant buffer at `register(b0, space3)`. Storage textures and buffers are errors.
   - `shader_compiler_available()` is false on macOS, where vcpkg has no `sdl3-shadercross`. Tests that compile shaders return early then.
   - The compiler is only in `engine/render/sdl_shader_compiler.cpp`, because it includes SDL headers.
-- `load_image(vfs, jobs, path)` loads an image and returns `JobHandle<Image>`.
+- `load_image(vfs, jobs, path)` loads an image and returns `JobHandle<Image>`. `decode_image` reads PNG and JPEG (stb_image) and WebP, lossless or lossy, not animated (libwebp). It finds WebP by the `RIFF....WEBP` header, not by the file name. All three are premultiplied after decoding.
 - Upload images with `create_texture` on the main thread.
 
 ### Text (`engine/text/text.hpp`)
@@ -155,7 +162,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `Scene` keeps tagged displayables on the SPEC §9 layers.
 - `Scene` implements `SceneState` and `SceneCommands`. Set `ScriptRuntimeOptions::scene` and `::scene_state` to it.
 - The runtime includes no scene headers.
-- Image name `N` is the VFS file `images/N.png`. If that file does not exist, it is `images/N.jpg`.
+- Image name `N` is the VFS file `images/N.png`. If that file does not exist, it is `images/N.jpg`, then `images/N.webp`.
 - A tag is unique across all layers.
 - `show` defaults: layer `characters`, position `center`, anchor bottom-center.
 - `DisplayProperties`:
@@ -163,7 +170,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Anchor and crop are fractions.
   - Rotation is in degrees, clockwise.
 - `Scene` keeps `std::unique_ptr<Displayable>`. `find(tag)` returns a `Displayable*`. Use `dynamic_cast` to get an `ImageDisplayable`.
-- The snapshot is a map from a part name to bytes: `displayables` (images), `layered`, `animations` and `tweens`. A new feature adds a part. `restore()` ignores a part that it does not know and reads a missing part as empty.
+- The snapshot is a map from a part name to bytes: `displayables` (images), `layered`, `animations`, `tweens`, `shaders` and `camera`. A new feature adds a part. `restore()` ignores a part that it does not know and reads a missing part as empty.
 - The snapshot keeps the properties as a replay leaves them. A tween that ends is at its end value. A loop is at the value where it started.
 - Tweens write through `Scene::find(tag)->properties()`. `Scene::update(seconds)` moves them. `hide` and `scene` end the tweens of the displayables that they remove.
 - `Scene::show` of a tag that is shown does not end its tweens.
@@ -175,6 +182,25 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - A layer with a shader (and displayables) draws into its own render target of the virtual size, and then that target draws with the shader. The layer properties are in `layer_properties(layer)`.
   - The tag `@layer.<name>` is for the uniforms of a layer in `tween`. A `show` tag cannot start with `@layer.`.
   - The snapshot part `shaders` keeps the shader name (not the number) and the 16 uniform values of each displayable and layer. The part is left out when no shader is set. `restore()` ignores a shader that is not declared.
+- Transitions (`SceneCommands::transition`, see Anim):
+  - `transition(request)` checks the request and the shader or the mask image, and starts a transition. A replay (`TransitionRequest::replaying`) checks it and does not start it. A duration of 0 does not start it.
+  - The layers from `background` to `overlay` are mixed. The `ui` and `transient` layers draw over the result.
+  - The old frame is `frames_[0]`, a render target of the virtual size. The first change after `draw()` (`scene`, `show`, `hide` or `transition`) draws the scene as it is then into it, in a frame of its own (`capture_old_frame`). It uses the renderer that `prepare()` saw: the renderer must outlive the changes, and the changes must not be between `begin_frame` and `end_frame`. If nothing was drawn yet (a transition at the start of the story), the old frame is empty. `restore()` also means that nothing was drawn.
+  - While a transition runs, `draw()` draws the layers into `frames_[1]` (live, so tweens go on). Then it draws one quad over the virtual screen with the transition shader into the pass of `target`, and the `ui` and `transient` layers after it. Texture slot 0 is the old frame, slot 1 the new frame and slot 2 the mask image (the new frame if there is none).
+  - Without a transition `draw()` is as before: the layers draw into the pass of the caller, with no extra pass or quad.
+  - `update(seconds)` moves the clock. `tweening(kTransitionTag)` is true until the duration has passed. The transition is drawn one more time at progress 1 and ends at the next `update()`. `finish_tweens(kTransitionTag)` and `restore()` end it at once. It is not in the snapshot.
+- Camera (`engine/scene/camera.*`, SPEC §10):
+  - The camera moves the layers from `background` to `overlay`. `ui` and `transient` stay. `CameraState` has a pose and a parallax factor for each of those five layers. `Scene::camera()` returns it.
+  - The pose is a `DisplayProperties`, so a tween reaches it with the tag `@camera` (like `@layer.<name>`). `position` is the pan in virtual pixels, `scale.x` is the zoom (above 0; 1 is none) and `rotation` turns the content clockwise, in degrees. Zoom and rotation are about the centre of the screen. A `show` tag cannot be `@camera`.
+  - A positive pan moves the view right and down, so the content moves left and up. The pan of a layer is `parallax * (pan + shake)`. Zoom and rotation do not depend on the layer.
+  - `CameraView` maps a point of a layer to the screen. `Scene::draw_layers` draws a layer that the camera moves through a `CameraRenderer`, an `IRenderer` that passes every call on and moves the corners of each quad. So every displayable follows the camera with no code of its own. A layer with a shader draws into its target with the camera applied, and then the target draws as it is. A transition mixes frames that were drawn with the camera.
+  - Without a move (a default camera, or a shake of nothing) the layers draw into the renderer of the caller, as before.
+  - `SceneCommands::shake(ShakeRequest)` starts a shake: `strength` is a fraction of the virtual height, `duration` is in seconds. The offset is `shake_offset(Shake)`: smooth noise of the time, from a hash of integers (24 points per second), times a factor that falls from 1 to 0. It is a fixed function of the time, never `rand`. The shake clock is `Scene::update`. A new shake replaces the one that runs.
+  - A shake is not in the snapshot. A replay checks the request and starts no shake (`ShakeRequest::replaying`).
+  - `tweening("@camera")` (and `tweening("")`) is true while a camera tween that ends or a shake runs, so `wait("@camera")` waits for both. `finish_tweens("@camera")` ends them: the tweens go to their end values and the shake stops.
+  - `SceneCommands::set_parallax(layer, factor)` sets the factor of a layer (default 1, from -100 to 100). A layer that the camera does not move is an error.
+  - The snapshot part `camera` has the pan, the zoom, the rotation and the parallax of the layers that do not have 1. It is left out when the camera is the default, so a game without a camera has the snapshots that it had before. As for other tweens, a tween that ends is at its end value in the snapshot. A loop on `@camera` is in `tweens`. `restore()` also ends a shake.
+  - The GPU goldens are from `tools/generators/camera_fixtures.py`. It repeats the shake noise in Python. A change to the noise in `camera.cpp` needs the same change there and in `tests/unit/camera_test.cpp`.
 - `SceneCommands` calls return an error string. The prelude raises it at the script line.
 - `SceneCommands` calls also run during replay.
 - `SceneCommands` has `animation`, `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
@@ -242,6 +268,17 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - A wait is always one step, also when nothing is tweening, so replay counts the same steps as live play. `WaitPresenter` (`wait_presenter.hpp`) ends it:
   - Call `update()` once per update after `Scene::update`. It ends a wait whose tweens have ended.
   - Call `skip()` on a click or in skip mode, before `DialoguePresenter::advance()`. It puts the tweens at their end values and goes on. If it returns true, the input is used.
+- Transitions (`transition.hpp`, `shaders/transition_*.frag.hlsl`):
+  - Names: `dissolve`, `fade`, `slide_left`, `slide_right`, `slide_up`, `slide_down`, `wipe_left`, `wipe_right`, `wipe_up`, `wipe_down` and `mask`. The direction is the way the content (slide) or the edge (wipe) moves.
+  - Options: `duration` (seconds, 0.5 if none), `color` (`fade`: "#rrggbb", black if none), `softness` (`wipe_*` and `mask`: 0 to 1), `mask` (`mask`: an image name; the new image shows first where the mask is dark), `uniforms` (a custom shader). An option that the transition does not use is an error. `make_transition_spec` checks all this without a GPU.
+  - Any other name is a game shader (task 24) that includes `transition.hlsli` and declares the uniform `progress`. The engine sets `progress` each frame. `from_at(uv)`, `to_at(uv)` and `mask_at(uv)` read the three textures. The other uniforms come from `uniforms = { name = number }`. A shader that is not declared, or has no `progress`, is an error at the script line.
+  - `Transition` is the clock. It has no real clock: the caller gives the seconds to `advance()`. Progress is linear.
+  - Script API: `transition(name, options)` and the `with` option of `scene(image, options)`, `show(tag, options)` and `hide(tag, options)`. `with` is a name, or `{ name, option = value, ... }`. `with` starts the transition before the change, so a bad name changes nothing. All the changes of one step (since the last blocking call) use the one transition that the step ends with. A layered sprite cannot have a group named `with`.
+  - A transition blocks like `wait`: it is a `WaitRequest` with the tag `kTransitionTag` (`"@transition"`). It is a step also when nothing is shown, so replay counts the same steps. `WaitPresenter::skip()` (a click, skip mode) ends it. `ScriptPosition::wait` marks it, so rollback goes back over it. In a replay the transition is checked and not shown. In skip mode the first tick of a transition can be drawn.
+- Camera (`camera.hpp`, see Scene):
+  - Script API: `camera { x, y, zoom, rotation, duration, ease, delay }` is `tween("@camera", ...)` that is instant when it has no duration. `x` and `y` are fractions of the virtual width and height, as for `show`. `scale` also works for `zoom`. `shake { strength, duration }` has a strength from 0 to 1 (a fraction of the virtual height, required) and a duration above 0 (0.5 s if none). `layer(name, { parallax = f })` sets the factor of a layer, with or without the `shader` option.
+  - `tween("@camera", ...)` allows only `x`, `y`, `zoom` (or `scale`) and `rotation`, and no uniforms. The zoom must be above 0. `wait("@camera")` waits for a move or a shake. `camera` and `shake` do not block. A loop on `@camera` never blocks a wait.
+  - `TweenRequest::instant` is `replaying` for a request that is not a replay: the tweens that end go to their end values at once.
 - `ScriptPosition::wait` marks a wait step. Rollback goes back over wait steps to the previous say, narrate, menu or `call_screen` (a wait is never a rollback step).
 
 ### Dialogue (`engine/dialogue/`)
@@ -255,7 +292,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `Playback` (`playback.hpp`) does skip and auto. Make it after the presenter. Each frame call `presenter.update(dt)`, then `playback.update(dt)`.
   - Skip `kSeen` goes on while the line is in the seen set. It stops at the first unseen line, and at any menu or screen. `kAll` stops at menus and screens only. `PlaybackOptions::skip_wait` ends a `wait` for tweens (`WaitPresenter::skip`) and skip goes on.
   - Auto waits `auto_base_delay + auto_seconds_per_glyph × glyphs × auto_multiplier` after the line is fully shown. While `PlaybackOptions::voice_playing` returns true it waits, and after a line that had a voice it waits only `auto_base_delay`.
-  - `Playback` marks each line it sees in the `PersistentStore`. It takes the script's `skip` and `auto` calls. `vnmaki run`: `A` toggles auto, `S` cycles skip (off, seen, all), and an advance input turns skip off.
+  - `Playback` marks each line it sees in the `PersistentStore`. It takes the script's `skip` and `auto` calls. `vnmaki run`: `A` toggles auto, `S` toggles skip (`toggle_skip`: off, or `kSeen`, or `kAll` when the preference `skip_unseen` is on), and an advance input turns skip off.
+  - Preferences: `DialoguePresenter::set_characters_per_second` (text speed) and `Playback::set_auto_base_delay` (auto delay). See Default screens and preferences.
   - `DialoguePresenter::line_serial()` changes when line() shows another line. The presenter also follows a story that moved by itself (a load).
 - `PlaybackIndicator` (`engine/ui/playback_indicator.hpp`) shows the screen `vnmaki:playback` ("SKIP", "SKIP ALL", "AUTO", ...) while a mode is on. Call `sync(skip, automatic)` every frame.
 - The default font of a project is `fonts/default.ttf` in its VFS. The engine has no font.
@@ -272,11 +310,17 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 
 ### UI (`engine/ui/`)
 
-- A screen is a `UiNode` tree with a name. Kinds: `box`, `hbox`, `vbox`, `text`, `image`, `button`. The Lua constructors have the same names.
+- A screen is a `UiNode` tree with a name. Kinds: `box`, `hbox`, `vbox`, `text`, `image`, `button`, `toggle`, `slider`, `bar`. The Lua constructors have the same names, and `grid { columns = n, ... }` (`build_ui_tree` makes it a `vbox` of `hbox` rows; give the cells one width).
 - Lua: `screen "name" { nodes }`, or `screen("name", function(args) return nodes end)`. A table of several nodes is wrapped in a `box`. `show_screen`, `hide_screen` and `call_screen` take the screen name and an `args` table for the function form.
 - `build_ui_tree` documents the options (`width`, `padding`, `bg`, `returns`, ...). An unknown option is an error that names the node.
 - A text or button string is the first string in the table: `button { "Save", returns = "save" }`. A button hands `returns` to its screen when activated.
-- A screen is built when it is shown. It does not update when `store` changes. `bind` is a later task.
+- A screen is built when it is shown. Only bound nodes follow data (see the next rules).
+- `bind(table, key)` is the option `bind` of a `toggle`, `slider` or `bar`. `table` is `store`, `persistent` or `prefs`. The prelude turns it into the options `bind_table` and `bind_key`.
+  - `UiHost::set_bindings(&runtime)` connects them. `UiHost` reads each bound node's datum (`ScriptRuntime::binding`) every time it lays out, draws or handles an event. It writes the datum (`set_binding`) when the player flips the toggle or moves the slider. Without it the node keeps its own value.
+  - A toggle follows a boolean. A slider or bar follows a number between its `min` and `max` (default 0 and 1). A `step` snaps a slider. A click or a drag on a slider sets it. Left and Right (also the d-pad) move it by `step` (a twentieth of the range if unset).
+  - A write to `store` is not in the input log, so a rollback or a load takes it back. `persistent` and `prefs` are not rolled back.
+- A screen root can have `modal = true` (`show_screen` then shows it modal) and `cancel = value`. Esc or the gamepad's east button give the screen that value, like a button's `returns`.
+- Tab or the gamepad's west button give the keyboard to the top non-modal screen that has a focusable node (`UiHost`). It keeps the keys until the player presses Esc or the east button.
 - Yoga does the layout (`layout_tree`). Only `ui_layout.cpp` includes it, and it is linked PRIVATE.
   - The root fills the canvas. Lengths are virtual pixels. A node with `x` or `y` is positioned absolutely in its parent.
   - Give `layout_tree` a `TextMeasure`. `UiRenderer::text_measure()` measures with the fonts. `estimate_text_size` is for tests.
@@ -289,8 +333,35 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `ScreenPresenter` shows the modal screen of a `menu` or `call_screen` request and answers the runtime. Make it after `runtime.start()`. Call `sync()` after anything else that moves the story. Give it events before the dialogue presenter: if `handle_event` returns true, do not advance.
 - `UiRenderer` draws trees through `IRenderer`. Call `prepare(root, scale)` before `begin_frame`. Draw into a screen-resolution pass with the viewport scale and origin, like `SayBoxView`.
   - It has one glyph atlas for each text size. A node with `markup = true` uses text tags.
-  - An image node draws `images/<name>.png` (else `.jpg`) from the VFS. It needs `width` and `height`.
-- The say box is a screen: `make_say_screen` builds it, and `SayBoxView` lays it out and draws it with a `UiRenderer`. A Lua replacement is task 18.
+  - An image node draws `images/<name>.png` (else `.jpg`, else `.webp`) from the VFS. It needs `width` and `height`.
+- The say box is a screen: `make_say_screen` builds it, and `SayBoxView` lays it out and draws it with a `UiRenderer`.
+  - `SayBoxView::set_screen_source` replaces the built-in tree with one from a script. The story window gives it the Lua screen `say`.
+  - The tree needs a text node with `reveal = true`: the line. Its size, width and position give the layout, the reveal and `link_at`. If the source gives nothing, the built-in box is used.
+- `UiRenderer::set_generated_images` makes the pixels of an image node named `gen:...` (save thumbnails). The texture is kept under the name, so a changed image needs a new name.
+
+### Default screens and preferences
+
+- `engine/runtime/default_screens.cpp` is a Lua chunk. `load_scripts()` runs it before the game's scripts, so a game replaces a screen by defining `screen "name"` again.
+  - The screens: `title`, `say`, `choice`, `confirm`, `save`, `load`, `preferences`, `quick_menu`, and the placeholders `nvl` and `gallery`.
+  - The backlog is the C++ `BacklogScreen` (`vnmaki:backlog`).
+- Screens size themselves by the read-only global `canvas` (`canvas.width`, `canvas.height`). `ScriptRuntimeOptions::canvas_width` and `canvas_height` set it (default 1920 by 1080). Write a screen as a function: `screen("x", function(args) ... end)`.
+- `ScriptRuntime::build_screen(name, args, tree)` runs the screen function for the engine. `args` is a `ScreenNodeDef`: its `props` are the named fields of the Lua table, and its `children` are the list (each a table of the same form). The arguments:
+  - `say`: `speaker`, `text` (with tags), `color` (`"#rrggbb"`, if the character has one). The `reveal` text node is the line.
+  - `choice`: a list of `{ text }`. A button returns the number of its option, from 1. `ScreenPresenter` shows it as `vnmaki:menu`. If the screen fails, it shows `make_menu_screen`.
+  - `confirm`: `message`, `yes`, `no`. Esc returns `no`.
+  - `save` and `load`: `mode` and a list of `{ slot, title, time, empty, broken, thumbnail }`. The list has the slots 1 to `kScreenSlotCount` (12). `load` also lists `auto` and `quick` if they exist, and disables the slots that are empty or damaged. `thumbnail` is an image name `gen:save:<slot>@<time>`, or `""`.
+  - `title`: what `call_screen("title", { title = ... })` gives. Start returns `"start"`.
+- A button that returns a string starting with `@` is an engine action. `ScreenActions` (`engine/ui/screen_actions.hpp`) does it:
+  - `@open:<screen>` (modal; `save` and `load` get the slot list from `Saves::list()`), `@close`, `@save:<slot>` (a slot in use asks `confirm` first), `@load:<slot>`, `@auto`, `@skip`, `@backlog`, `@quit` (asks `confirm`).
+  - `@save!<slot>` and `@quit!` are the confirmed forms.
+  - `ScreenPresenter::set_action_handler` gives the activations to it first, so a script's own `call_screen` values must not start with `@`.
+- `prefs` is a view of `persistent.prefs` with defaults. A key the player never set reads as its default. `prefs.x = v` writes `persistent.prefs`. A value of the wrong type is a script error.
+  - Keys: `text_speed` (characters a second, 40), `auto_delay` (seconds, 1), `volume_music`, `volume_sound`, `volume_voice`, `volume_ambient`, `volume_ui` (0 to 1, 1), `fullscreen` (false), `skip_unseen` (false), `window_opacity` (0.3 to 1, 1), `reduce_motion` (false).
+  - The defaults are also in the struct `Preferences`. A test checks that they agree.
+- `PreferenceApplier` (`engine/ui/preferences.hpp`) reads the preferences each frame and applies what changed:
+  - Text speed to the `DialoguePresenter`, auto delay to `Playback`, volumes to `Audio::set_preference_volume`, fullscreen and window opacity to the `Platform`. A null target is skipped.
+  - `reduce_motion` has no target yet. Task 23 reads it through `read_preferences`.
+- The story window shows `quick_menu` (top right, not modal) at the start and gives every activation to `ScreenActions`. Auto and skip wait while a modal screen is open.
 
 ### Audio (`engine/audio/`)
 
@@ -307,6 +378,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - The snapshot has each channel's volume and music. `restore()` stops sounds and voices.
 - Music tracks change at the next `update()`. A replay then gives the same music, so it does not stop.
 - The runtime does not pass `sound` and `voice` on during replay.
+- `set_preference_volume(channel, level)` is the player's volume for a channel. It multiplies the script's `volume` and the ducking. It is not in the snapshot, so a load or rollback leaves it.
 - `voice_playing()` is true while a voice plays. `Playback` (Dialogue) waits for it: set `PlaybackOptions::voice_playing`. `voice(name)` also replays a backlog voice.
 - `AudioCommands` calls return an error string. The prelude raises it at the script line.
 - Decoders are in `audio_decoder.hpp`. A bad file throws `AudioError`.
@@ -337,14 +409,19 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - `ScriptRuntimeOptions::screens` (`ScreenCommands`, implemented by `UiHost`) carries out `show_screen` and `hide_screen`.
   - `check_screen` runs on every tree first. Its error string is raised at the script line.
   - The runtime includes no ui headers. It reads the Lua node tables into `ScreenNodeDef`.
+- Reduced motion (SPEC §17): `engine.reduce_motion()` in the prelude is true when `persistent.prefs.reduce_motion` is set (not nil, not false). It is false when `persistent.prefs` is not a table or has no such key, so camera code works before and after the preferences (task 18) put `prefs` in `persistent`. Camera calls read it when they run, so a change takes effect at the next call.
+  - A tween of `@camera` (also `camera`, and each `@camera` item of `sequence` and `parallel`) gets a duration of 0, no delay, no loop and no yoyo. `tween` and `camera` also make it instant. The `wait` step stays, so a replay counts the same steps.
+  - `shake` checks its arguments and starts nothing (`ShakeRequest::replaying`).
+  - Other motion (tweens of displayables, transitions) is not changed by this flag yet.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
-- `wait(tag)` and `wait_all()` are blocking calls too (`WaitRequest`). `advance()` ends them. See Anim.
+- `wait(tag)`, `wait_all()` and transitions (`transition(...)`, the `with` option) are blocking calls too (`WaitRequest`; a transition has the tag `@transition`). `advance()` ends them. See Anim.
 - `movie(path, { skippable = })` is a blocking call (`MovieRequest`) that works as a wait for rollback and replay. See Video.
 - The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it. It ends a wait at once and needs no input for it.
 - `project.toml` has `title` (required), `version`, `resolution`, `languages`, `auto_save` (a list of `"label"` and `"menu"`), `rollback_depth` and `backlog_length` (each 0 to 10000, default 100).
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
   - A slot is an integer from 1. `load` with a number is a slot. With a string or function it is Lua's `load`.
 - `on_load(function(old_version, store) ... end)` registers the migration hook while the scripts load. `run_on_load(snapshot, old_version)` runs it on the store of a snapshot, not on the live `store`.
+- `bind`, `prefs`, `canvas`, `toggle`, `slider`, `bar` and `grid` are in the prelude (the part after `local persistent` is its own raw literal; MSVC limits one literal to 16380 bytes). `ScriptRuntime::binding(table, key)` and `set_binding(table, key, value)` read and write a bound datum for the UI.
 - `persistent` is a second Lua table, like `store`, but it is not in any snapshot or save. Rollback and load never change it.
   - `persistent_snapshot()` and `restore_persistent()` give the host the data. Call `restore_persistent` before `load_scripts()`.
   - A replay runs script code again, so code that writes to `persistent` must be idempotent (`persistent.won = true`, not `persistent.n = persistent.n + 1`).
@@ -390,9 +467,22 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Thumbnails are RGBA8 with premultiplied alpha, at most `kThumbnailWidth` wide (`thumbnail.hpp`).
   - `capture_thumbnail(renderer, target)` reads the target with `read_pixels`. Call it between frames. Set it as `SavesOptions::thumbnail`.
   - Without a thumbnail function, saves get `stub_thumbnail()`. Headless runs and tests use it.
-- This module has no UI. Task 18 shows the slot list (`Saves::list()`).
+- This module has no UI. The `save` and `load` screens show the slot list (`Saves::list()`); see Default screens and preferences.
 - `PersistentStore` (`persistent_store.hpp`) keeps `persistent` and the seen steps in `<directory>/persistent.vnpersist`, in the same directory as the saves.
   - The file is plain MessagePack (`encode_persistent`, `decode_persistent` in `save_file.hpp`). A bad file is reported through `on_warning`, and the game starts with no data.
   - `load()` runs before `load_scripts()`. `flush()` writes the file only if `persistent` or the seen set changed. Call it whenever the story waits. The destructor calls it too.
   - A seen step is `{label, step, source hash of the label}` (`SeenStep`). An edited label has a new hash, so all its steps are unseen.
 - Hosts call `Saves::poll()` and `PersistentStore::flush()` once for each frame (`vnmaki run`) or after each input (`run_headless` with `HeadlessOptions::saves`).
+
+### `vnmaki new` and templates (`engine/runtime/new_project.*`, `cli/new_command.*`, `templates/`)
+
+- `vnmaki new <name>` copies `templates/default/` to `<name>`. The title is the last part of `<name>` (`project_title`). It stops (exit 1, nothing written) if the target exists and is not an empty folder.
+- `create_project(template_dir, target_dir, title)` replaces `{{title}}` in `.toml` and `.lua` files. It escapes `\` and `"` for a quoted string, which is the same in TOML and Lua. Other files are copied byte for byte.
+- `find_template(name, executable_dir, source_templates_dir)` tries `<folder of vnmaki>/templates/<name>`, then the source tree. The CLI target gets the source tree path from the definition `VNMAKI_SOURCE_TEMPLATES_DIR`. `executable_directory()` is in `sdl_platform.hpp`.
+- A template is a game: `project.toml`, `scripts/`, assets. It uses the default screens of the engine and does not define its own. Add a template as a folder of `templates/` with a `project.toml`.
+- The binary assets of a template come from a generator, not from files that someone drew or downloaded. `tools/generators/template_assets.py OUT_DIR` writes the assets of `templates/default/` (it only adds files). Run it on `templates/default` again after you change it, and commit the result. `.gitattributes` keeps `templates/` free of line-ending changes.
+  - It reuses `text_fixtures.build_font` for `fonts/default.ttf`, a 5 by 7 pixel font (ASCII only). A glyph shape can be a list of boxes.
+  - A test (`unit.template: the assets are ...`) runs the generator into `fixtures/template` and compares it with the template. PNG files are compared by name only, because zlib versions differ.
+  - An asset must be MIT, OFL or CC0, or be made by a generator. `templates/default/ASSETS.txt` records the license.
+- The end-to-end test is `tests/unit/new_project_test.cpp` (`SampleGame`): `create_project`, then a `ScriptRuntime` with `Scene`, `Audio` and `Saves` (in a temporary directory) plays both branches, rolls back over the menu, saves, loads and rolls back again. It needs no window and no GPU, so it runs on every CI platform. `cli.new_makes_a_game_and_stops_at_a_second_one` and `cli.new_game_runs_in_a_window` (a GPU test) use `tests/cli/run_new.cmake`.
+- The sample story starts with `call_screen("title", ...)`, so `vnmaki run <game> --headless` stops there. Use a unit test to play it.

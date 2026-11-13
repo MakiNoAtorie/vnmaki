@@ -40,7 +40,19 @@ jobs:
         with:
           cache-key: windows-msvc-${{ matrix.preset }}
       - name: Configure, build and test
+        if: matrix.preset != 'debug'
         run: cmake --workflow --preset ${{ matrix.preset }}
+      # The debug job also runs the MSVC static analyzer on first-party code. Its warnings are
+      # errors (VNMAKI_MSVC_ANALYZE in cmake/VnmakiOptions.cmake).
+      - name: Configure (with /analyze)
+        if: matrix.preset == 'debug'
+        run: cmake --preset debug -DVNMAKI_MSVC_ANALYZE=ON
+      - name: Build (with /analyze)
+        if: matrix.preset == 'debug'
+        run: cmake --build --preset debug
+      - name: Test
+        if: matrix.preset == 'debug'
+        run: ctest --preset debug
 
   linux-clang:
     name: Linux / Clang (${{ matrix.preset }})

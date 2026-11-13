@@ -87,6 +87,14 @@ void SdlPlatform::set_text_input(bool enabled) {
   }
 }
 
+void SdlPlatform::set_fullscreen(bool fullscreen) {
+  SDL_SetWindowFullscreen(window_.get(), fullscreen);
+}
+
+void SdlPlatform::set_window_opacity(float opacity) {
+  SDL_SetWindowOpacity(window_.get(), opacity);
+}
+
 std::filesystem::path user_data_directory(std::string_view organization,
                                           std::string_view application) {
   const std::string org{organization};
@@ -98,6 +106,14 @@ std::filesystem::path user_data_directory(std::string_view organization,
   std::filesystem::path result{path};
   SDL_free(path);
   return result;
+}
+
+std::filesystem::path executable_directory() {
+  const char* path = SDL_GetBasePath();  // owned by SDL, not to be freed
+  if (path == nullptr) {
+    throw PlatformError{std::string{"no executable directory: "} + SDL_GetError()};
+  }
+  return std::filesystem::path{path};
 }
 
 SDL_Window* SdlPlatform::sdl_window() const { return window_.get(); }

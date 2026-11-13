@@ -33,10 +33,10 @@ constexpr std::array<std::string_view, kLayerOrder.size()> kLayerNames{
     "background", "master", "characters", "3d", "overlay", "ui", "transient",
 };
 
-// The image-name convention: image name N is the file "images/N.png", or "images/N.jpg" when
-// there is no such PNG. A name may hold "/": "bg/classroom" is "images/bg/classroom.png".
+// The image-name convention: image name N is the file "images/N.png", else "images/N.jpg", else
+// "images/N.webp". A name may hold "/": "bg/classroom" is "images/bg/classroom.png".
 constexpr std::string_view kImageDirectory = "images/";
-constexpr std::array<std::string_view, 2> kImageExtensions{".png", ".jpg"};
+constexpr std::array<std::string_view, 3> kImageExtensions{".png", ".jpg", ".webp"};
 
 std::string image_path(std::string_view name, std::string_view extension) {
   std::string path{kImageDirectory};
@@ -59,9 +59,11 @@ std::string missing_image(std::string_view name) {
   std::string message = "image '";
   message += name;
   message += "' not found (no ";
-  message += image_path(name, kImageExtensions.front());
+  message += image_path(name, kImageExtensions[0]);
+  message += ", ";
+  message += image_path(name, kImageExtensions[1]);
   message += " or ";
-  message += image_path(name, kImageExtensions.back());
+  message += image_path(name, kImageExtensions[2]);
   message += ")";
   return message;
 }
@@ -108,6 +110,12 @@ std::string quoted(std::string_view prefix, std::string_view name, std::string_v
   return message;
 }
 
+std::string unknown_layer(std::string_view name) {
+  return quoted("unknown layer '", name,
+                "' (the layers are background, master, characters, 3d, overlay, ui and "
+                "transient)");
+}
+
 // --- Serialized form -------------------------------------------------------------------------
 // Little-endian. A u32 format version, a u32 count of parts, then for each part in the order of
 // its name: the name (a u32 length and the bytes) and its bytes (a u32 length and the bytes).
@@ -130,6 +138,9 @@ std::string quoted(std::string_view prefix, std::string_view name, std::string_v
 // "shaders", only when a shader is set: a u32 count of displayables, then for each: tag, shader
 // name and the 16 f32 uniform values; then a u32 count of layers, then for each: u8 layer, shader
 // name and the 16 f32 uniform values.
+// "camera", only when the camera or a parallax is not the default: f32 pan x, pan y, zoom and
+// rotation; then a u32 count of layers whose parallax is not 1, and for each: u8 layer, f32
+// parallax. The shake is not kept.
 
 constexpr std::uint32_t kFormatVersion = 2;
 constexpr std::string_view kDisplayablesPart = "displayables";
@@ -138,12 +149,19 @@ constexpr std::string_view kAnimationsPart = "animations";
 constexpr std::string_view kMoviesPart = "movies";
 constexpr std::string_view kTweensPart = "tweens";
 constexpr std::string_view kShadersPart = "shaders";
+constexpr std::string_view kCameraPart = "camera";
 
 constexpr std::string_view kShaderDirectory = "shaders/";
+// The uniform that a custom transition declares and the engine sets.
+constexpr std::string_view kProgressUniform = "progress";
 constexpr std::string_view kShaderExtension = ".frag.hlsl";
 // HLSL packs a constant buffer in rows of four floats.
 constexpr std::size_t kFloatsPerRow = 4;
 constexpr Color kTransparent{.r = 0, .g = 0, .b = 0, .a = 0};
+// A transition mixes the layers before this one; the layers from it on draw over the result.
+constexpr auto kUiLayer = static_cast<std::size_t>(Layer::kUi);
+// The camera moves the layers before the UI, and no others.
+static_assert(kCameraLayerCount == kUiLayer);
 
 class Writer : public ByteWriter {
  public:
@@ -287,6 +305,26 @@ std::string out_of_time(std::string_view option) {
 using UniformIndex =
     std::function<std::optional<std::size_t>(std::string_view tag, std::string_view name)>;
 
+// The camera has a pan, a zoom and a rotation to tween, and nothing else; the zoom is above 0.
+std::string check_camera_tween(const TweenNode& node) {
+  constexpr std::array kChannels{Channel::kX, Channel::kY, Channel::kScaleX, Channel::kScaleY,
+                                 Channel::kRotation};
+  for (std::size_t channel = 0; channel < kChannelCount; ++channel) {
+    const std::optional<float>& target = node.to.at(channel);
+    if (target.has_value() && !std::ranges::any_of(kChannels, [channel](Channel allowed) {
+          return slot(allowed) == channel;
+        })) {
+      return "the camera has only x, y, zoom and rotation to tween";
+    }
+  }
+  for (const Channel zoom : {Channel::kScaleX, Channel::kScaleY}) {
+    if (node.to.at(slot(zoom)).value_or(1.0F) <= 0) {
+      return "option 'zoom' must be a number above 0";
+    }
+  }
+  return {};
+}
+
 // Fills `node` from `request`, or returns why that cannot be done. Positions are fractions of the
 // virtual resolution.
 std::string tween_node(const TweenRequest& request, Size virtual_size,
@@ -364,6 +402,9 @@ std::string tween_node(const TweenRequest& request, Size virtual_size,
     }
     node.to.at(uniform_slot(*index)) = static_cast<float>(value);
   }
+  if (problem.empty() && request.tag == kCameraTag) {
+    problem = check_camera_tween(node);
+  }
   return problem;
 }
 
@@ -402,11 +443,16 @@ std::optional<Scene::Slot> Scene::locate(std::string_view tag) const {
 }
 
 Timeline::Lookup Scene::lookup() {
-  return [this](std::string_view tag) { return properties_in(layers_, layer_state_, tag); };
+  return [this](std::string_view tag) {
+    return properties_in(layers_, layer_state_, camera_, tag);
+  };
 }
 
 DisplayProperties* Scene::properties_in(Layers& layers, LayerState& layer_state,
-                                        std::string_view tag) {
+                                        CameraState& camera, std::string_view tag) {
+  if (tag == kCameraTag) {
+    return &camera.pose;
+  }
   if (tag.starts_with(kLayerTagPrefix)) {
     const std::optional<Layer> layer = layer_from_name(tag.substr(kLayerTagPrefix.size()));
     return layer.has_value() ? &layer_state.at(static_cast<std::size_t>(*layer)) : nullptr;
@@ -422,6 +468,9 @@ DisplayProperties* Scene::properties_in(Layers& layers, LayerState& layer_state,
 }
 
 const DisplayProperties* Scene::properties_of(std::string_view tag) const {
+  if (tag == kCameraTag) {
+    return &camera_.pose;
+  }
   if (tag.starts_with(kLayerTagPrefix)) {
     const std::optional<Layer> layer = layer_from_name(tag.substr(kLayerTagPrefix.size()));
     return layer.has_value() ? &layer_state_.at(static_cast<std::size_t>(*layer)) : nullptr;
@@ -454,6 +503,7 @@ const Scene::GameShader* Scene::shader_by_id(std::uint32_t id) const {
 }
 
 std::string Scene::scene(std::string_view image) {
+  capture_old_frame();
   std::optional<std::string> path = resolve_image(*vfs_, image);
   if (!path.has_value()) {
     return missing_image(image);
@@ -567,6 +617,7 @@ std::string Scene::animation(const AnimationRequest& request) {
 }
 
 std::string Scene::show(const ShowRequest& request) {
+  capture_old_frame();
   const auto definition = definitions_.find(request.image);
   const auto animation = animations_.find(request.image);
   std::optional<std::string> path;
@@ -586,6 +637,9 @@ std::string Scene::show(const ShowRequest& request) {
   }
   if (request.tag.starts_with(kLayerTagPrefix)) {
     return quoted("tags that start with '", kLayerTagPrefix, "' are reserved for layers");
+  }
+  if (request.tag == kCameraTag) {
+    return quoted("the tag '", kCameraTag, "' is reserved for the camera");
   }
   const auto width = static_cast<float>(virtual_size_.width);
   const auto height = static_cast<float>(virtual_size_.height);
@@ -668,6 +722,7 @@ std::string Scene::show(const ShowRequest& request) {
 std::string Scene::check_movie(std::string_view path) { return movie_problem(*vfs_, path); }
 
 void Scene::hide(std::string_view tag) {
+  capture_old_frame();
   for (std::vector<Entry>& shown : layers_) {
     std::erase_if(shown, [tag](const Entry& entry) { return entry.tag == tag; });
   }
@@ -683,10 +738,16 @@ std::string Scene::tween(const TweenRequest& request) {
       !problem.empty()) {
     return problem;
   }
-  return timeline_.start(node, lookup(), request.replaying);
+  return timeline_.start(node, lookup(), request.replaying || request.instant);
 }
 
 void Scene::finish_tweens(std::string_view tag) {
+  if (tag.empty() || tag == kTransitionTag) {
+    transition_.reset();
+  }
+  if (tag.empty() || tag == kCameraTag) {
+    shake_.reset();
+  }
   timeline_.finish(tag, lookup());
   for (std::vector<Entry>& shown : layers_) {
     for (Entry& entry : shown) {
@@ -698,7 +759,9 @@ void Scene::finish_tweens(std::string_view tag) {
 }
 
 bool Scene::tweening(std::string_view tag) const {
-  if (timeline_.busy(tag)) {
+  if (timeline_.busy(tag) ||
+      (tag == kTransitionTag && transition_.has_value() && !transition_->clock.finished()) ||
+      ((tag.empty() || tag == kCameraTag) && shake_.has_value())) {
     return true;
   }
   return std::ranges::any_of(layers_, [tag](const std::vector<Entry>& shown) {
@@ -741,8 +804,9 @@ std::string Scene::declare_shader(std::string_view name, std::span<const std::st
   } catch (const ShaderCompileError& error) {
     return error.what();
   }
-  if (shader.compiled.samplers > 1 || shader.compiled.uniform_buffers > 1) {
-    return path + ": a shader may use one texture and one constant buffer (see vnmaki.hlsli)";
+  if (shader.compiled.samplers > kMaxShaderTextures || shader.compiled.uniform_buffers > 1) {
+    return path +
+           ": a shader may use up to three textures and one constant buffer (see vnmaki.hlsli)";
   }
   if (!shader.uniforms.empty() && shader.compiled.uniform_buffers == 0) {
     return path + ": the shader has uniforms but no constant buffer at register(b0, space3)";
@@ -768,9 +832,7 @@ std::string Scene::set_shader(const ShaderRequest& request) {
   if (request.layer) {
     const std::optional<Layer> layer = layer_from_name(request.target);
     if (!layer.has_value()) {
-      return quoted("unknown layer '", request.target,
-                    "' (the layers are background, master, characters, 3d, overlay, ui and "
-                    "transient)");
+      return unknown_layer(request.target);
     }
     properties = &layer_state_.at(static_cast<std::size_t>(*layer));
   } else {
@@ -811,6 +873,87 @@ std::string Scene::set_shader(const ShaderRequest& request) {
   }
   properties->shader = id;
   properties->uniforms = values;
+  return {};
+}
+
+std::string Scene::transition(const TransitionRequest& request) {
+  TransitionSpec spec;
+  if (std::string problem = make_transition_spec(request, spec); !problem.empty()) {
+    return problem;
+  }
+  ActiveTransition next{.clock = Transition{spec}};
+  if (spec.kind == TransitionKind::kMask) {
+    std::optional<std::string> path = resolve_image(*vfs_, spec.mask);
+    if (!path.has_value()) {
+      return missing_image(spec.mask);
+    }
+    next.mask_path = std::move(*path);
+  } else if (spec.kind == TransitionKind::kCustom) {
+    next.shader = shader_id(spec.name);
+    if (next.shader == 0) {
+      std::string message = quoted("unknown transition '", spec.name, "' (the built-in ones are ");
+      message += kBuiltinTransitions;
+      message += "; or declare a shader with shader(name, { \"progress\" }))";
+      return message;
+    }
+    const GameShader& shader = *shader_by_id(next.shader);
+    const std::vector<std::string>& names = shader.uniforms;
+    const auto progress = std::ranges::find(names, std::string{kProgressUniform});
+    if (progress == names.end()) {
+      return quoted("shader '", spec.name, "' needs the uniform 'progress' to be a transition");
+    }
+    next.progress_slot = static_cast<std::size_t>(progress - names.begin());
+    for (const auto& [uniform, value] : request.uniforms) {
+      const auto found = std::ranges::find(names, uniform);
+      if (found == names.end()) {
+        return quoted("shader '", spec.name, "' has no uniform '" + uniform + "'");
+      }
+      if (uniform == kProgressUniform) {
+        return "the uniform 'progress' is set by the engine";
+      }
+      if (!(std::abs(value) <= static_cast<double>(std::numeric_limits<float>::max()))) {
+        return out_of_range("uniforms." + uniform);
+      }
+      next.values.at(static_cast<std::size_t>(found - names.begin())) = static_cast<float>(value);
+    }
+  }
+  // A replay checks the transition and does not show it. With no time, the change is a cut.
+  if (request.replaying || spec.duration <= 0) {
+    return {};
+  }
+  capture_old_frame();
+  next.blank_from = old_frame_ == OldFrame::kNone;
+  transition_ = std::move(next);
+  return {};
+}
+
+std::string Scene::set_parallax(std::string_view layer, double factor) {
+  const std::optional<Layer> found = layer_from_name(layer);
+  if (!found.has_value()) {
+    return unknown_layer(layer);
+  }
+  const auto index = static_cast<std::size_t>(*found);
+  if (index >= kCameraLayerCount) {
+    return quoted("the camera does not move the layer '", layer, "'");
+  }
+  if (!(std::abs(factor) <= kMaxParallax)) {
+    return "option 'parallax' must be a number from -100 to 100";
+  }
+  camera_.parallax.at(index) = static_cast<float>(factor);
+  return {};
+}
+
+std::string Scene::shake(const ShakeRequest& request) {
+  if (!(request.strength >= 0 && request.strength <= 1)) {
+    return "option 'strength' must be a number from 0 to 1";
+  }
+  if (!(request.duration > 0 && request.duration <= kMaxTweenSeconds)) {
+    return "option 'duration' must be a number above 0 and up to 86400";
+  }
+  if (!request.replaying && request.strength > 0) {
+    shake_ = Shake{.strength = static_cast<float>(request.strength * virtual_size_.height),
+                   .duration = request.duration};
+  }
   return {};
 }
 
@@ -994,6 +1137,27 @@ std::vector<std::byte> Scene::capture() const {
     }
     parts.emplace(std::string{kShadersPart}, shaders.take());
   }
+  CameraState camera = camera_;
+  if (const auto adjusted = resting.find(std::string{kCameraTag}); adjusted != resting.end()) {
+    camera.pose = adjusted->second;
+  }
+  if (!camera.is_default()) {
+    Writer view;
+    view.f32(camera.pose.position.x);
+    view.f32(camera.pose.position.y);
+    view.f32(camera.pose.scale.x);
+    view.f32(camera.pose.rotation);
+    const auto moved = static_cast<std::uint32_t>(
+        std::ranges::count_if(camera.parallax, [](float factor) { return factor != 1.0F; }));
+    view.u32(moved);
+    for (std::size_t layer = 0; layer < camera.parallax.size(); ++layer) {
+      if (camera.parallax.at(layer) != 1.0F) {
+        view.u8(static_cast<std::uint8_t>(layer));
+        view.f32(camera.parallax.at(layer));
+      }
+    }
+    parts.emplace(std::string{kCameraPart}, view.take());
+  }
   Writer writer;
   writer.u32(kFormatVersion);
   writer.u32(static_cast<std::uint32_t>(parts.size()));
@@ -1028,12 +1192,13 @@ Scene::Layers Scene::read_displayables(std::span<const std::byte> bytes) {
 void Scene::read_shaders(std::span<const std::byte> bytes, Layers& layers,
                          LayerState& layer_state) const {
   Reader reader{bytes};
+  CameraState unused;  // the camera has no shader
   const std::uint32_t count = reader.u32();
   for (std::uint32_t i = 0; i < count; ++i) {
     const std::string tag = reader.string();
     const std::uint32_t id = shader_id(reader.string());
     const std::array<float, kMaxUniforms> values = reader.uniforms();
-    if (DisplayProperties* properties = properties_in(layers, layer_state, tag)) {
+    if (DisplayProperties* properties = properties_in(layers, layer_state, unused, tag)) {
       properties->shader = id;
       properties->uniforms = values;
     }
@@ -1050,6 +1215,34 @@ void Scene::read_shaders(std::span<const std::byte> bytes, Layers& layers,
   if (!reader.at_end()) {
     throw std::invalid_argument{"scene state: unexpected data after the last shader"};
   }
+}
+
+CameraState Scene::read_camera(std::span<const std::byte> bytes) {
+  Reader reader{bytes};
+  CameraState camera;
+  const PointF pan = reader.point();
+  const float zoom = reader.f32();
+  const float rotation = reader.f32();
+  if (!std::isfinite(pan.x) || !std::isfinite(pan.y) || !std::isfinite(zoom) || !(zoom > 0) ||
+      !std::isfinite(rotation)) {
+    throw std::invalid_argument{"scene state: the camera is out of range"};
+  }
+  camera.pose.position = pan;
+  camera.pose.scale = {.x = zoom, .y = zoom};
+  camera.pose.rotation = rotation;
+  const std::uint32_t count = reader.u32();
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const std::size_t layer = reader.u8();
+    const float factor = reader.f32();
+    if (layer >= camera.parallax.size() || !std::isfinite(factor)) {
+      throw std::invalid_argument{"scene state: a parallax is out of range"};
+    }
+    camera.parallax.at(layer) = factor;
+  }
+  if (!reader.at_end()) {
+    throw std::invalid_argument{"scene state: unexpected data after the camera"};
+  }
+  return camera;
 }
 
 void Scene::read_layered(std::span<const std::byte> bytes, Layers& layers) const {
@@ -1148,6 +1341,7 @@ void Scene::read_movies(std::span<const std::byte> bytes, Layers& layers,
 void Scene::restore(std::span<const std::byte> state) {
   Layers layers;
   LayerState layer_state;
+  CameraState camera;
   Timeline tweens;
   // A snapshot taken without a scene has no bytes: nothing was shown.
   if (!state.empty()) {
@@ -1184,15 +1378,23 @@ void Scene::restore(std::span<const std::byte> state) {
     if (const auto found = parts.find(kShadersPart); found != parts.end()) {
       read_shaders(found->second, layers, layer_state);
     }
+    if (const auto found = parts.find(kCameraPart); found != parts.end()) {
+      camera = read_camera(found->second);
+    }
     if (const auto found = parts.find(kTweensPart); found != parts.end()) {
-      tweens.restore(found->second, [&layers, &layer_state](std::string_view tag) {
-        return properties_in(layers, layer_state, tag);
+      tweens.restore(found->second, [&layers, &layer_state, &camera](std::string_view tag) {
+        return properties_in(layers, layer_state, camera, tag);
       });
     }
   }
   layers_ = std::move(layers);
   layer_state_ = std::move(layer_state);
+  camera_ = camera;
+  shake_.reset();
   timeline_ = std::move(tweens);
+  // A transition is not in the snapshot, and what was drawn is gone until the next draw().
+  transition_.reset();
+  old_frame_ = OldFrame::kNone;
 }
 
 std::vector<std::string> Scene::tags(Layer layer) const {
@@ -1224,6 +1426,20 @@ const Displayable* Scene::find(std::string_view tag) const {
 }
 
 void Scene::update(double seconds) {
+  // A finished transition is drawn once more at its end, and ends at the next update.
+  if (transition_.has_value()) {
+    if (transition_->clock.finished()) {
+      transition_.reset();
+    } else {
+      transition_->clock.advance(seconds);
+    }
+  }
+  if (shake_.has_value()) {
+    shake_->elapsed += seconds;
+    if (shake_->done()) {
+      shake_.reset();
+    }
+  }
   timeline_.update(seconds, lookup());
   for (std::vector<Entry>& shown : layers_) {
     for (Entry& entry : shown) {
@@ -1233,10 +1449,16 @@ void Scene::update(double seconds) {
 }
 
 void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
+  renderer_ = &renderer;
   for (const TextureId retired : *retired_textures_) {
     renderer.destroy_texture(retired);
   }
   retired_textures_->clear();
+  for (TextureId& frame : frames_) {
+    if (frame == TextureId{}) {
+      frame = renderer.create_render_target(virtual_size_, TextureFilter::kNearest);
+    }
+  }
   const auto texture_of = [&](const std::string& path) -> const Texture& {
     auto found = textures_.find(path);
     if (found == textures_.end()) {
@@ -1276,6 +1498,9 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
       image->set_texture(texture.id, texture.size);
     }
   }
+  if (transition_.has_value() && !transition_->mask_path.empty()) {
+    static_cast<void>(texture_of(transition_->mask_path));
+  }
   prepare_shaders(renderer);
 }
 
@@ -1310,14 +1535,23 @@ void Scene::prepare_shaders(IRenderer& renderer) {
           renderer.create_render_target(virtual_size_, TextureFilter::kNearest);
     }
   }
+  if (transition_.has_value()) {
+    if (transition_->shader != 0) {
+      static_cast<void>(gpu_shader(transition_->shader));
+    } else {
+      static_cast<void>(transition_shaders_.get(renderer, transition_->clock.spec().kind));
+    }
+  }
 }
 
-void Scene::draw(IRenderer& renderer, TextureId target) const {
+void Scene::draw_layers(IRenderer& renderer, std::size_t first, std::size_t last,
+                        TextureId target) const {
   const RectF whole{.x = 0,
                     .y = 0,
                     .width = static_cast<float>(virtual_size_.width),
                     .height = static_cast<float>(virtual_size_.height)};
-  for (const Layer layer : kLayerOrder) {
+  const PointF jitter = shake_.has_value() ? shake_offset(*shake_) : PointF{};
+  for (const Layer layer : std::span{kLayerOrder}.subspan(first, last - first)) {
     const auto index = static_cast<std::size_t>(layer);
     const DisplayProperties& state = layer_state_.at(index);
     const GameShader* shader = shader_by_id(state.shader);
@@ -1328,8 +1562,17 @@ void Scene::draw(IRenderer& renderer, TextureId target) const {
     if (shaded) {
       renderer.begin_pass({.target = buffer, .clear = kTransparent});
     }
+    // The camera moves the layers before the UI: their quads go through a CameraRenderer.
+    std::optional<CameraRenderer> moved;
+    if (index < kCameraLayerCount) {
+      const CameraView view{camera_, jitter, virtual_size_, index};
+      if (!view.identity()) {
+        moved.emplace(renderer, view);
+      }
+    }
+    IRenderer& drawn = moved.has_value() ? static_cast<IRenderer&>(*moved) : renderer;
     for (const Entry& entry : entries(layer)) {
-      entry.displayable->draw(renderer);
+      entry.displayable->draw(drawn);
     }
     if (shaded) {
       renderer.begin_pass({.target = target});
@@ -1340,6 +1583,79 @@ void Scene::draw(IRenderer& renderer, TextureId target) const {
                                   std::span{state.uniforms}.first(shader->uniform_floats))});
     }
   }
+}
+
+void Scene::capture_old_frame() {
+  if (old_frame_ != OldFrame::kPending || renderer_ == nullptr || frames_.front() == TextureId{}) {
+    return;
+  }
+  const TextureId frame = frames_.front();
+  renderer_->begin_frame();
+  renderer_->begin_pass({.target = frame, .clear = kTransparent});
+  draw_layers(*renderer_, 0, kUiLayer, frame);
+  static_cast<void>(renderer_->end_frame());
+  old_frame_ = OldFrame::kTaken;
+}
+
+void Scene::draw(IRenderer& renderer, TextureId target) const {
+  old_frame_ = OldFrame::kPending;
+  const auto [old_frame, new_frame] = frames_;
+
+  // The shader and constant buffer of the transition, if one can draw: prepare() makes the shaders.
+  ShaderId shader{};
+  std::array<float, kMaxUniforms> values{};
+  TransitionUniforms builtin_values;
+  std::span<const std::byte> uniforms;
+  bool mixing = transition_.has_value() && old_frame != TextureId{};
+  if (mixing) {
+    const ActiveTransition& active = *transition_;
+    const TransitionKind kind = active.clock.spec().kind;
+    if (kind == TransitionKind::kCustom) {
+      const GameShader* custom = shader_by_id(active.shader);
+      mixing = custom != nullptr && custom->gpu.has_value();
+      if (mixing) {
+        shader = *custom->gpu;
+        values = active.values;
+        values.at(active.progress_slot) = static_cast<float>(active.clock.progress());
+        uniforms = std::as_bytes(std::span{values}.first(custom->uniform_floats));
+      }
+    } else if (const std::optional<ShaderId> made = transition_shaders_.find(kind)) {
+      shader = *made;
+      builtin_values = active.clock.uniforms();
+      uniforms = std::as_bytes(std::span{&builtin_values, 1});
+    } else {
+      mixing = false;
+    }
+  }
+  // Without a transition the layers draw straight into the pass of the caller.
+  if (!mixing) {
+    draw_layers(renderer, 0, kLayerOrder.size(), target);
+    return;
+  }
+
+  // The old frame is frames_[0], drawn at the change; it is empty if nothing had been drawn.
+  if (transition_->blank_from) {
+    renderer.begin_pass({.target = old_frame, .clear = kTransparent});
+  }
+  renderer.begin_pass({.target = new_frame, .clear = kTransparent});
+  draw_layers(renderer, 0, kUiLayer, new_frame);
+  TextureId mask = new_frame;
+  if (!transition_->mask_path.empty()) {
+    const auto found = textures_.find(transition_->mask_path);
+    if (found != textures_.end()) {
+      mask = found->second.id;
+    }
+  }
+  renderer.begin_pass({.target = target});
+  const RectF whole{.x = 0,
+                    .y = 0,
+                    .width = static_cast<float>(virtual_size_.width),
+                    .height = static_cast<float>(virtual_size_.height)};
+  renderer.draw(quad_from_rect(whole), DrawState{.texture = old_frame,
+                                                 .shader = shader,
+                                                 .uniforms = uniforms,
+                                                 .more_textures = {new_frame, mask}});
+  draw_layers(renderer, kUiLayer, kLayerOrder.size(), target);
 }
 
 }  // namespace vnmaki

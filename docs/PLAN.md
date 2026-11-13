@@ -92,33 +92,59 @@ Do not do these tasks in parallel, because they change the same files:
 
 ### 18: Preferences and default screens (SPEC §15, §17)
 
-- [ ] `bind(table, key)` connects a node to `store`, `persistent` or `prefs` in two directions.
-- [ ] Nodes: toggle, slider, bar, grid.
-- [ ] Preferences in `persistent`: text speed, auto delay, volumes, fullscreen, skip mode, window opacity.
-- [ ] Screens: title, say, choice, save, load, preferences, backlog, quick menu, confirm. NVL and gallery are placeholders.
-- [ ] Mouse, keyboard and gamepad operate all screens. A game can replace a Lua screen by name.
-- [ ] Headless tests: save and load through the screens, a preference change.
+- [x] `bind(table, key)` connects a node to `store`, `persistent` or `prefs` in two directions.
+- [x] Nodes: toggle, slider, bar, grid.
+- [x] Preferences in `persistent`: text speed, auto delay, volumes, fullscreen, skip mode, window opacity. Also `reduce_motion` for task 23.
+- [x] Screens: title, say, choice, save, load, preferences, backlog, quick menu, confirm. NVL and gallery are placeholders.
+- [x] Mouse, keyboard and gamepad operate all screens. A game can replace a Lua screen by name.
+- [x] Headless tests: save and load through the screens, a preference change.
 
 ### 19: `vnmaki new` and template (SPEC §19)
 
 This task is the Phase 2 acceptance demo.
 
-- [ ] `vnmaki new <name>` copies `templates/default/` and fills in `project.toml`. It stops if the folder is not empty.
-- [ ] Assets with an MIT, OFL or CC0 license, or from generator scripts.
-- [ ] The sample is the §7 example: classroom, Eileen, a menu to `warm` and `cold`.
-- [ ] End-to-end headless test on the three CI platforms: new, both branches, save, load, rollback.
-- [ ] "Getting started" document for `new` and `run`.
+- [x] `vnmaki new <name>` copies `templates/default/` and fills in `project.toml`. It stops if the folder is not empty.
+- [x] Assets with an MIT, OFL or CC0 license, or from generator scripts.
+- [x] The sample is the §7 example: classroom, Eileen, a menu to `warm` and `cold`.
+- [x] End-to-end headless test on the three CI platforms: new, both branches, save, load, rollback.
+- [x] "Getting started" document for `new` and `run`.
 
-### Not planned yet
+### Order for 29–31
 
-Plan these SPEC items before Phase 2 ends:
+Do 29, 30a and 31 in parallel after 19. They do not share files, except `script_runtime.cpp` prelude literals (add new code in a new literal).
 
-- [ ] `pause(seconds)` step (§7, §8).
-- [ ] NVL mode and gallery with unlocks (§7, §8, §15).
-- [ ] UI styles and themes, UI `input` node (§15).
-- [ ] WebP images through libwebp (§4).
-- [ ] cppcheck or MSVC `/analyze` in CI (§5).
-- [ ] vcpkg in the cloud container with a git asset cache.
+### 29: `pause`, NVL mode and gallery (SPEC §7, §8, §15)
+
+Files: `engine/runtime/`, `engine/dialogue/`, `engine/runtime/default_screens.cpp`, `engine/saves/` (unlocks in `persistent`).
+
+- [ ] `pause(seconds)` is a step. A click or skip mode ends it. Replay does not wait. Rollback goes over it like over a `wait`.
+- [ ] `nvl(true|false)` and `character{ kind = "nvl" }` show lines in a full-screen NVL screen. `nvl_clear()` empties it. Menus in NVL mode show inside the NVL screen. The backlog is the same.
+- [ ] The NVL page is in the snapshot, so load and rollback show the same page.
+- [ ] `unlock(kind, name)` writes to `persistent.unlocks`. Images shown with `show`/`scene` unlock `cg/<name>` when `project.toml` lists `gallery = [...]`.
+- [ ] The gallery screen shows a grid of unlocked images and a locked placeholder for the others. Mouse, keyboard and gamepad work.
+- [ ] Headless tests: pause and skip, NVL page across rollback and load, unlock after `show`, gallery grid state.
+
+### 30a: UI styles, themes and the `input` node (SPEC §15)
+
+Files: `engine/ui/`, `engine/runtime/` (prelude, screen nodes), `engine/runtime/default_screens.cpp`.
+
+- [ ] `style(name, { font, size, color, background, padding, gap, border, focus = {...}, hover = {...} })` declares a style. A node takes `style = "name"`. Node fields override style fields.
+- [ ] `theme("name")` loads `styles/<name>.lua` and replaces the style table. The default screens use only named styles.
+- [ ] The `input` node edits a string bound with `bind`. It turns on SDL text input only while it has the focus (see the Platform contract). It has a max length and a placeholder.
+- [ ] Headless tests: style merge order, theme switch changes node rectangles, input typing, backspace and focus loss.
+
+### 31: WebP images and static analysis (SPEC §4, §5)
+
+Files: `engine/render/image.cpp`, `vcpkg.json`, `fuzz/`, `.github/workflows/ci.yml`, `tools/generators/`.
+
+- [x] `load_image` decodes WebP through libwebp (vcpkg). Image name `N` also finds `images/N.webp` after `.png` and `.jpg`.
+- [x] A generator writes a small lossless WebP with the Python standard library (VP8L with literal pixels). A test compares its pixels.
+- [x] A fuzz target for the WebP decoder path.
+- [x] CI runs MSVC `/analyze` on the Windows debug job. Correct the findings in first-party code. Do not suppress them.
+
+### Deferred from Phase 2
+
+- vcpkg in the cloud container with a git asset cache: the owner works on Windows now.
 
 ## Phase 3: Presentation
 
@@ -157,11 +183,11 @@ Files: new `engine/anim/`, `engine/scene/scene.*`, `engine/scene/displayable.*`,
 
 Files: new `engine/anim/transition.*`, `shaders/transition_*.hlsl`, `engine/scene/scene.cpp`, runtime.
 
-- [ ] `with = name` on `scene`, `show` and `hide`, and `transition(name, options)`. All changes in one step use one transition.
-- [ ] The scene draws the old frame and the new frame into two virtual-resolution targets. A transition shader mixes them. The UI and transient layers are not part of the transition.
-- [ ] Built-in transitions: dissolve, fade through a color, slide and wipe (left, right, up, down), and image mask (`mask = "masks/x"`, `softness`). A custom shader from task 24 can be used by name.
-- [ ] A transition blocks like `wait`, and a click ends it. Replay and skip mode do not show a transition. An unknown name gives an error at the script line.
-- [ ] GPU goldens for each built-in transition at progress 0, 0.5 and 1, with a fake clock.
+- [x] `with = name` on `scene`, `show` and `hide`, and `transition(name, options)`. All changes in one step use one transition.
+- [x] The scene draws the old frame and the new frame into two virtual-resolution targets. A transition shader mixes them. The UI and transient layers are not part of the transition.
+- [x] Built-in transitions: dissolve, fade through a color, slide and wipe (left, right, up, down), and image mask (`mask = "masks/x"`, `softness`). A custom shader from task 24 can be used by name.
+- [x] A transition blocks like `wait`, and a click ends it. Replay and skip mode do not show a transition. An unknown name gives an error at the script line.
+- [x] GPU goldens for each built-in transition at progress 0, 0.5 and 1, with a fake clock.
 
 ### 22: Layered sprites (SPEC §10, §7)
 
@@ -178,12 +204,12 @@ Files: new `engine/scene/layered_sprite.*`, `engine/scene/scene.cpp`, runtime.
 
 Files: new `engine/scene/camera.*`, `engine/scene/scene.cpp` (draw), `engine/anim/`, runtime.
 
-- [ ] `camera { x, y, zoom, rotation, duration, ease }` moves the view of the layers from background to overlay. The UI and transient layers do not move.
-- [ ] `layer(name, { parallax = f })`: the pan of that layer is f × the camera pan. The default is 1.
-- [ ] `shake { strength, duration }` uses a fixed noise function of time. It does not use `rand`, so `store` does not change.
-- [ ] `prefs.reduce_motion` stops shake and makes camera moves instant.
-- [ ] `tween("@camera", ...)` and `wait("@camera")` work. The camera is in the snapshot. After replay, the camera is at its end value.
-- [ ] GPU goldens: pan, zoom, rotation, parallax at two depths, and one shake frame at a fixed time.
+- [x] `camera { x, y, zoom, rotation, duration, ease }` moves the view of the layers from background to overlay. The UI and transient layers do not move.
+- [x] `layer(name, { parallax = f })`: the pan of that layer is f × the camera pan. The default is 1.
+- [x] `shake { strength, duration }` uses a fixed noise function of time. It does not use `rand`, so `store` does not change.
+- [x] `prefs.reduce_motion` stops shake and makes camera moves instant.
+- [x] `tween("@camera", ...)` and `wait("@camera")` work. The camera is in the snapshot. After replay, the camera is at its end value.
+- [x] GPU goldens: pan, zoom, rotation, parallax at two depths, and one shake frame at a fixed time.
 
 ### 24: Custom shaders and uniform tweens (SPEC §9, §10)
 

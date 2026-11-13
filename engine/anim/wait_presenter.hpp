@@ -2,7 +2,8 @@
 
 // The wait presenter (docs/SPEC.md section 10): ends the script's `wait(tag)` and `wait_all()`
 // steps. A wait is always a step, also when there is nothing to wait for, so that a replay counts
-// the same steps as live play; this class goes past it as soon as its tweens have ended.
+// the same steps as live play; this class goes past it as soon as its tweens have ended. A
+// transition (engine/anim/transition.hpp) is a wait for the tag kTransitionTag.
 
 namespace vnmaki {
 

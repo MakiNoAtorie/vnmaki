@@ -26,6 +26,7 @@
     { "name": "harfbuzz", "default-features": false },
     "libunibreak",
     "libwebm",
+    "libwebp",
     "libvorbis",
     "lua",
     "miniaudio",

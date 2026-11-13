@@ -200,7 +200,8 @@ TEST_CASE("layered: an unknown group or value, or a bad definition, fails at the
   CHECK(line_error(R"(show("eileen", { face = 1 }))") ==
         at_line() + "bad option 'face' to 'show' (string expected, got number)");
   CHECK(line_error(R"(layered("ghost", { order = { "base" }, base = "nope" }))") ==
-        at_line() + "image 'nope' not found (no images/nope.png or images/nope.jpg)");
+        at_line() +
+            "image 'nope' not found (no images/nope.png, images/nope.jpg or images/nope.webp)");
   CHECK(line_error(
             R"(layered("x", { order = { "base" }, base = "rain", default = { base = "y" } }))") ==
         at_line() + "unknown value 'y' for group 'base' of 'x' (it has one fixed image)");

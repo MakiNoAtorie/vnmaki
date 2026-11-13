@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -37,7 +38,10 @@
 #include "engine/text/text.hpp"
 #include "engine/ui/backlog_screen.hpp"
 #include "engine/ui/playback_indicator.hpp"
+#include "engine/ui/preferences.hpp"
+#include "engine/ui/screen_actions.hpp"
 #include "engine/ui/screen_presenter.hpp"
+#include "engine/ui/ui_build.hpp"
 #include "engine/ui/ui_host.hpp"
 #include "engine/ui/ui_renderer.hpp"
 #include "engine/vfs/vfs.hpp"
@@ -71,19 +75,6 @@ std::unique_ptr<Audio> make_audio(const Vfs& vfs, std::ostream& err) {
     }
   }
   return std::make_unique<Audio>(vfs);
-}
-
-// The next skip mode when the player presses the skip key: off, seen text, all text, off.
-SkipMode next_skip_mode(SkipMode mode) {
-  switch (mode) {
-    case SkipMode::kOff:
-      return SkipMode::kSeen;
-    case SkipMode::kSeen:
-      return SkipMode::kAll;
-    case SkipMode::kAll:
-      break;
-  }
-  return SkipMode::kOff;
 }
 
 }  // namespace
@@ -122,7 +113,10 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
                            .scene_state = &scene_state,
                            .scene = &scene,
                            .screens = &ui,
-                           .audio = audio.get()}};
+                           .audio = audio.get(),
+                           .canvas_width = virtual_size.width,
+                           .canvas_height = virtual_size.height}};
+    ui.set_bindings(&runtime);
     const auto warn = [&err](std::string_view message) { err << "vnmaki: " << message << '\n'; };
     const std::filesystem::path data_directory =
         data_directory_override ? *data_directory_override
@@ -138,6 +132,25 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     UiRenderer ui_renderer{*renderer, fonts, &vfs};
     ui.set_text_measure(ui_renderer.text_measure());
     SayBoxView say_box{*renderer, std::move(fonts), SayBoxStyle::for_resolution(virtual_size)};
+    // The say box is the Lua screen `say`; if it fails the built-in box is drawn.
+    say_box.set_screen_source(
+        [&](const DialogueLine& line) -> std::optional<UiNode> {
+          ScreenNodeDef args{.kind = "args",
+                             .props = {{"speaker", line.speaker}, {"text", line.text}}};
+          if (line.color) {
+            args.props.emplace_back("color", std::format("#{:06x}", *line.color));
+          }
+          ScreenNodeDef tree;
+          if (!runtime.build_screen("say", args, tree).empty()) {
+            return std::nullopt;
+          }
+          try {
+            return build_ui_tree(tree);
+          } catch (const UiBuildError&) {
+            return std::nullopt;
+          }
+        },
+        virtual_size);
 
     Saves saves{runtime,
                 {.directory = data_directory,
@@ -164,9 +177,27 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     PlaybackIndicator indicator{ui};
     const Backlog backlog{runtime, audio.get(), config.backlog_length};
     BacklogScreen backlog_screen{ui, backlog, ui_renderer.text_measure()};
+    PreferenceApplier preferences{runtime,
+                                  {.presenter = &presenter,
+                                   .playback = &playback,
+                                   .audio = audio.get(),
+                                   .platform = &platform}};
 
     SteadyClock clock;
     MainLoop loop{platform, clock, {.min_frame_time = kFrameTime}};
+    ScreenActions actions{runtime,
+                          ui,
+                          saves,
+                          {.playback = &playback,
+                           .backlog = &backlog_screen,
+                           .quit = [&] { loop.request_quit(); },
+                           .on_warning = warn}};
+    screens.set_action_handler(
+        [&](const ScreenActivation& activation) { return actions.handle(activation); });
+    ui_renderer.set_generated_images(
+        [&](const std::string& name) { return actions.thumbnail(name); });
+    static_cast<void>(actions.open("quick_menu", {}, false));
+
     const auto viewport = [&] {
       return compute_viewport(virtual_size, platform.window_metrics().pixels, ScaleMode::kFit);
     };
@@ -203,7 +234,8 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
         } else if (key->pressed && !key->repeat && key->key == Key::kA) {
           playback.set_auto(!playback.automatic());
         } else if (key->pressed && !key->repeat && key->key == Key::kS) {
-          playback.set_skip(next_skip_mode(playback.skip()));
+          playback.toggle_skip(preferences.current().skip_unseen ? SkipMode::kAll
+                                                                 : SkipMode::kSeen);
         }
       } else if (const auto* click = std::get_if<PointerButtonEvent>(&event)) {
         if (click->pressed && click->button == MouseButton::kLeft &&
@@ -225,8 +257,9 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       const double seconds = std::chrono::duration<double>(step).count();
       saves.poll();  // a script's save or load, or a load in the middle of a line
       presenter.update(seconds);
-      if (!backlog_screen.is_open()) {  // auto and skip wait while the player reads
-        playback.update(seconds);
+      preferences.update();
+      if (!backlog_screen.is_open() && !ui.has_modal()) {  // auto and skip wait while the player
+        playback.update(seconds);                          // reads or sets something
       }
       scene.update(seconds);
       audio->update(seconds);

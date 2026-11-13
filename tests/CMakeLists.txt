@@ -36,6 +36,10 @@ vnmaki_add_fixture_generator(
   render SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
   DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
+# WebP images for the image decoder (ticket 31).
+vnmaki_add_fixture_generator(
+  webp SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/webp_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
 # Script runtime (ticket 06).
 target_sources(vnmaki_unit_tests PRIVATE unit/headless_runner_test.cpp
                                          unit/script_sandbox_test.cpp
@@ -75,6 +79,14 @@ vnmaki_add_fixture_generator(
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_render_tests)
 
+# Transitions: the clock, options, the script API and blocking, and GPU goldens (ticket 21).
+target_sources(vnmaki_unit_tests PRIVATE unit/transition_test.cpp)
+vnmaki_add_fixture_generator(
+  transition SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/transition_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
 # Layered sprites: attributes, crossfade, snapshot, drawing order (ticket 22).
 target_sources(vnmaki_unit_tests PRIVATE unit/layered_test.cpp)
 vnmaki_add_fixture_generator(
@@ -87,6 +99,15 @@ vnmaki_add_fixture_generator(
 target_sources(vnmaki_unit_tests PRIVATE unit/frame_animation_test.cpp)
 vnmaki_add_fixture_generator(
   frame_anim SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/frame_anim_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
+# Camera: the view maths, shake noise, script calls, snapshot, reduced motion, GPU goldens
+# (ticket 23).
+target_sources(vnmaki_unit_tests PRIVATE unit/camera_test.cpp)
+vnmaki_add_fixture_generator(
+  camera SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/camera_fixtures.py"
   DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_render_tests)
@@ -107,11 +128,25 @@ target_sources(vnmaki_unit_tests PRIVATE unit/ui_test.cpp)
 # Saves: file format, slots, quick save, auto save, on_load (ticket 12).
 target_sources(vnmaki_unit_tests PRIVATE unit/saves_test.cpp)
 
+# `vnmaki new` and the default template: the copy, the sample game played end to end, and the
+# generator of its assets (ticket 19).
+target_sources(vnmaki_unit_tests PRIVATE unit/new_project_test.cpp)
+target_compile_definitions(vnmaki_unit_tests
+                           PRIVATE VNMAKI_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/templates")
+vnmaki_add_fixture_generator(
+  template SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
 # Persistent store, seen text, skip and auto-advance (ticket 14).
 target_sources(vnmaki_unit_tests PRIVATE unit/playback_test.cpp)
 
 # Rollback: history, labels, menus, depth, the inputs (ticket 13).
 target_sources(vnmaki_unit_tests PRIVATE unit/rollback_test.cpp)
+
+# Preferences and the default screens: bind, toggle, slider, bar, grid, prefs, actions (ticket 18).
+target_sources(vnmaki_unit_tests PRIVATE unit/screens_test.cpp)
 
 # Backlog: entries from the step log, voice replay, the scrolling screen (ticket 15).
 target_sources(vnmaki_unit_tests PRIVATE unit/backlog_test.cpp)

@@ -64,8 +64,9 @@ struct AudioTrackState {
 
 struct AudioChannelState {
   double volume = 1;
-  double duck = 1;      ///< The gain ducking gives now: 1, or less while a voice plays.
-  std::string music{};  ///< The music the channel is set to loop; empty for none.
+  double duck = 1;        ///< The gain ducking gives now: 1, or less while a voice plays.
+  double preference = 1;  ///< The player's preference (set_preference_volume); not in snapshots.
+  std::string music{};    ///< The music the channel is set to loop; empty for none.
   /// What is playing, oldest first. During a crossfade the old and the new music are both here.
   std::vector<AudioTrackState> tracks{};
 };
@@ -116,6 +117,11 @@ class Audio final : public SceneState, public AudioCommands, public MovieAudio {
                                                 bool loop) override;
   [[nodiscard]] std::optional<double> movie_audio_position(std::uint64_t token) const override;
   void stop_movie_audio(std::uint64_t token) override;
+
+  /// The player's volume preference for a channel, from 0 to 1, on top of the script's `volume`
+  /// and ducking. It is not in the snapshot: a load or a rollback leaves it alone. Returns why it
+  /// cannot, or an empty string.
+  [[nodiscard]] std::string set_preference_volume(std::string_view channel_name, double level);
 
   [[nodiscard]] std::vector<std::byte> capture() const override;
   void restore(std::span<const std::byte> state) override;

@@ -14,6 +14,9 @@ std::string_view hlsl_header(std::string_view name) {
   if (name == "sprite_fragment.hlsli") {
     return R"hlsl(@VNMAKI_SPRITE_FRAGMENT_HLSLI@)hlsl";
   }
+  if (name == "transition.hlsli") {
+    return R"hlsl(@VNMAKI_TRANSITION_HLSLI@)hlsl";
+  }
   return {};
 }
 
