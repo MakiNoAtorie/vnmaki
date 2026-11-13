@@ -2075,6 +2075,10 @@ class ScriptRuntime::Impl {
   void set_observer(ScriptObserver* observer) {
     observer_ = observer != nullptr ? observer : &null_observer();
   }
+  void set_thread_hook(ThreadHook hook);
+  [[nodiscard]] lua_State* label_thread() const {
+    return frames_.empty() ? nullptr : frames_.back().thread.thread_state();
+  }
   // Returns the runtime for the reloaded scripts, or null with `problem` set.
   [[nodiscard]] std::unique_ptr<Impl> reload(std::string& problem);
   [[nodiscard]] ScreenValue binding(std::string_view table, std::string_view key);
@@ -2308,6 +2312,19 @@ ScriptRuntime::Impl::Impl(const Vfs& vfs, const ScriptRuntimeOptions& options)
   if (options_.instruction_limit != 0) {
     hook_period_ = std::min(options_.instruction_limit, kHookPeriod);
     limits_configure_(hook_period_);
+  }
+  if (options_.thread_hook) {
+    options_.thread_hook(lua_.lua_state());
+  }
+}
+
+void ScriptRuntime::Impl::set_thread_hook(ThreadHook hook) {
+  options_.thread_hook = std::move(hook);
+  if (options_.thread_hook) {
+    options_.thread_hook(lua_.lua_state());
+    for (const Frame& frame : frames_) {
+      options_.thread_hook(frame.thread.thread_state());
+    }
   }
 }
 
@@ -3094,6 +3111,9 @@ ScriptRuntime::Impl::Frame ScriptRuntime::Impl::make_frame(const std::string& na
   const Label& label = labels_.find(name)->second;
   sol::thread thread = sol::thread::create(lua_.lua_state());
   limits_watch_(thread);
+  if (options_.thread_hook) {
+    options_.thread_hook(thread.thread_state());
+  }
   sol::coroutine coroutine{thread.thread_state(), label.function};
   return Frame{.label = name, .thread = std::move(thread), .coroutine = std::move(coroutine)};
 }
@@ -3725,6 +3745,8 @@ ScriptPosition ScriptRuntime::position() const { return impl_->position(); }
 const std::string& ScriptRuntime::error() const { return impl_->error(); }
 EvalResult ScriptRuntime::eval(std::string_view code) { return impl_->eval(code); }
 void ScriptRuntime::set_observer(ScriptObserver* observer) { impl_->set_observer(observer); }
+void ScriptRuntime::set_thread_hook(ThreadHook hook) { impl_->set_thread_hook(std::move(hook)); }
+lua_State* ScriptRuntime::label_thread() const { return impl_->label_thread(); }
 std::string ScriptRuntime::reload_scripts() {
   std::string problem;
   if (std::unique_ptr<Impl> reloaded = impl_->reload(problem)) {

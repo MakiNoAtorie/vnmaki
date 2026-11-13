@@ -15,6 +15,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -24,6 +25,8 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+struct lua_State;  // Lua's own type (global scope); only the debugger uses it
 
 namespace vnmaki {
 
@@ -673,7 +676,13 @@ struct ScriptRuntimeOptions {
   /// The first state of the script RNG (`rand`, `math.random`). The same seed,
   /// scripts and inputs always give the same story.
   std::uint64_t random_seed = kDefaultRandomSeed;
+  /// Set through ScriptRuntime::set_thread_hook(); see ThreadHook.
+  std::function<void(lua_State*)> thread_hook{};
 };
+
+/// Called with the main thread of each new VM (the constructor, reload_scripts()) and with the
+/// thread of each label (also in a replay). Only the debugger (engine/tools/debugger.hpp) sets one.
+using ThreadHook = std::function<void(lua_State*)>;
 
 /// The outcome of ScriptRuntime::eval.
 struct EvalResult {
@@ -904,6 +913,12 @@ class ScriptRuntime {
   [[nodiscard]] EvalResult eval(std::string_view code);
   /// Replaces the observer (null: none). Pass one that outlives the runtime or reset it first.
   void set_observer(ScriptObserver* observer);
+
+  /// Dev tools: `hook` is called for the VM now, for the label threads that run, and for each
+  /// later VM and label thread. A reload keeps it. Empty turns it off.
+  void set_thread_hook(ThreadHook hook);
+  /// The thread of the running label (the top of the call stack); null if none runs.
+  [[nodiscard]] lua_State* label_thread() const;
 
   /// Dev tools (hot reload): loads every script again, the default screens and styles with them,
   /// and replays to the position the story waits at. The new scripts run in a fresh Lua VM, so a

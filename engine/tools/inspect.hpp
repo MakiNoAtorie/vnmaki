@@ -3,6 +3,7 @@
 // The data of the dev overlay's inspector panels (docs/SPEC.md section 18). These functions
 // return rows and use no ImGui, so tests can check them; the overlay only draws the rows.
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -90,7 +91,10 @@ struct LabelRow {
 /// "Jump": starts `label` at step 1 through ScriptRuntime::replay(), with the current `store`
 /// and the scene of the running label's entry, no callers and no inputs. If the label cannot
 /// reach step 1 (it has no blocking call), the story goes back to where it was. Returns the
-/// reason when it failed, or an empty string.
-[[nodiscard]] std::string jump_to_label(ScriptRuntime& runtime, std::string_view label);
+/// reason when it failed, or an empty string. `step` (from 1) is the yield point of the label to
+/// stop at: the debugger's `vnmaki/goto`. It also works while the runtime is not waiting (the
+/// debugger stopped inside a run): a failure then goes back to the last yield point reached.
+[[nodiscard]] std::string jump_to_label(ScriptRuntime& runtime, std::string_view label,
+                                        std::uint32_t step = 1);
 
 }  // namespace vnmaki
