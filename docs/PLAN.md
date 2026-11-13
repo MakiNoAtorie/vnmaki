@@ -109,16 +109,42 @@ This task is the Phase 2 acceptance demo.
 - [ ] End-to-end headless test on the three CI platforms: new, both branches, save, load, rollback.
 - [ ] "Getting started" document for `new` and `run`.
 
-### Not planned yet
+### Order for 29–31
 
-Plan these SPEC items before Phase 2 ends:
+Do 29, 30a and 31 in parallel after 19. They do not share files, except `script_runtime.cpp` prelude literals (add new code in a new literal).
 
-- [ ] `pause(seconds)` step (§7, §8).
-- [ ] NVL mode and gallery with unlocks (§7, §8, §15).
-- [ ] UI styles and themes, UI `input` node (§15).
-- [ ] WebP images through libwebp (§4).
-- [ ] cppcheck or MSVC `/analyze` in CI (§5).
-- [ ] vcpkg in the cloud container with a git asset cache.
+### 29: `pause`, NVL mode and gallery (SPEC §7, §8, §15)
+
+Files: `engine/runtime/`, `engine/dialogue/`, `engine/runtime/default_screens.cpp`, `engine/saves/` (unlocks in `persistent`).
+
+- [ ] `pause(seconds)` is a step. A click or skip mode ends it. Replay does not wait. Rollback goes over it like over a `wait`.
+- [ ] `nvl(true|false)` and `character{ kind = "nvl" }` show lines in a full-screen NVL screen. `nvl_clear()` empties it. Menus in NVL mode show inside the NVL screen. The backlog is the same.
+- [ ] The NVL page is in the snapshot, so load and rollback show the same page.
+- [ ] `unlock(kind, name)` writes to `persistent.unlocks`. Images shown with `show`/`scene` unlock `cg/<name>` when `project.toml` lists `gallery = [...]`.
+- [ ] The gallery screen shows a grid of unlocked images and a locked placeholder for the others. Mouse, keyboard and gamepad work.
+- [ ] Headless tests: pause and skip, NVL page across rollback and load, unlock after `show`, gallery grid state.
+
+### 30a: UI styles, themes and the `input` node (SPEC §15)
+
+Files: `engine/ui/`, `engine/runtime/` (prelude, screen nodes), `engine/runtime/default_screens.cpp`.
+
+- [ ] `style(name, { font, size, color, background, padding, gap, border, focus = {...}, hover = {...} })` declares a style. A node takes `style = "name"`. Node fields override style fields.
+- [ ] `theme("name")` loads `styles/<name>.lua` and replaces the style table. The default screens use only named styles.
+- [ ] The `input` node edits a string bound with `bind`. It turns on SDL text input only while it has the focus (see the Platform contract). It has a max length and a placeholder.
+- [ ] Headless tests: style merge order, theme switch changes node rectangles, input typing, backspace and focus loss.
+
+### 31: WebP images and static analysis (SPEC §4, §5)
+
+Files: `engine/render/image.cpp`, `vcpkg.json`, `fuzz/`, `.github/workflows/ci.yml`, `tools/generators/`.
+
+- [ ] `load_image` decodes WebP through libwebp (vcpkg). Image name `N` also finds `images/N.webp` after `.png` and `.jpg`.
+- [ ] A generator writes a small lossless WebP with the Python standard library (VP8L with literal pixels). A test compares its pixels.
+- [ ] A fuzz target for the WebP decoder path.
+- [ ] CI runs MSVC `/analyze` on the Windows debug job. Correct the findings in first-party code. Do not suppress them.
+
+### Deferred from Phase 2
+
+- vcpkg in the cloud container with a git asset cache: the owner works on Windows now.
 
 ## Phase 3: Presentation
 
