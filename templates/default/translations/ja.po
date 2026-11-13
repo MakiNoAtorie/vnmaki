@@ -1,0 +1,137 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: ja\n"
+
+#. speaker: eileen
+#: scripts/main.lua:41
+msgctxt "classroom/861e044d"
+msgid "You came back."
+msgstr ""
+
+#: scripts/main.lua:44
+msgctxt "classroom/b8e24db5"
+msgid "Of course I did."
+msgstr ""
+
+#: scripts/main.lua:45
+msgctxt "classroom/c491188b"
+msgid "I forgot my bag."
+msgstr ""
+
+#: scripts/main.lua:46
+msgctxt "classroom/ec3f84f9"
+msgid "Never mind that. What can you do?"
+msgstr ""
+
+#. speaker: eileen
+#: scripts/main.lua:60
+msgctxt "warm/e136178b"
+msgid "I'm glad. I kept your seat by the window."
+msgstr ""
+
+#. speaker: eileen
+#: scripts/main.lua:61
+msgctxt "warm/1d2d2c4c"
+msgid "Let's walk home together."
+msgstr ""
+
+#: scripts/main.lua:62
+msgctxt "warm/b59ba55b"
+msgid "The end. Open scripts/main.lua to write your own story."
+msgstr "おわり。あなたの物語を書こう。"
+
+#. speaker: eileen
+#: scripts/main.lua:67
+msgctxt "cold/16607c26"
+msgid "Oh. So that is the only reason."
+msgstr ""
+
+#. speaker: eileen
+#: scripts/main.lua:68
+msgctxt "cold/55dcc4b9"
+msgid "Your bag is on your desk."
+msgstr ""
+
+#: scripts/main.lua:69
+msgctxt "cold/b59ba55b"
+msgid "The end. Open scripts/main.lua to write your own story."
+msgstr ""
+
+#. speaker: eileen
+#: scripts/presentation.lua:14
+msgctxt "presentation/aa09721b"
+msgid "This is the presentation demo."
+msgstr ""
+
+#. speaker: eileen
+#: scripts/presentation.lua:18
+msgctxt "presentation/651e8fc1"
+msgid "A new face fades in over the old one."
+msgstr ""
+
+#. speaker: eileen
+#: scripts/presentation.lua:24
+msgctxt "presentation/4e547daa"
+msgid "The camera pans and shakes. The backdrop stays."
+msgstr ""
+
+#. speaker: eileen
+#: scripts/presentation.lua:30
+msgctxt "presentation/2fb90f3a"
+msgid "A sepia shader on the backdrop layer fades in."
+msgstr ""
+
+#. speaker: eileen
+#: scripts/presentation.lua:36
+msgctxt "presentation/80aa1320"
+msgid "Now my mouth follows my voice."
+msgstr ""
+
+#. speaker: eileen
+#: scripts/presentation.lua:39
+msgctxt "presentation/e7120f16"
+msgid "A short movie follows."
+msgstr ""
+
+#. speaker: eileen
+#: scripts/presentation.lua:50
+msgctxt "presentation/cca45826"
+msgid "That was the presentation demo. Edit scripts/presentation.lua to change it."
+msgstr ""
+
+#: scripts/presentation.lua:51
+msgctxt "presentation/b59ba55b"
+msgid "The end. Open scripts/main.lua to write your own story."
+msgstr ""
+
+#: scripts/ui.lua:6
+msgctxt "screen/quick_menu/254c376a"
+msgid "Save"
+msgstr ""
+
+#: scripts/ui.lua:7
+msgctxt "screen/quick_menu/8581ef37"
+msgid "Load"
+msgstr ""
+
+#: scripts/ui.lua:8
+msgctxt "screen/quick_menu/a4437eac"
+msgid "Auto"
+msgstr ""
+
+#: scripts/ui.lua:9
+msgctxt "screen/quick_menu/74321d44"
+msgid "Skip"
+msgstr ""
+
+#: scripts/ui.lua:10
+msgctxt "screen/quick_menu/83ba754f"
+msgid "Log"
+msgstr ""
+
+#: scripts/ui.lua:11
+msgctxt "screen/quick_menu/589bfc5b"
+msgid "Prefs"
+msgstr ""
