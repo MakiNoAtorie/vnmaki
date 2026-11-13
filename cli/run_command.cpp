@@ -129,8 +129,18 @@ int run_command(std::span<const std::string_view> args, std::ostream& out, std::
 
   Vfs vfs;
   try {
-    // A folder with a game.vnpak is a built game: the packs are the whole project.
-    if (!mount_game_packs(vfs, arguments->project_dir) &&
+    // A folder with a game.vnpak is a built game: the packs are the whole project. A folder with
+    // a project.toml is a project, and an old pack in it (a build that went there) is not run.
+    std::error_code exists_error;
+    const std::filesystem::path& dir = arguments->project_dir;
+    const bool loose_project =
+        std::filesystem::is_regular_file(dir / std::string{kProjectConfigPath}, exists_error);
+    if (loose_project &&
+        std::filesystem::is_regular_file(dir / std::string{kGamePakName}, exists_error)) {
+      err << "vnmaki: " << to_utf8(arguments->project_dir)
+          << " has project.toml, so its game.vnpak is ignored and the loose files run\n";
+    }
+    if ((loose_project || !mount_game_packs(vfs, arguments->project_dir)) &&
         !vfs.mount(make_directory_mount(arguments->project_dir))) {
       err << "vnmaki: " << to_utf8(arguments->project_dir) << " is not a directory\n";
       return kExitError;

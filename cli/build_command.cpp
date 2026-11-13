@@ -102,12 +102,22 @@ std::string out_inside(const fs::path& project, const fs::path& out) {
   return to_generic_utf8(relative);
 }
 
+// What an earlier build leaves at the top of its folder: a pack must not take it in again.
+bool is_build_output(std::string_view name) {
+  std::string lower{name};
+  std::ranges::transform(lower, lower.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return lower.ends_with(".exe") || lower.ends_with(".dll") || lower == kGamePakName ||
+         (lower.starts_with(kPatchPakPrefix) && lower.ends_with(kPakExtension));
+}
+
 // Every file of the project that the pack takes as it is, in order.
 void collect_files(const Vfs& vfs, const std::string& directory, const std::string& skip,
                    std::vector<std::string>& files) {
   for (const VfsEntry& entry : vfs.list(directory)) {
     const std::string path = directory.empty() ? entry.name : directory + "/" + entry.name;
-    if ((directory.empty() && entry.name.starts_with(".")) || path == skip) {
+    if ((directory.empty() && (entry.name.starts_with(".") || is_build_output(entry.name))) ||
+        path == skip) {
       continue;
     }
     if (entry.is_directory) {
@@ -144,6 +154,11 @@ int build_command(std::span<const std::string_view> args, std::ostream& out, std
     Vfs vfs;
     if (!vfs.mount(make_directory_mount(arguments->project))) {
       err << "vnmaki: " << to_utf8(arguments->project) << " is not a directory\n";
+      return kExitError;
+    }
+    std::error_code same_error;
+    if (fs::equivalent(arguments->out, arguments->project, same_error)) {
+      err << "vnmaki: --out must not be the project folder itself\n";
       return kExitError;
     }
     const ProjectConfig config = load_project_config(vfs);
