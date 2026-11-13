@@ -36,6 +36,7 @@
     "libvorbis",
     "lua",
     "miniaudio",
+    "nlohmann-json",
     "opusfile",
     "sheenbidi",
     "sol2",

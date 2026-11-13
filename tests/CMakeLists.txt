@@ -205,3 +205,14 @@ endif()
 if(VNMAKI_DEV_TOOLS)
   target_sources(vnmaki_unit_tests PRIVATE unit/inspect_test.cpp)
 endif()
+
+# Dev tools: the DAP transport and the script debugger (ticket 36).
+if(VNMAKI_DEV_TOOLS)
+  find_package(nlohmann_json CONFIG REQUIRED)
+  target_sources(vnmaki_unit_tests PRIVATE unit/debugger_test.cpp)
+  target_link_libraries(vnmaki_unit_tests PRIVATE nlohmann_json::nlohmann_json)
+  # The project and the DAP sessions of the `vnmaki debug --headless` CLI tests.
+  vnmaki_add_fixture_generator(
+    debug SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/debug_fixtures.py"
+    TEST_TARGETS vnmaki_unit_tests)
+endif()
