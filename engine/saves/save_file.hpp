@@ -83,6 +83,31 @@ class SaveError : public std::runtime_error {
 /// (table references, keys) and the thumbnail size.
 [[nodiscard]] SaveData decode_save_payload(std::span<const std::byte> payload);
 
+/// One line of text the player has seen: the label, the step in it and the source hash of the
+/// label. A line that is edited gets another hash, so it is unseen again.
+struct SeenStep {
+  std::string label{};
+  std::uint32_t step = 0;
+  std::uint64_t hash = 0;
+
+  friend auto operator<=>(const SeenStep&, const SeenStep&) = default;
+};
+
+/// What the persistent file holds: the `persistent` table and the seen steps.
+struct PersistentData {
+  StoreSnapshot store{};
+  std::vector<SeenStep> seen{};
+};
+
+/// The `format` of the persistent file.
+inline constexpr std::uint32_t kPersistentFormatVersion = 1;
+
+/// MessagePack, not compressed: a map with `format`, `store` (as in a save) and `seen`
+/// ([label, step, hash] for each step).
+[[nodiscard]] std::vector<std::byte> encode_persistent(const PersistentData& data);
+/// Throws SaveError. Like decode_save(), it never trusts its input.
+[[nodiscard]] PersistentData decode_persistent(std::span<const std::byte> bytes);
+
 /// The file form: the payload compressed with zstd.
 [[nodiscard]] std::vector<std::byte> encode_save(const SaveData& data);
 /// Throws SaveError.

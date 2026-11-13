@@ -153,7 +153,7 @@ function ret()
   transfer("ret", "")
 end
 
--- character { name =, color = "#rrggbb", voice_tag = }: a table `say` reads.
+-- character { name =, color = "#rrggbb", voice_tag =, auto_multiplier = }: a table `say` reads.
 function character(definition)
   if type(definition) ~= "table" then
     bad_argument("character", 1, "table", definition)
@@ -170,7 +170,12 @@ function character(definition)
     error(format("bad option 'voice_tag' to 'character' (string expected, got %s)",
                  type(definition.voice_tag)), 2)
   end
-  return { name = definition.name, color = color, voice_tag = definition.voice_tag }
+  local multiplier = definition.auto_multiplier
+  if multiplier ~= nil and (type(multiplier) ~= "number" or multiplier < 0) then
+    error("bad option 'auto_multiplier' to 'character' (number of 0 or more expected)", 2)
+  end
+  return { name = definition.name, color = color, voice_tag = definition.voice_tag,
+           auto_multiplier = multiplier }
 end
 
 -- Raises a bad text tag at the caller of the API function that called this.
@@ -182,7 +187,7 @@ local function check_text(text)
 end
 
 function say(who, text)
-  local speaker, color, voice_tag
+  local speaker, color, voice_tag, multiplier
   if type(who) == "string" then
     speaker = who
   elseif type(who) == "table" and type(who.name) == "string" then
@@ -193,6 +198,7 @@ function say(who, text)
     if type(who.voice_tag) == "string" then
       voice_tag = who.voice_tag
     end
+    multiplier = who.auto_multiplier
   elseif who ~= nil then
     bad_argument("say", 1, "string, character or nil", who)
   end
@@ -204,7 +210,7 @@ function say(who, text)
   if speaker == nil then
     engine.narrate(text)
   else
-    engine.say(speaker, text, color, voice_tag or "")
+    engine.say(speaker, text, color, voice_tag or "", multiplier or 1)
   end
 end
 
@@ -564,6 +570,26 @@ function quick_load()
   require_label("quick_load")
   engine.save_request(true, "quick")
 end
+-- skip("seen" | "all" | "off" | false) and auto(true | false): the host applies them.
+local skip_modes = { seen = true, all = true, off = true }
+function skip(mode)
+  if mode == false or mode == nil then
+    mode = "off"
+  elseif mode == true then
+    mode = "seen"
+  elseif not skip_modes[mode] then
+    bad_argument("skip", 1, "\"seen\", \"all\", \"off\" or false", mode)
+  end
+  require_label("skip")
+  engine.skip_request(mode)
+end
+function auto(on)
+  if type(on) ~= "boolean" then
+    bad_argument("auto", 1, "boolean", on)
+  end
+  require_label("auto")
+  engine.auto_request(on)
+end
 -- on_load(function(old_version, store) ... end): migrates the store of a save made by an older
 -- version of the game. Scripts register it while they load.
 function on_load(hook)
@@ -677,7 +703,8 @@ loadfile = nil
 string.dump = nil
 
 -- Globals the engine owns: scripts read them but cannot replace them.
-local reserved = { store = store }
+local persistent = {}
+local reserved = { store = store, persistent = persistent }
 do
   local warned = {}
   setmetatable(_G, {
@@ -726,7 +753,7 @@ function coroutine.wrap(fn)
   end
 end
 
-local limits = { store = store }
+local limits = { store = store, persistent = persistent }
 function limits.configure(period)
   hook_period = period
   watch(coroutine.running())
@@ -965,6 +992,13 @@ class ScriptRuntime::Impl {
   [[nodiscard]] std::vector<SaveRequest> take_save_requests() {
     return std::exchange(save_requests_, {});
   }
+  [[nodiscard]] std::vector<PlaybackRequest> take_playback_requests() {
+    return std::exchange(playback_requests_, {});
+  }
+  [[nodiscard]] StoreSnapshot capture_persistent() const {
+    return capture_table(persistent_, "persistent");
+  }
+  [[nodiscard]] std::string restore_persistent(const StoreSnapshot& snapshot);
 
   [[nodiscard]] bool replaying() const { return replaying_; }
   [[nodiscard]] const LabelSnapshot* label_snapshot() const {
@@ -976,7 +1010,8 @@ class ScriptRuntime::Impl {
     }
     return frames_.back().inputs;
   }
-  [[nodiscard]] StoreSnapshot capture_store() const;
+  [[nodiscard]] StoreSnapshot capture_store() const { return capture_table(store_, "store"); }
+  [[nodiscard]] StoreSnapshot capture_table(const sol::table& root, std::string_view name) const;
   [[nodiscard]] std::optional<std::uint64_t> label_source_hash(std::string_view name) const {
     const auto found = labels_.find(name);
     return found == labels_.end() ? std::nullopt : std::optional{found->second.source_hash};
@@ -1058,7 +1093,8 @@ class ScriptRuntime::Impl {
   void run(std::optional<ScreenValue> resume_value = std::nullopt);
   [[nodiscard]] bool replay_answer(std::optional<ScreenValue>& resume_value);
   void record(const InputResult& input);
-  void restore_store(const StoreSnapshot& snapshot);
+  void restore_store(const StoreSnapshot& snapshot) { restore_table(store_, snapshot); }
+  void restore_table(const sol::table& root, const StoreSnapshot& snapshot);
   void fail(std::string message);
   void reset_instruction_budget();
   [[nodiscard]] std::uint64_t random_state(const sol::stack_object& state) const;
@@ -1080,6 +1116,7 @@ class ScriptRuntime::Impl {
   sol::state lua_;
   sol::table engine_;
   sol::table store_;
+  sol::table persistent_;
   sol::protected_function limits_configure_;
   sol::protected_function limits_watch_;
   sol::protected_function limits_reset_;
@@ -1091,6 +1128,7 @@ class ScriptRuntime::Impl {
   std::map<std::string, std::string, std::less<>> sources_;
   sol::main_function on_load_;
   std::vector<SaveRequest> save_requests_;
+  std::vector<PlaybackRequest> playback_requests_;
   std::vector<Frame> frames_;  // back() is the running label; the rest called it
   std::optional<std::variant<BlockingRequest, Transfer>> pending_;
   bool started_ = false;
@@ -1151,6 +1189,7 @@ ScriptRuntime::Impl::Impl(const Vfs& vfs, const ScriptRuntimeOptions& options)
   }
   const sol::table limits_table = limits;
   store_ = limits_table["store"];
+  persistent_ = limits_table["persistent"];
   limits_configure_ = limits_table["configure"];
   limits_watch_ = limits_table["watch"];
   limits_reset_ = limits_table["reset"];
@@ -1211,13 +1250,14 @@ void ScriptRuntime::Impl::bind_engine() {
   };
   engine_["say"] = sol::yielding([this](sol::this_state state, const std::string& speaker,
                                         const std::string& text, std::optional<std::int64_t> color,
-                                        const std::string& voice_tag) {
+                                        const std::string& voice_tag, double auto_multiplier) {
     std::optional<std::uint32_t> rgb;
     if (color) {
       rgb = static_cast<std::uint32_t>(*color);
     }
     yield_at(state,
-             SayRequest{.speaker = speaker, .text = text, .color = rgb, .voice_tag = voice_tag});
+             SayRequest{.speaker = speaker, .text = text, .color = rgb, .voice_tag = voice_tag,
+                         .auto_multiplier = auto_multiplier});
   });
   engine_["narrate"] = sol::yielding([this](sol::this_state state, const std::string& text) {
     yield_at(state, NarrateRequest{.text = text});
@@ -1373,6 +1413,19 @@ void ScriptRuntime::Impl::bind_engine() {
       save_requests_.push_back(SaveRequest{.load = load, .slot = slot});
     }
   };
+  engine_["skip_request"] = [this](const std::string& mode) {
+    if (!replaying_) {
+      const SkipMode skip = mode == "seen" ? SkipMode::kSeen
+                            : mode == "all" ? SkipMode::kAll
+                                            : SkipMode::kOff;
+      playback_requests_.push_back(PlaybackRequest{.skip = skip});
+    }
+  };
+  engine_["auto_request"] = [this](bool on) {
+    if (!replaying_) {
+      playback_requests_.push_back(PlaybackRequest{.automatic = on});
+    }
+  };
   engine_["set_on_load"] = [this, problem_or_nil](sol::this_state state,
                                                   const sol::stack_object& hook) {
     if (started_) {
@@ -1457,7 +1510,8 @@ std::uint64_t ScriptRuntime::Impl::random_state(const sol::stack_object& state) 
 // Copies the store breadth-first. Sorting each table's fields by key before
 // numbering the tables they hold makes the result independent of Lua's
 // iteration order.
-StoreSnapshot ScriptRuntime::Impl::capture_store() const {
+StoreSnapshot ScriptRuntime::Impl::capture_table(const sol::table& root,
+                                                 std::string_view name) const {
   struct Field {
     StoreValue key;
     StoreValue value;
@@ -1466,8 +1520,8 @@ StoreSnapshot ScriptRuntime::Impl::capture_store() const {
   lua_State* lua = lua_.lua_state();
   const int top = lua_gettop(lua);
   StoreSnapshot snapshot;
-  std::vector<sol::table> tables{store_};
-  std::map<const void*, std::uint32_t> indices{{store_.pointer(), 0}};
+  std::vector<sol::table> tables{root};
+  std::map<const void*, std::uint32_t> indices{{root.pointer(), 0}};
   for (std::size_t current = 0; current < tables.size(); ++current) {
     std::vector<Field> fields;
     tables[current].push(lua);
@@ -1479,11 +1533,12 @@ StoreSnapshot ScriptRuntime::Impl::capture_store() const {
       if (key_ok && value_type == LUA_TTABLE) {
         field.table = sol::table{lua, -1};
       } else if (!key_ok || !read_scalar(lua, -1, field.value)) {
-        std::string problem = "store holds a ";
+        std::string problem = std::string{name} + " holds a ";
         problem += lua_typename(lua, key_ok ? value_type : lua_type(lua, -2));
         problem += key_ok ? " value" : " key";
-        if (const auto* name = std::get_if<std::string>(&field.key); key_ok && name != nullptr) {
-          problem += " (field '" + *name + "')";
+        if (const auto* field_name = std::get_if<std::string>(&field.key);
+            key_ok && field_name != nullptr) {
+          problem += " (field '" + *field_name + "')";
         }
         lua_settop(lua, top);
         throw ScriptError(problem + "; it keeps only booleans, numbers, strings and tables");
@@ -1515,16 +1570,16 @@ StoreSnapshot ScriptRuntime::Impl::capture_store() const {
 // Makes the store equal to `snapshot` (which is_valid). The store table
 // itself is kept, because scripts hold references to it; the tables inside
 // it are new.
-void ScriptRuntime::Impl::restore_store(const StoreSnapshot& snapshot) {
+void ScriptRuntime::Impl::restore_table(const sol::table& root, const StoreSnapshot& snapshot) {
   lua_State* lua = lua_.lua_state();
   std::vector<sol::table> tables;
   tables.reserve(snapshot.tables.size());
-  tables.push_back(store_);
+  tables.push_back(root);
   for (std::size_t i = 1; i < snapshot.tables.size(); ++i) {
     tables.push_back(lua_.create_table());
   }
 
-  store_.push(lua);
+  root.push(lua);
   lua_pushnil(lua);
   while (lua_next(lua, -2) != 0) {
     // Setting a field to nil during a traversal is allowed.
@@ -1557,6 +1612,14 @@ void ScriptRuntime::Impl::restore_store(const StoreSnapshot& snapshot) {
     }
     lua_pop(lua, 1);
   }
+}
+
+std::string ScriptRuntime::Impl::restore_persistent(const StoreSnapshot& snapshot) {
+  if (!is_valid(snapshot)) {
+    return "persistent: the snapshot is malformed";
+  }
+  restore_table(persistent_, snapshot);
+  return {};
 }
 
 bool ScriptRuntime::Impl::in_label(sol::this_state state) const {
@@ -2020,6 +2083,13 @@ std::string ScriptRuntime::run_on_load(LabelSnapshot& snapshot, std::string_view
   return impl_->run_on_load(snapshot, old_version);
 }
 std::vector<SaveRequest> ScriptRuntime::take_save_requests() { return impl_->take_save_requests(); }
+std::vector<PlaybackRequest> ScriptRuntime::take_playback_requests() {
+  return impl_->take_playback_requests();
+}
+StoreSnapshot ScriptRuntime::persistent_snapshot() const { return impl_->capture_persistent(); }
+std::string ScriptRuntime::restore_persistent(const StoreSnapshot& snapshot) {
+  return impl_->restore_persistent(snapshot);
+}
 bool ScriptRuntime::replaying() const { return impl_->replaying(); }
 const LabelSnapshot* ScriptRuntime::label_snapshot() const { return impl_->label_snapshot(); }
 std::span<const InputResult> ScriptRuntime::input_log() const { return impl_->input_log(); }
