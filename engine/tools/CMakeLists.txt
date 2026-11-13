@@ -1,23 +1,35 @@
-# Dev tools: the ImGui overlay, log console and Lua REPL (docs/SPEC.md section 18). Added only when
-# VNMAKI_DEV_TOOLS is ON, so a release build has no tool code and links no ImGui.
+# Dev tools (docs/SPEC.md section 18). The Lua scan and the story graph need no ImGui and build in
+# every preset, so `vnmaki graph` works in a release build.
 target_sources(
   vnmaki_engine
-  PRIVATE imgui_backend.cpp
-          imgui_backend.hpp
-          inspect.hpp
-          inspect_audio.cpp
-          inspect_labels.cpp
-          inspect_scene.cpp
-          inspect_store.cpp
-          log_buffer.cpp
-          log_buffer.hpp
-          overlay.cpp
-          overlay.hpp
-          repl.cpp
-          repl.hpp)
+  PRIVATE observer_chain.hpp
+          script_scan.cpp
+          script_scan.hpp
+          story_graph.cpp
+          story_graph.hpp)
 
-# The ImGui renderer backend draws through SDL GPU, so only imgui_backend.cpp includes SDL
-# (lint.no_sdl_outside_platform). The ImGui input comes from InputEvents, not from SDL events.
-find_package(imgui CONFIG REQUIRED)
-find_package(SDL3 CONFIG REQUIRED COMPONENTS SDL3)
-target_link_libraries(vnmaki_engine PRIVATE imgui::imgui SDL3::SDL3)
+# The overlay, log console and Lua REPL are added only when VNMAKI_DEV_TOOLS is ON, so a release
+# build has no overlay code and links no ImGui.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(
+    vnmaki_engine
+    PRIVATE imgui_backend.cpp
+            imgui_backend.hpp
+            inspect.hpp
+            inspect_audio.cpp
+            inspect_labels.cpp
+            inspect_scene.cpp
+            inspect_store.cpp
+            log_buffer.cpp
+            log_buffer.hpp
+            overlay.cpp
+            overlay.hpp
+            repl.cpp
+            repl.hpp)
+
+  # The ImGui renderer backend draws through SDL GPU, so only imgui_backend.cpp includes SDL
+  # (lint.no_sdl_outside_platform). The ImGui input comes from InputEvents, not from SDL events.
+  find_package(imgui CONFIG REQUIRED)
+  find_package(SDL3 CONFIG REQUIRED COMPONENTS SDL3)
+  target_link_libraries(vnmaki_engine PRIVATE imgui::imgui SDL3::SDL3)
+endif()

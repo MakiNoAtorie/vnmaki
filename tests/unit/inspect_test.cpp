@@ -242,7 +242,7 @@ TEST_CASE("inspect: labels, and Jump starts a label at step 1") {
     names.push_back(label.name);
     CHECK(label.current == (label.name == "classroom"));
   }
-  CHECK(names == std::vector<std::string>{"classroom", "cold", "start", "warm"});
+  CHECK(names == std::vector<std::string>{"classroom", "cold", "presentation", "start", "warm"});
 
   REQUIRE(runtime.store_snapshot().tables.size() >= 1);
   CHECK(vnmaki::jump_to_label(runtime, "cold").empty());

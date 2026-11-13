@@ -255,11 +255,11 @@ Files: new `engine/scene/frame_animation.*`, `engine/scene/scene.cpp`, runtime, 
 
 This task is the Phase 3 acceptance demo.
 
-- [ ] Add a `presentation` label to `templates/default/`. It has a dissolve, a layered sprite with a crossfaded face change, a blink, a camera pan and shake, a sepia layer shader, a lip-synced voice line and a short movie.
-- [ ] Generator scripts make all assets, except the movie (see task 25).
-- [ ] End-to-end headless test on Windows: `new`, play `presentation`, save during a tween, load, and roll back over a transition.
-- [ ] GPU goldens of the demo at three fixed frames.
-- [ ] Write a script reference for the presentation API in `docs/`.
+- [x] Add a `presentation` label to `templates/default/`. It has a dissolve, a layered sprite with a crossfaded face change, a blink, a camera pan and shake, a sepia layer shader, a lip-synced voice line and a short movie.
+- [x] Generator scripts make all assets, except the movie (see task 25).
+- [x] End-to-end headless test on Windows: `new`, play `presentation`, save during a tween, load, and roll back over a transition.
+- [x] GPU goldens of the demo at three fixed frames.
+- [x] Write a script reference for the presentation API in `docs/`.
 
 ### Deferred
 
@@ -336,12 +336,12 @@ Files: new `engine/tools/profiler.*`, `engine/render/` (texture memory), `engine
 
 Files: new `engine/tools/script_scan.*`, `engine/tools/story_graph.*`, `engine/tools/overlay.cpp` (one panel), `cli/`.
 
-- [ ] A small Lua tokenizer (strings, long brackets, comments) finds `label`, `jump`, `call`, `menu`, `say` and `show` calls with string-literal arguments, and their lines. It does not run the scripts.
-- [ ] Edges: jump, call, and menu (a jump or call in the body of a menu branch). A computed target is a "dynamic" edge.
-- [ ] Unreachable labels: no path from `start`. Dead ends: a label that ends with no transfer and is not marked `ending = true`.
-- [ ] Run-time traces add the edges seen in play through `ScriptObserver`. The overlay panel shows them in a second color.
-- [ ] `vnmaki graph <dir> [--format dot|csv]` prints the graph.
-- [ ] Tests: tokenizer cases (strings in comments, long strings), graph CSV for a generated fixture project, and a fuzz target for the tokenizer.
+- [x] A small Lua tokenizer (strings, long brackets, comments) finds `label`, `jump`, `call`, `menu`, `say` and `show` calls with string-literal arguments, and their lines. It does not run the scripts.
+- [x] Edges: jump, call, and menu (a jump or call in the body of a menu branch). A computed target is a "dynamic" edge.
+- [x] Unreachable labels: no path from `start`. Dead ends: a label that ends with no transfer and is not marked `ending = true`.
+- [x] Run-time traces add the edges seen in play through `ScriptObserver`. The overlay panel shows them in a second color. `TraceRecorder` and `apply_trace` (`engine/tools/story_graph.hpp`) mark the edges and labels `seen`; the "Story graph" window of `DevOverlay` shows them in green; the story window chains the recorder and the log with `ObserverChain`.
+- [x] `vnmaki graph <dir> [--format dot|csv]` prints the graph.
+- [x] Tests: tokenizer cases (strings in comments, long strings), graph CSV for a generated fixture project, and a fuzz target for the tokenizer.
 
 ### 35: `vnmaki check` (SPEC §19, §18)
 

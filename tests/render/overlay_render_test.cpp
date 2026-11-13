@@ -17,6 +17,7 @@
 #include "engine/scene/scene.hpp"
 #include "engine/tools/log_buffer.hpp"
 #include "engine/tools/overlay.hpp"
+#include "engine/tools/story_graph.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/render/gpu_test_support.hpp"
 #include "tests/support/memory_vfs.hpp"
@@ -38,16 +39,19 @@ using vnmaki::SdlGpuRenderer;
 using vnmaki::Size;
 using vnmaki::TextInputEvent;
 using vnmaki::TextureId;
+using vnmaki::TraceRecorder;
 using vnmaki::Vfs;
 
 constexpr Size kScreen{.width = 1280, .height = 720};
 constexpr float kInsideConsole = 100;
 constexpr float kOutsideConsole = 1000;
+constexpr float kInsideGraph = 800;
+constexpr float kInsideGraphY = 100;
 constexpr int kSettleFrames = 3;
 // The tab bar of the inspectors: its y, and the x range and step of a sweep that clicks each tab.
-constexpr float kTabBarY = 45;
-constexpr float kTabsFromX = 690;
-constexpr float kTabsToX = 1090;
+constexpr float kTabBarY = 421;
+constexpr float kTabsFromX = 26;
+constexpr float kTabsToX = 450;
 constexpr float kTabStepX = 15;
 constexpr std::size_t kBytesPerPixel = 4;
 
@@ -192,5 +196,34 @@ TEST_CASE("overlay: every inspector tab draws with a scene and audio") {
         .button = vnmaki::MouseButton::kLeft, .pressed = false, .position = at}));
     fixture.settle(overlay);
   }
+  CHECK(fixture.frame(overlay) > 0);
+}
+
+TEST_CASE("overlay: the story graph window draws and follows the trace") {
+  Fixture fixture;
+  if (!fixture.renderer) {
+    return;
+  }
+  DevOverlay overlay{*fixture.renderer, fixture.platform, fixture.runtime, fixture.log};
+  overlay.set_visible(true);
+  fixture.settle(overlay);
+  const std::size_t console_only = fixture.frame(overlay);
+
+  TraceRecorder trace;
+  overlay.set_story(fixture.vfs, trace);
+  fixture.settle(overlay);
+  const std::size_t with_graph = fixture.frame(overlay);
+  CHECK(with_graph > console_only);
+
+  // The window takes the pointer where the console does not reach.
+  const InputEvent inside = PointerMoveEvent{.position = {.x = kInsideGraph, .y = kInsideGraphY}};
+  static_cast<void>(overlay.handle_event(inside));
+  fixture.settle(overlay);
+  CHECK(overlay.handle_event(inside));
+
+  // A label entered at run time changes the revision, so the window builds its rows again.
+  trace.on_label_entered("start");
+  trace.on_label_entered("start");
+  fixture.settle(overlay);
   CHECK(fixture.frame(overlay) > 0);
 }

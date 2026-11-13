@@ -1,6 +1,8 @@
 // `vnmaki new` and the default template (docs/SPEC.md section 19): the copy, the title, the
 // template lookup, and the sample game played from `new` to the end of both branches, with a save,
-// a load and a rollback. Expected lines are written out by hand from templates/default/scripts.
+// a load and a rollback. The presentation demo (label `presentation`, task 28) is played the same
+// way: a save during a tween, a load, and a rollback over a transition. Expected lines are written
+// out by hand from templates/default/scripts.
 
 #include "engine/runtime/new_project.hpp"
 
@@ -11,6 +13,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -24,9 +27,11 @@
 #include "engine/runtime/project_config.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/saves/saves.hpp"
+#include "engine/scene/layered_sprite.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/text/text.hpp"
 #include "engine/vfs/vfs.hpp"
+#include "tests/support/temp_dir.hpp"
 
 namespace {
 
@@ -36,18 +41,19 @@ using vnmaki::RunState;
 using vnmaki::SayRequest;
 
 constexpr std::uint32_t kEileenColor = 0xC8A2C8;
-constexpr std::size_t kSampleMenuOptions = 2;
+constexpr std::size_t kSampleMenuOptions = 3;
+constexpr std::size_t kPresentationOption = 2;  // 0-based: the third option of the menu
 constexpr std::string_view kFontPath = "fonts/default.ttf";
 constexpr float kFontSize = 40;
 constexpr float kNoWrap = 100000;
-// Five images, the music and the font.
-constexpr std::size_t kAssetCount = 7;
+// Thirteen images, the music, the voice line, the font and the shader.
+constexpr std::size_t kAssetCount = 17;
 
 // A directory under the system temp directory, empty at the start and removed at the end.
 class TempDir {
  public:
   explicit TempDir(const std::string& name)
-      : path_(fs::temp_directory_path() / ("vnmaki_new_test_" + name)) {
+      : path_(vnmaki::test::unique_temp_path("vnmaki_new_test_", name)) {
     fs::remove_all(path_);
   }
   TempDir(const TempDir&) = delete;
@@ -174,14 +180,14 @@ class SampleGame {
         scene_(vfs_, {.width = config_.resolution.width, .height = config_.resolution.height}),
         audio_(vfs_),
         state_({&scene_, &audio_}),
-        runtime_(vfs_,
-                 {.rollback_depth = config_.rollback_depth,
-                  .scene_state = &state_,
-                  .scene = &scene_,
-                  .audio = &audio_}),
+        runtime_(vfs_, {.rollback_depth = config_.rollback_depth,
+                        .scene_state = &state_,
+                        .scene = &scene_,
+                        .audio = &audio_}),
         saves_(runtime_, {.directory = temp_.path() / "data",
                           .game_version = config_.version,
                           .auto_save = config_.auto_save}) {
+    scene_.set_voice_level(&audio_);  // lip sync, as `vnmaki run` does it
     runtime_.load_scripts();
     runtime_.start("start");
     settle();
@@ -190,13 +196,25 @@ class SampleGame {
   [[nodiscard]] vnmaki::ScriptRuntime& runtime() { return runtime_; }
   [[nodiscard]] vnmaki::Saves& saves() { return saves_; }
   [[nodiscard]] const vnmaki::ProjectConfig& config() const { return config_; }
+  [[nodiscard]] vnmaki::Scene& scene() { return scene_; }
 
-  // Ends the waits (the dissolve of the first scene) as the headless runner does.
+  // Moves the fake clock of the scene and of the audio, which has no device here.
+  void step(double seconds) {
+    audio_.update(seconds);
+    scene_.update(seconds);
+  }
+
+  // Ends the waits (the dissolve of the first scene) as the headless runner does, and passes a
+  // movie, which is not played here. A tween that a script started and does not wait for goes on.
   // The host polls the saves whenever the story waits, so the auto save sees every position.
   void settle() {
     saves_.poll();
-    while (const auto* wait = std::get_if<vnmaki::WaitRequest>(runtime_.request())) {
-      scene_.finish_tweens(wait->tag);
+    while (const vnmaki::BlockingRequest* request = runtime_.request()) {
+      if (const auto* wait = std::get_if<vnmaki::WaitRequest>(request)) {
+        scene_.finish_tweens(wait->tag);
+      } else if (!std::holds_alternative<vnmaki::MovieRequest>(*request)) {
+        return;
+      }
       runtime_.advance();
       saves_.poll();
     }
@@ -272,7 +290,22 @@ constexpr std::string_view kWarmLine = "Eileen: I'm glad. I kept your seat by th
 constexpr std::string_view kWarmLast = "Eileen: Let's walk home together.";
 constexpr std::string_view kColdLine = "Eileen: Oh. So that is the only reason.";
 constexpr std::string_view kColdLast = "Eileen: Your bag is on your desk.";
-constexpr std::string_view kEnd = "narrate: The end. Open scripts/main.lua to write your own story.";
+constexpr std::string_view kEnd =
+    "narrate: The end. Open scripts/main.lua to write your own story.";
+
+// The lines of the presentation demo, in order (templates/default/scripts/presentation.lua).
+constexpr std::string_view kDemoFirst = "Eileen: This is the presentation demo.";
+constexpr std::string_view kDemoFace = "Eileen: A new face fades in over the old one.";
+constexpr std::string_view kDemoCamera = "Eileen: The camera pans and shakes. The backdrop stays.";
+constexpr std::string_view kDemoSepia = "Eileen: A sepia shader on the backdrop layer fades in.";
+constexpr std::string_view kDemoVoice = "Eileen: Now my mouth follows my voice.";
+constexpr std::string_view kDemoMovie = "Eileen: A short movie follows.";
+constexpr std::string_view kDemoLast =
+    "Eileen: That was the presentation demo. Edit scripts/presentation.lua to change it.";
+constexpr float kCameraPan = 80;  // camera { x = 0.0625 } on a screen 1280 wide
+constexpr double kHalfSecond = 0.5;
+constexpr double kLipStep = 0.01;
+constexpr int kLipSteps = 250;  // 2.5 s: longer than the voice line
 
 }  // namespace
 
@@ -399,9 +432,156 @@ TEST_CASE("template: the assets are the files of tools/generators/template_asset
   std::size_t committed = 0;
   for (const fs::directory_entry& entry : fs::recursive_directory_iterator(default_template())) {
     const std::string folder = fs::relative(entry.path(), default_template()).begin()->string();
-    if (entry.is_regular_file() && (folder == "images" || folder == "audio" || folder == "fonts")) {
+    if (entry.is_regular_file() &&
+        (folder == "images" || folder == "audio" || folder == "fonts" || folder == "shaders")) {
       ++committed;
     }
   }
   CHECK(committed == kAssetCount);
+}
+
+TEST_CASE("template: the movie is the committed test clip") {
+  CHECK(read_file(default_template() / "movies/clip.webm") ==
+        read_file(fs::path{VNMAKI_VIDEO_FIXTURES_DIR} / "clip.webm"));
+}
+
+namespace {
+
+// Plays from the title to the menu and takes the third option: the presentation demo.
+void start_presentation(SampleGame& game) {
+  game.start_story();
+  game.advance();
+  REQUIRE(game.at() == "menu");
+  game.choose(kPresentationOption);
+}
+
+[[nodiscard]] const vnmaki::LayeredSprite& eileen(SampleGame& game) {
+  const auto* sprite = dynamic_cast<const vnmaki::LayeredSprite*>(game.scene().find("eileen"));
+  REQUIRE(sprite != nullptr);
+  return *sprite;
+}
+
+[[nodiscard]] std::string value_of(const vnmaki::LayeredSprite& sprite, std::string_view group) {
+  for (const auto& [name, value] : sprite.attributes()) {
+    if (name == group) {
+      return value;
+    }
+  }
+  return {};
+}
+
+[[nodiscard]] float sepia_amount(SampleGame& game) {
+  return game.scene().layer_properties(vnmaki::Layer::kBackground).uniforms.at(0);
+}
+
+}  // namespace
+
+TEST_CASE("template: the menu has a third option, the presentation demo, that plays to the end") {
+  SampleGame game{"demo"};
+  start_presentation(game);
+
+  CHECK(game.at() == kDemoFirst);
+  CHECK(eileen(game).attributes().size() == 5);  // base, outfit, face, lids, mouth
+  CHECK(value_of(eileen(game), "face") == "smile");
+  game.advance();
+  CHECK(game.at() == kDemoFace);
+  CHECK(value_of(eileen(game), "face") == "sad");
+  game.advance();
+  CHECK(game.at() == kDemoCamera);
+  CHECK(game.scene().tweening("@camera"));  // the pan runs, and the next wait would end it
+  game.advance();
+  CHECK(game.at() == kDemoSepia);
+  CHECK(game.scene().camera().pose.position.x == doctest::Approx(kCameraPan));
+  CHECK(game.scene().tweening("@layer.background"));
+  CHECK(sepia_amount(game) == doctest::Approx(0));
+  game.step(kHalfSecond);
+  CHECK(sepia_amount(game) == doctest::Approx(kHalfSecond));
+  game.advance();
+  CHECK(game.at() == kDemoVoice);
+  CHECK(sepia_amount(game) == doctest::Approx(1));
+  game.advance();
+  CHECK(game.at() == kDemoMovie);
+  game.advance();  // the movie is passed
+  CHECK(game.at() == kDemoLast);
+  CHECK(game.scene().camera().pose.position.x == doctest::Approx(0));
+  game.advance();
+  CHECK(game.at() == kEnd);
+  game.advance();
+  CHECK(game.at() == "ended");
+}
+
+TEST_CASE("template: the mouth of the sprite follows the voice line") {
+  SampleGame game{"lips"};
+  start_presentation(game);
+  for (const std::string_view line : {kDemoFirst, kDemoFace, kDemoCamera, kDemoSepia}) {
+    REQUIRE(game.at() == line);
+    game.advance();
+  }
+  REQUIRE(game.at() == kDemoVoice);
+
+  std::set<std::string> frames;
+  for (int i = 0; i < kLipSteps; ++i) {
+    frames.emplace(eileen(game).lip_frame());
+    game.step(kLipStep);
+  }
+  CHECK(frames == std::set<std::string>{"closed", "half", "open"});
+  CHECK(eileen(game).lip_frame() == "closed");  // the voice has ended
+}
+
+TEST_CASE("template: the blink plays on the sprite and the face crossfades") {
+  SampleGame game{"blink"};
+  start_presentation(game);
+  REQUIRE(game.at() == kDemoFirst);
+
+  CHECK(value_of(eileen(game), "lids") == "blink");  // it loops, so it never blocks a wait
+  game.advance();
+  CHECK(value_of(eileen(game), "face") == "sad");
+  game.step(kHalfSecond);  // longer than the 0.25 s crossfade
+  game.advance();
+  CHECK(game.at() == kDemoCamera);
+}
+
+TEST_CASE("template: save during a tween, load, and roll back over the transitions") {
+  SampleGame game{"demo_save"};
+  start_presentation(game);
+  REQUIRE(game.at() == kDemoFirst);
+
+  // Back over the dissolve and the menu, and the same answer again.
+  REQUIRE(game.roll_back());
+  CHECK(game.at() == "menu");
+  game.choose(kPresentationOption);
+  REQUIRE(game.at() == kDemoFirst);
+
+  for (const std::string_view line : {kDemoFirst, kDemoFace, kDemoCamera}) {
+    REQUIRE(game.at() == line);
+    game.advance();
+  }
+  REQUIRE(game.at() == kDemoSepia);
+  game.step(kHalfSecond);
+  REQUIRE(game.scene().tweening("@layer.background"));  // the tween runs while the game is saved
+  REQUIRE(game.saves().save("1").empty());
+
+  game.advance();
+  CHECK(game.at() == kDemoVoice);
+  CHECK(game.load("1").empty());
+  CHECK(game.at() == kDemoSepia);
+  CHECK(value_of(eileen(game), "face") == "sad");
+  CHECK(game.scene().camera().pose.position.x == doctest::Approx(kCameraPan));
+  CHECK_FALSE(game.scene().tweening("@layer.background"));  // a load leaves a tween at its end
+  CHECK(sepia_amount(game) == doctest::Approx(1));
+
+  // On to the mask transition, and back over it.
+  game.advance();
+  game.advance();
+  REQUIRE(game.at() == kDemoMovie);
+  game.advance();
+  REQUIRE(game.at() == kDemoLast);
+  REQUIRE(game.roll_back());
+  CHECK(game.at() == kDemoMovie);
+  game.advance();
+  CHECK(game.at() == kDemoLast);
+  game.advance();
+  CHECK(game.at() == kEnd);
+  game.advance();
+  CHECK(game.at() == "ended");
 }

@@ -3,7 +3,7 @@
 # reaches Vulkan through a software driver such as Mesa's lavapipe.
 add_executable(vnmaki_render_tests ../unit/main.cpp gpu_test_support.cpp gpu_test_support.hpp
                                    camera_render_test.cpp frame_anim_render_test.cpp
-                                   layered_render_test.cpp
+                                   layered_render_test.cpp presentation_render_test.cpp
                                    renderer_test.cpp say_box_render_test.cpp
                                    scene_render_test.cpp shader_render_test.cpp
                                    text_render_test.cpp
@@ -12,6 +12,7 @@ target_link_libraries(vnmaki_render_tests PRIVATE vnmaki::engine vnmaki::options
 target_compile_definitions(
   vnmaki_render_tests
   PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS
+          VNMAKI_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/templates"
           VNMAKI_GPU_TSAN_SUPPRESSIONS="${CMAKE_CURRENT_SOURCE_DIR}/gpu_driver.tsan.supp")
 # A custom shader, built the way a game's would be.
 target_sources(vnmaki_render_tests PRIVATE test_shaders.hpp)

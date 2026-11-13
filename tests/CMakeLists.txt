@@ -145,8 +145,19 @@ target_compile_definitions(vnmaki_unit_tests
 vnmaki_add_fixture_generator(
   template SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
   DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/shader_fixtures.py"
           "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
+
+# The presentation demo (ticket 28): GPU goldens of three frames of its label, drawn by
+# tools/generators/presentation_fixtures.py from the template's pictures.
+vnmaki_add_fixture_generator(
+  presentation SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/presentation_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/shader_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
 
 # Persistent store, seen text, skip and auto-advance (ticket 14).
 target_sources(vnmaki_unit_tests PRIVATE unit/playback_test.cpp)
@@ -159,6 +170,14 @@ target_sources(vnmaki_unit_tests PRIVATE unit/screens_test.cpp)
 
 # Backlog: entries from the step log, voice replay, the scrolling screen (ticket 15).
 target_sources(vnmaki_unit_tests PRIVATE unit/backlog_test.cpp)
+
+# Story graph: the Lua scan, the graph with its traces, DOT and CSV (ticket 34). The template is
+# one more input. The fuzz target shares fuzz/script_scan_properties.hpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/script_scan_test.cpp unit/story_graph_test.cpp)
+# The projects and expected CSV and DOT text of the `vnmaki graph` CLI tests.
+vnmaki_add_fixture_generator(
+  graph SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/graph_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
 
 # Video: WebM, AV1 and Opus, the player and its clocks, `movie` and the movie displayable (ticket
 # 25). clip.webm is the one committed binary fixture; its README has the ffmpeg command.

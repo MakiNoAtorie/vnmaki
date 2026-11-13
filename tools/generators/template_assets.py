@@ -11,7 +11,13 @@ writes only its own files and never deletes anything:
   images/eileen/outfit_school.png    all 300 by 560 with a transparent background
   images/eileen/face_smile.png
   images/eileen/face_sad.png
+  images/bg/rooftop.png              the backdrop of the presentation demo
+  images/eileen/lids_*.png           eyelids (open, half, closed): the frames of the blink
+  images/eileen/mouth_*.png          mouths (closed, half, open): the frames of the lip sync
+  images/mask/iris.png               a round mask for the "mask" transition
   audio/bgm/theme.wav                a 4 second loop of sine notes
+  audio/voice/eileen/hello.wav       a voice line of tone bursts, for lip sync
+  shaders/sepia.frag.hlsl            a game shader (shader_fixtures.SEPIA_SHADER)
   fonts/default.ttf                  a 5 by 7 pixel font for ASCII, one rectangle for each run
                                      of pixels (built with text_fixtures.build_font)
 
@@ -29,6 +35,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True  # No __pycache__ in the source tree.
 import render_fixtures as rf  # noqa: E402  (the PNG chunks)
+import shader_fixtures as sf  # noqa: E402  (the sepia shader)
 import text_fixtures as tf  # noqa: E402  (the TrueType writer)
 
 # --- Images ------------------------------------------------------------------------------
@@ -36,6 +43,8 @@ import text_fixtures as tf  # noqa: E402  (the TrueType writer)
 BACKDROP_SIZE = (1280, 720)
 SPRITE_SIZE = (300, 560)
 CLEAR = (0, 0, 0, 0)
+IRIS_SIZE = (128, 72)
+IRIS_RADIUS = 0.6  # of the width: where the mask is white
 
 
 class Image:
@@ -153,6 +162,64 @@ def sprite_face(smiling: bool) -> Image:
     return image
 
 
+def rooftop() -> Image:
+    width, height = BACKDROP_SIZE
+    bands = ((252, 190, 120), (246, 160, 120), (226, 130, 130), (176, 110, 150), (110, 90, 150))
+    image = Image(*BACKDROP_SIZE, bands[0] + (255,))
+    band = 200
+    for i, (r, g, b) in enumerate(bands):  # the sky, from the horizon up
+        image.rect(0, 540 - (i + 1) * band // 2, width, 540 - i * band // 2, (r, g, b, 255))
+    image.rect(0, 0, width, 540 - len(bands) * band // 2, bands[-1] + (255,))
+    image.ellipse(900, 470, 90, 90, (255, 232, 160, 255))  # the sun
+    skyline = (30, 40, 70, 255)
+    for left, top, size in ((40, 400, 90), (150, 350, 70), (240, 420, 120), (400, 380, 80),
+                            (520, 440, 100), (1000, 360, 110), (1130, 410, 90)):
+        image.rect(left, top, left + size, 560, skyline)
+    image.rect(0, 560, width, height, (86, 92, 110, 255))  # the roof
+    image.rect(0, 560, width, 572, (60, 64, 80, 255))
+    for x in range(0, width, 60):  # the fence
+        image.rect(x, 440, x + 6, 600, (40, 44, 56, 255))
+    image.rect(0, 470, width, 478, (40, 44, 56, 255))
+    image.rect(0, 540, width, 548, (40, 44, 56, 255))
+    return image
+
+
+def sprite_lids(amount: int) -> Image:
+    """Skin over the eyes of the faces: `amount` is 0 (open), 1 (half) or 2 (closed)."""
+    image = Image(*SPRITE_SIZE)
+    if amount == 0:
+        return image
+    bottom, lash = (134, 130) if amount == 1 else (152, 134)
+    for cx in (112, 188):
+        image.rect(cx - 14, 114, cx + 14, bottom, SKIN)
+        image.rect(cx - 12, lash, cx + 12, lash + 4, INK)  # the lashes
+    return image
+
+
+def sprite_mouth(opening: int) -> Image:
+    """A mouth over the smile or the frown: `opening` is 0 (closed, nothing), 1 or 2."""
+    image = Image(*SPRITE_SIZE)
+    if opening == 0:
+        return image
+    image.rect(126, 176, 178, 200, SKIN)
+    image.ellipse(150, 186, 12, 4 + 5 * (opening - 1), INK)
+    if opening == 2:
+        image.ellipse(150, 190, 7, 3, BLUSH)  # the tongue
+    return image
+
+
+def iris_mask() -> Image:
+    """Dark in the middle and light at the edge: the new image shows from the middle first."""
+    width, height = IRIS_SIZE
+    image = Image(width, height)
+    for y in range(height):
+        for x in range(width):
+            distance = math.hypot((x + 0.5 - width / 2) / width, (y + 0.5 - height / 2) / width)
+            level = min(255, round(distance / IRIS_RADIUS * 255))
+            image.rows[y][x * 4:x * 4 + 4] = bytes((level, level, level, 255))
+    return image
+
+
 def images() -> dict:
     return {
         "images/bg/classroom.png": classroom().png(),
@@ -160,6 +227,14 @@ def images() -> dict:
         "images/eileen/outfit_school.png": sprite_outfit().png(),
         "images/eileen/face_smile.png": sprite_face(True).png(),
         "images/eileen/face_sad.png": sprite_face(False).png(),
+        "images/bg/rooftop.png": rooftop().png(),
+        "images/eileen/lids_open.png": sprite_lids(0).png(),
+        "images/eileen/lids_half.png": sprite_lids(1).png(),
+        "images/eileen/lids_closed.png": sprite_lids(2).png(),
+        "images/eileen/mouth_closed.png": sprite_mouth(0).png(),
+        "images/eileen/mouth_half.png": sprite_mouth(1).png(),
+        "images/eileen/mouth_open.png": sprite_mouth(2).png(),
+        "images/mask/iris.png": iris_mask().png(),
     }
 
 
@@ -173,6 +248,16 @@ FADE_SECONDS = 0.05
 NOTES = (262, 330, 392, 330, 220, 262, 330, 262)
 
 
+def wav(frames: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(RATE)
+        out.writeframes(frames)
+    return buffer.getvalue()
+
+
 def theme() -> bytes:
     frames = bytearray()
     length = round(RATE * NOTE_SECONDS)
@@ -182,13 +267,27 @@ def theme() -> bytes:
             envelope = min(1.0, i / fade, (length - i) / fade)
             sample = AMPLITUDE * envelope * math.sin(2 * math.pi * hertz * i / RATE)
             frames += struct.pack("<h", round(sample * 32767))
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as out:
-        out.setnchannels(1)
-        out.setsampwidth(2)
-        out.setframerate(RATE)
-        out.writeframes(bytes(frames))
-    return buffer.getvalue()
+    return wav(bytes(frames))
+
+
+# The voice line: (seconds, amplitude) bursts of a tone. The RMS level of a burst is its amplitude
+# over the square root of 2, so the mouth of "eileen" (thresholds 0.05 and 0.2 in
+# scripts/main.lua) is half open for 0.12 and 0.2, and open for 0.5 and above.
+VOICE_HERTZ = 180
+VOICE_BURSTS = ((0.15, 0), (0.25, 0.6), (0.1, 0), (0.25, 0.2), (0.1, 0), (0.35, 0.7), (0.1, 0),
+                (0.25, 0.12), (0.1, 0), (0.3, 0.5), (0.15, 0))
+
+
+def voice() -> bytes:
+    frames = bytearray()
+    fade = round(RATE * FADE_SECONDS)
+    for seconds, amplitude in VOICE_BURSTS:
+        length = round(RATE * seconds)
+        for i in range(length):
+            envelope = min(1.0, i / fade, (length - i) / fade)
+            sample = amplitude * envelope * math.sin(2 * math.pi * VOICE_HERTZ * i / RATE)
+            frames += struct.pack("<h", round(sample * 32767))
+    return wav(bytes(frames))
 
 
 # --- Font --------------------------------------------------------------------------------
@@ -332,7 +431,8 @@ def pixel_font() -> bytes:
 
 
 def files() -> dict:
-    return {**images(), "audio/bgm/theme.wav": theme(), "fonts/default.ttf": pixel_font()}
+    return {**images(), "audio/bgm/theme.wav": theme(), "audio/voice/eileen/hello.wav": voice(),
+            "fonts/default.ttf": pixel_font(), "shaders/sepia.frag.hlsl": sf.SEPIA_SHADER.encode()}
 
 
 def main() -> int:
