@@ -2,7 +2,9 @@
 # coroutine scheduler, plus project.toml parsing and the headless runner.
 target_sources(
   vnmaki_engine
-  PRIVATE headless_runner.cpp
+  PRIVATE default_screens.cpp
+          default_screens.hpp
+          headless_runner.cpp
           headless_runner.hpp
           project_config.cpp
           project_config.hpp
