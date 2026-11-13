@@ -15,6 +15,10 @@ constexpr float kHalf = 0.5F;
 // A look direction closer to the vertical than this uses another up vector.
 constexpr float kVerticalLimit = 0.999F;
 constexpr float kTiny = 1e-6F;
+constexpr float kTwo = 2.0F;
+constexpr float kFour = 4.0F;
+// Rotations whose cosine is above this are so close that a straight blend is as good as slerp.
+constexpr float kNlerpLimit = 0.9995F;
 
 float radians(float degrees) { return degrees * std::numbers::pi_v<float> / kDegreesPerHalfTurn; }
 
@@ -81,6 +85,110 @@ Mat4 rotation_z(float degrees) {
 }
 
 }  // namespace
+
+Mat4 identity_matrix() { return identity(); }
+
+Mat4 trs_matrix(Vec3 translation, Quat rotation, Vec3 scale) {
+  const Quat q = normalized(rotation);
+  const float x = q.at(0);
+  const float y = q.at(1);
+  const float z = q.at(2);
+  const float w = q.at(3);
+  Mat4 m = identity();
+  cell(m, 0, 0) = 1 - (kTwo * ((y * y) + (z * z)));
+  cell(m, 0, 1) = kTwo * ((x * y) - (z * w));
+  cell(m, 0, 2) = kTwo * ((x * z) + (y * w));
+  cell(m, 1, 0) = kTwo * ((x * y) + (z * w));
+  cell(m, 1, 1) = 1 - (kTwo * ((x * x) + (z * z)));
+  cell(m, 1, 2) = kTwo * ((y * z) - (x * w));
+  cell(m, 2, 0) = kTwo * ((x * z) - (y * w));
+  cell(m, 2, 1) = kTwo * ((y * z) + (x * w));
+  cell(m, 2, 2) = 1 - (kTwo * ((x * x) + (y * y)));
+  const std::array<float, 3> factors{scale.x, scale.y, scale.z};
+  for (std::size_t column = 0; column < 3; ++column) {
+    for (std::size_t row = 0; row < 3; ++row) {
+      cell(m, row, column) *= factors.at(column);
+    }
+  }
+  cell(m, 0, 3) = translation.x;
+  cell(m, 1, 3) = translation.y;
+  cell(m, 2, 3) = translation.z;
+  return m;
+}
+
+void decompose(const Mat4& m, Vec3& translation, Quat& rotation, Vec3& scale) {
+  translation = {.x = cell(m, 0, 3), .y = cell(m, 1, 3), .z = cell(m, 2, 3)};
+  std::array<float, 3> lengths{};
+  for (std::size_t column = 0; column < 3; ++column) {
+    const Vec3 axis{.x = cell(m, 0, column), .y = cell(m, 1, column), .z = cell(m, 2, column)};
+    lengths.at(column) = std::sqrt(dot(axis, axis));
+  }
+  scale = {.x = lengths.at(0), .y = lengths.at(1), .z = lengths.at(2)};
+  // The rotation matrix: the columns divided by their lengths.
+  const auto r = [&](std::size_t row, std::size_t column) {
+    return lengths.at(column) > kTiny ? cell(m, row, column) / lengths.at(column)
+                                      : (row == column ? 1.0F : 0.0F);
+  };
+  const float trace = r(0, 0) + r(1, 1) + r(2, 2);
+  if (trace > 0) {
+    const float s = std::sqrt(trace + 1) * kTwo;
+    rotation = {(r(2, 1) - r(1, 2)) / s, (r(0, 2) - r(2, 0)) / s, (r(1, 0) - r(0, 1)) / s,
+                s / kFour};
+  } else if (r(0, 0) > r(1, 1) && r(0, 0) > r(2, 2)) {
+    const float s = std::sqrt(1 + r(0, 0) - r(1, 1) - r(2, 2)) * kTwo;
+    rotation = {s / kFour, (r(0, 1) + r(1, 0)) / s, (r(0, 2) + r(2, 0)) / s,
+                (r(2, 1) - r(1, 2)) / s};
+  } else if (r(1, 1) > r(2, 2)) {
+    const float s = std::sqrt(1 + r(1, 1) - r(0, 0) - r(2, 2)) * kTwo;
+    rotation = {(r(0, 1) + r(1, 0)) / s, s / kFour, (r(1, 2) + r(2, 1)) / s,
+                (r(0, 2) - r(2, 0)) / s};
+  } else {
+    const float s = std::sqrt(1 + r(2, 2) - r(0, 0) - r(1, 1)) * kTwo;
+    rotation = {(r(0, 2) + r(2, 0)) / s, (r(1, 2) + r(2, 1)) / s, s / kFour,
+                (r(1, 0) - r(0, 1)) / s};
+  }
+  rotation = normalized(rotation);
+}
+
+Quat normalized(const Quat& v) {
+  const float squared = (v.at(0) * v.at(0)) + (v.at(1) * v.at(1)) + (v.at(2) * v.at(2)) +
+                        (v.at(3) * v.at(3));
+  if (!(squared > kTiny) || !std::isfinite(squared)) {
+    return kIdentityQuat;
+  }
+  const float length = std::sqrt(squared);
+  return {v.at(0) / length, v.at(1) / length, v.at(2) / length, v.at(3) / length};
+}
+
+Quat slerp(const Quat& a, const Quat& b, float t) {
+  float cosine = (a.at(0) * b.at(0)) + (a.at(1) * b.at(1)) + (a.at(2) * b.at(2)) +
+                 (a.at(3) * b.at(3));
+  const float sign = cosine < 0 ? -1.0F : 1.0F;
+  cosine *= sign;
+  float from = 1 - t;
+  float to = t;
+  if (cosine < kNlerpLimit) {  // far enough apart for the sine formula
+    const float angle = std::acos(cosine);
+    const float sine = std::sin(angle);
+    from = std::sin((1 - t) * angle) / sine;
+    to = std::sin(t * angle) / sine;
+  }
+  return normalized({(from * a.at(0)) + (to * sign * b.at(0)), (from * a.at(1)) + (to * sign * b.at(1)),
+                     (from * a.at(2)) + (to * sign * b.at(2)),
+                     (from * a.at(3)) + (to * sign * b.at(3))});
+}
+
+Vec3 transform_point(const Mat4& m, Vec3 v) {
+  return {.x = (cell(m, 0, 0) * v.x) + (cell(m, 0, 1) * v.y) + (cell(m, 0, 2) * v.z) + cell(m, 0, 3),
+          .y = (cell(m, 1, 0) * v.x) + (cell(m, 1, 1) * v.y) + (cell(m, 1, 2) * v.z) + cell(m, 1, 3),
+          .z = (cell(m, 2, 0) * v.x) + (cell(m, 2, 1) * v.y) + (cell(m, 2, 2) * v.z) + cell(m, 2, 3)};
+}
+
+Vec3 transform_direction(const Mat4& m, Vec3 v) {
+  return {.x = (cell(m, 0, 0) * v.x) + (cell(m, 0, 1) * v.y) + (cell(m, 0, 2) * v.z),
+          .y = (cell(m, 1, 0) * v.x) + (cell(m, 1, 1) * v.y) + (cell(m, 1, 2) * v.z),
+          .z = (cell(m, 2, 0) * v.x) + (cell(m, 2, 1) * v.y) + (cell(m, 2, 2) * v.z)};
+}
 
 Mat4 multiply(const Mat4& left, const Mat4& right) {
   Mat4 result{};
