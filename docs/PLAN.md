@@ -347,11 +347,11 @@ Files: new `engine/tools/script_scan.*`, `engine/tools/story_graph.*`, `engine/t
 
 Files: new `engine/tools/check.*`, `cli/`, `tools/generators/check_fixtures.py`.
 
-- [ ] Output is CSV: `file,line,severity,code,message`. The exit code is 1 if there is an error.
-- [ ] Errors: Lua syntax, a jump or call to an unknown label, a malformed text tag (task 17 parser), a missing asset for a literal name in `scene`, `show`, `music`, `sound`, `voice` or `movie`.
-- [ ] Warnings: unreachable labels, dead ends, dynamic edges, `project.toml` errors.
-- [ ] The template project from task 19 gives no findings.
-- [ ] Tests: one CLI stdout-file test for each finding code, with a generated fixture project.
+- [x] Output is CSV: `file,line,severity,code,message`. The exit code is 1 if there is an error.
+- [x] Errors: Lua syntax, a jump or call to an unknown label, a malformed text tag (task 17 parser), a missing asset for a literal name in `scene`, `show`, `music`, `sound`, `voice` or `movie`.
+- [x] Warnings: unreachable labels, dead ends, dynamic edges, `project.toml` errors.
+- [x] The template project from task 19 gives no findings.
+- [x] Tests: one CLI stdout-file test for each finding code, with a generated fixture project.
 
 ### 36: Debugger (DAP) (SPEC §18)
 

@@ -6,6 +6,7 @@
 #include "engine/tools/story_graph.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -335,4 +336,28 @@ TEST_CASE("story_graph: an observer chain gives every call to every observer") {
   const std::size_t revision = trace.revision();
   trace.clear();
   CHECK(trace.revision() != revision);
+}
+
+TEST_CASE("story_graph: a load adds no edge from the label that ran before it") {
+  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
+      {{"scripts/main.lua",
+        "label('start', function() jump('b') end)\n"
+        "label('b', function() narrate('x') narrate('y') jump('c') end)\n"
+        "label('c', function() narrate('z') end)"}});
+  vnmaki::TraceRecorder trace;
+  vnmaki::ScriptRuntime runtime{vfs, {.observer = &trace}};
+  runtime.load_scripts();
+  runtime.start("start");
+  const vnmaki::LabelSnapshot saved = *runtime.label_snapshot();  // the entry of `b`
+  CHECK(saved.label == "b");
+  runtime.advance();
+  runtime.advance();  // `b` jumped to `c`
+  const std::vector<vnmaki::TraceEdge> played{{"start", "b"}, {"b", "c"}};
+  REQUIRE(trace.edges() == played);
+
+  for (const std::uint32_t step : {0U, 1U}) {
+    runtime.drop_callers();
+    runtime.replay(saved, {}, step);
+    CHECK(trace.edges() == played);  // no edge from `c` to `b`
+  }
 }

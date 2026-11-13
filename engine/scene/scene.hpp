@@ -35,6 +35,10 @@ namespace vnmaki {
 
 class Vfs;
 
+/// The file of image name `name`: "images/<name>.png", else ".jpg", else ".webp" (a name may hold
+/// "/"). Nothing when none exists. `vnmaki check` uses the same rule.
+[[nodiscard]] std::optional<std::string> resolve_image(const Vfs& vfs, std::string_view name);
+
 /// The layers, in the order they are declared and drawn: kBackground first (at the back).
 enum class Layer : std::uint8_t {
   kBackground,

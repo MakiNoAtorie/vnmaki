@@ -8,3 +8,4 @@ target_compile_definitions(vnmaki
                            PRIVATE VNMAKI_SOURCE_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/templates")
 target_sources(vnmaki PRIVATE run_command.cpp run_command.hpp story_window.cpp story_window.hpp)
 target_sources(vnmaki PRIVATE graph_command.cpp graph_command.hpp)
+target_sources(vnmaki PRIVATE check_command.cpp check_command.hpp)
