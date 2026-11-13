@@ -1,0 +1,87 @@
+#pragma once
+
+// The UI node tree (docs/SPEC.md section 15): what a screen is once built. A node has a kind, a
+// style, an accessibility role, label and state, and the rectangle layout_tree() gave it. The
+// tree is plain data; layout is in ui_layout.hpp and drawing in ui_renderer.hpp.
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "engine/platform/geometry.hpp"
+#include "engine/render/renderer.hpp"
+#include "engine/runtime/script_runtime.hpp"
+
+namespace vnmaki {
+
+enum class NodeKind : std::uint8_t { kBox, kHbox, kVbox, kText, kImage, kButton };
+
+/// What a node is to assistive technology (docs/SPEC.md section 17).
+enum class NodeRole : std::uint8_t { kGroup, kText, kImage, kButton };
+
+/// Where children sit across the main axis' perpendicular, and along it.
+enum class Align : std::uint8_t { kStretch, kStart, kCenter, kEnd };
+enum class Justify : std::uint8_t { kStart, kCenter, kEnd, kSpaceBetween };
+
+/// The state of a node that assistive technology and drawing read.
+struct NodeState {
+  bool focused = false;
+  bool hovered = false;
+  bool disabled = false;
+
+  bool operator==(const NodeState&) const = default;
+};
+
+/// The text size of a node that has none, in virtual pixels.
+inline constexpr float kDefaultTextSize = 28;
+
+/// All lengths are virtual pixels.
+struct UiStyle {
+  std::optional<float> width{};
+  std::optional<float> height{};
+  /// Share of the free space along the parent's main axis; 0 keeps the natural size.
+  float grow = 0;
+  float padding = 0;
+  float margin = 0;
+  /// Space between children.
+  float gap = 0;
+  Align align = Align::kStretch;
+  Justify justify = Justify::kStart;
+  /// Set: the node leaves the flow and sits at this offset from its parent's top-left corner.
+  std::optional<PointF> position{};
+  /// A fill behind the node.
+  std::optional<Color> background{};
+  /// The fill of a focused or hovered button instead of `background`.
+  std::optional<Color> focus_background{};
+  /// The colour of text and button captions.
+  Color color = kWhite;
+  float text_size = kDefaultTextSize;
+};
+
+struct UiNode {
+  NodeKind kind = NodeKind::kBox;
+  NodeRole role = NodeRole::kGroup;
+  /// What a screen reader says. Defaults to `text`.
+  std::string label{};
+  NodeState state{};
+  UiStyle style{};
+  /// The content: a text node's string, a button's caption, an image's name (`images/<name>.png`).
+  std::string text{};
+  /// A button hands this to its screen when activated; unset, activating does nothing.
+  std::optional<ScreenValue> returns{};
+  /// A text node shows only its first glyphs (a typewriter reveal); unset shows all.
+  std::optional<std::size_t> visible_glyphs{};
+  std::vector<UiNode> children{};
+  /// Set by layout_tree(): the node's rectangle in virtual pixels, from the canvas' top-left.
+  RectF rect{};
+};
+
+/// A node of `kind` with the role that fits it.
+[[nodiscard]] UiNode make_node(NodeKind kind);
+
+/// Whether a button can take the focus.
+[[nodiscard]] bool is_focusable(const UiNode& node);
+
+}  // namespace vnmaki

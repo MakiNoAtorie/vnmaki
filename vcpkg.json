@@ -28,7 +28,8 @@
     "lua",
     "sol2",
     "stb",
-    "tomlplusplus"
+    "tomlplusplus",
+    "yoga"
   ],
   "overrides": [
     {
