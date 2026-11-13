@@ -5,6 +5,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,6 +25,7 @@ class Audio;
 class ImguiBackend;
 class Profiler;
 class Scene;
+class TranslationEditor;
 struct StoreRow;
 
 /// The overlay: a log console with a Lua REPL, the story graph, and the inspectors (store,
@@ -65,6 +67,11 @@ class DevOverlay {
   /// `profiler`, which must outlive the overlay or be reset first (null).
   void set_profiler(const Profiler* profiler) { profiler_ = profiler; }
 
+  /// Turns on the "Translations" window: the entries of the label the story is in, in the language
+  /// that is shown, each with a text field. An edit is saved to the `.po` file and shows at once.
+  /// `editor` must outlive the overlay or be reset first (null).
+  void set_translations(TranslationEditor* editor) { translations_ = editor; }
+
   /// Builds this frame's windows and gives them to the renderer, which draws them in its
   /// end_frame() over the last pass. Call it once per frame after the game's passes. Does
   /// nothing while hidden. `window_pixels` is the size of that pass's target.
@@ -83,6 +90,7 @@ class DevOverlay {
   void draw_labels_tab();
   void draw_story_graph();
   void draw_profiler();
+  void draw_translations();
   void run_input();
 
   std::unique_ptr<ImguiBackend> backend_;
@@ -104,6 +112,11 @@ class DevOverlay {
   StoryGraph graph_;
   std::size_t trace_revision_ = 0;
   const Profiler* profiler_ = nullptr;
+  TranslationEditor* translations_ = nullptr;
+  // The text being typed for each entry (by key), and the language they are for.
+  std::map<std::string, std::string> translation_drafts_;
+  std::string translation_language_;
+  std::string translation_problem_;
 };
 
 }  // namespace vnmaki

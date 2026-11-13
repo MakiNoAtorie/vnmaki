@@ -22,6 +22,7 @@
 #include "engine/tools/inspect.hpp"
 #include "engine/tools/profiler.hpp"
 #include "engine/tools/repl.hpp"
+#include "engine/tools/translation_editor.hpp"
 
 namespace vnmaki {
 
@@ -263,6 +264,9 @@ void DevOverlay::draw(Size window_pixels) {
   }
   if (profiler_ != nullptr) {
     draw_profiler();
+  }
+  if (translations_ != nullptr) {
+    draw_translations();
   }
   const bool wants_text = ImGui::GetIO().WantTextInput;
   if (wants_text != text_input_) {
@@ -597,6 +601,67 @@ void DevOverlay::draw_labels_tab() {
     ImGui::Text("%s%s", label.name.c_str(), label.current ? "  (current)" : "");
     ImGui::PopID();
   }
+}
+
+void DevOverlay::draw_translations() {
+  constexpr float kTranslationsX = 672;
+  constexpr float kTranslationsY = 16;
+  constexpr float kTranslationsWidth = 520;
+  constexpr float kTranslationsHeight = 420;
+  constexpr std::size_t kTextBytes = 1024;
+  ImGui::SetNextWindowPos(ImVec2{kTranslationsX, kTranslationsY}, ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2{kTranslationsWidth, kTranslationsHeight}, ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("Translations")) {
+    ImGui::Text("Language: %s   Label: %s", translations_->language().c_str(),
+                runtime_->position().label.c_str());
+    if (translation_language_ != translations_->language()) {
+      translation_language_ = translations_->language();
+      translation_drafts_.clear();
+      translation_problem_.clear();
+    }
+    if (!translations_->editable()) {
+      ImGui::TextUnformatted("The source language has no translations. Pick another language.");
+    } else {
+      const std::vector<TranslationRow> rows = translations_->rows();
+      if (rows.empty()) {
+        ImGui::TextWrapped("%s", translations_->problem().empty()
+                                     ? "No entries for this label."
+                                     : translations_->problem().c_str());
+      }
+      if (!translation_problem_.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, kErrorColor);
+        ImGui::TextWrapped("%s", translation_problem_.c_str());
+        ImGui::PopStyleColor();
+      }
+      for (const TranslationRow& row : rows) {
+        ImGui::PushID(row.key.c_str());
+        ImGui::Separator();
+        ImGui::TextWrapped("%s%s%s", row.speaker.c_str(), row.speaker.empty() ? "" : ": ",
+                           row.source.c_str());
+        if (row.fuzzy) {
+          ImGui::SameLine();
+          ImGui::TextColored(ImVec4{1.0F, 0.8F, 0.2F, 1.0F}, "(fuzzy)");
+        }
+        std::string& draft =
+            translation_drafts_.try_emplace(row.key, row.translation).first->second;
+        std::array<char, kTextBytes> buffer{};
+        draft.copy(buffer.data(), buffer.size() - 1);
+        ImGui::SetNextItemWidth(-std::numeric_limits<float>::min());
+        const bool entered = ImGui::InputText("##text", buffer.data(), buffer.size(),
+                                              ImGuiInputTextFlags_EnterReturnsTrue);
+        draft = buffer.data();
+        ImGui::SameLine();
+        if (ImGui::Button("Save") || entered) {
+          translation_problem_ = translations_->edit(row.key, draft);
+          if (translation_problem_.empty()) {
+            translation_drafts_.erase(row.key);
+          }
+        }
+        ImGui::PopID();
+      }
+    }
+  }
+  ImGui::End();
 }
 
 }  // namespace vnmaki
