@@ -36,6 +36,10 @@
 #include "engine/saves/thumbnail.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/text/text.hpp"
+#if VNMAKI_DEV_TOOLS
+#include "engine/tools/log_buffer.hpp"
+#include "engine/tools/overlay.hpp"
+#endif
 #include "engine/ui/backlog_screen.hpp"
 #include "engine/ui/playback_indicator.hpp"
 #include "engine/ui/preferences.hpp"
@@ -117,7 +121,16 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
                            .canvas_width = virtual_size.width,
                            .canvas_height = virtual_size.height}};
     ui.set_bindings(&runtime);
-    const auto warn = [&err](std::string_view message) { err << "vnmaki: " << message << '\n'; };
+#if VNMAKI_DEV_TOOLS
+    LogBuffer dev_log;  // hears `print` and the warnings
+    runtime.set_observer(&dev_log);
+#endif
+    const auto warn = [&](std::string_view message) {
+      err << "vnmaki: " << message << '\n';
+#if VNMAKI_DEV_TOOLS
+      dev_log.add(LogLevel::kWarning, message);
+#endif
+    };
     const std::filesystem::path data_directory =
         data_directory_override ? *data_directory_override
                                 : user_data_directory(kUserDataOrganization, config.title);
@@ -127,6 +140,9 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
 
     SdlPlatform platform{WindowConfig{.title = config.title, .size = kDefaultWindowSize}};
     const std::unique_ptr<SdlGpuRenderer> renderer = SdlGpuRenderer::create_for_window(platform);
+#if VNMAKI_DEV_TOOLS
+    DevOverlay dev_overlay{*renderer, platform, runtime, dev_log};  // F12; dies before the renderer
+#endif
     JobSystem jobs;
     const TextureId canvas = renderer->create_render_target(virtual_size, TextureFilter::kLinear);
     UiRenderer ui_renderer{*renderer, fonts, &vfs};
@@ -216,6 +232,11 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     };
     MainLoopHooks hooks;
     hooks.on_event = [&](const InputEvent& event) {
+#if VNMAKI_DEV_TOOLS
+      if (dev_overlay.handle_event(event)) {
+        return;
+      }
+#endif
       if (backlog_screen.handle_event(event, viewport())) {  // L opens it, Esc or L closes it
         return;
       }
@@ -302,6 +323,9 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
           ui_renderer.draw(*root, placed.scale, {.x = placed.rect.x, .y = placed.rect.y});
         }
       }
+#if VNMAKI_DEV_TOOLS
+      dev_overlay.draw(platform.window_metrics().pixels);
+#endif
       static_cast<void>(renderer->end_frame());
     };
     loop.run(hooks, max_frames);

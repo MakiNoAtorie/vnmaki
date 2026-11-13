@@ -23,3 +23,12 @@ add_subdirectory(text)
 add_subdirectory(ui)
 add_subdirectory(audio)
 add_subdirectory(video)
+
+# Dev tools: code in engine/tools/ is compiled only for them. `#if VNMAKI_DEV_TOOLS` guards the
+# callers (cli/story_window.cpp).
+if(VNMAKI_DEV_TOOLS)
+  target_compile_definitions(vnmaki_engine PUBLIC VNMAKI_DEV_TOOLS=1)
+  add_subdirectory(tools)
+else()
+  target_compile_definitions(vnmaki_engine PUBLIC VNMAKI_DEV_TOOLS=0)
+endif()

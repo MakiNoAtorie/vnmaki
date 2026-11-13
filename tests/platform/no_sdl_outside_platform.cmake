@@ -10,6 +10,8 @@
 set(allowed "^engine/platform/sdl_[^/]*$")
 # The SDL GPU renderer backend (ticket 05).
 list(APPEND allowed "^engine/render/sdl_[^/]*$")
+# The ImGui renderer backend of the dev overlay (ticket 30), which draws through SDL GPU.
+list(APPEND allowed "^engine/tools/imgui_backend[.]cpp$")
 
 file(
   GLOB_RECURSE sources
