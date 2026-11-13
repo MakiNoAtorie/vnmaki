@@ -820,6 +820,15 @@ TextLayout layout_text(const Font& font, std::string_view text, float pixel_size
   return layout_text(fonts, plain_text(text), pixel_size, wrap_width);
 }
 
+FontSet with_dyslexia_font(const FontSet& fonts, const Font& dyslexia) {
+  FontSet result = fonts;
+  result.base = {.regular = &dyslexia};
+  result.fallbacks.clear();
+  result.fallbacks.push_back(fonts.base.regular);
+  result.fallbacks.insert(result.fallbacks.end(), fonts.fallbacks.begin(), fonts.fallbacks.end());
+  return result;
+}
+
 TextLayout layout_text(const FontSet& fonts, const StyledText& text, float pixel_size,
                        float wrap_width) {
   if (fonts.base.regular == nullptr) {

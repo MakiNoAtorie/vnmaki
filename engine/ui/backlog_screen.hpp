@@ -15,7 +15,8 @@
 //   Enter, Space, gamepad south      plays the voice of the selected entry
 //   a click on an entry              plays its voice
 //   Esc, L, gamepad east or north    close
-// L and the gamepad's north button also open it (not while a modal screen is shown).
+// L and the gamepad's north button (the InputAction::kBacklog controls) also open it, not while a
+// modal screen is shown.
 
 #include <cstddef>
 #include <string_view>
@@ -23,6 +24,7 @@
 
 #include "engine/dialogue/backlog.hpp"
 #include "engine/platform/input.hpp"
+#include "engine/platform/input_map.hpp"
 #include "engine/platform/viewport.hpp"
 #include "engine/ui/ui_host.hpp"
 #include "engine/ui/ui_layout.hpp"
@@ -41,6 +43,10 @@ class BacklogScreen {
   void open();
   void close();
   [[nodiscard]] bool is_open() const { return open_; }
+
+  /// The controls that open it (InputAction::kBacklog). Without a map, L and the north button.
+  /// `map` must outlive this.
+  void set_input_map(const InputMap* map) { input_map_ = map; }
 
   /// Returns true if the event is used; the caller then does nothing else with it. `viewport`
   /// maps the pointer. Call it before the other screens and the story's inputs.
@@ -61,6 +67,7 @@ class BacklogScreen {
 
   UiHost* host_;
   const Backlog* backlog_;
+  const InputMap* input_map_ = nullptr;
   TextMeasure measure_;
   bool open_ = false;
   std::vector<BacklogEntry> entries_{};

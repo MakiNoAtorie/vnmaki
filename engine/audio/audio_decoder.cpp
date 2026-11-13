@@ -87,6 +87,8 @@ class Source {
   [[nodiscard]] virtual std::uint32_t channels() const = 0;
   [[nodiscard]] virtual std::uint32_t rate() const = 0;
   [[nodiscard]] virtual std::optional<AudioLoopPoints> loop_points() const { return std::nullopt; }
+  /// The length of the file in frames at rate(), when the library knows it.
+  [[nodiscard]] virtual std::optional<std::uint64_t> length() { return std::nullopt; }
 };
 
 // --- Opus (opusfile) --------------------------------------------------------------------------
@@ -122,6 +124,11 @@ class OpusSource final : public Source {
   }
 
   explicit OpusSource(OggOpusFile* file) : file_(file) {}
+
+  [[nodiscard]] std::optional<std::uint64_t> length() override {
+    const ogg_int64_t total = op_pcm_total(file_.get(), -1);
+    return total >= 0 ? std::optional{static_cast<std::uint64_t>(total)} : std::nullopt;
+  }
 
   [[nodiscard]] std::uint32_t channels() const override { return kAudioChannels; }
   // Opus always decodes at 48 kHz.
@@ -258,6 +265,11 @@ class VorbisSource final : public Source {
     return ov_pcm_seek(&file_, static_cast<ogg_int64_t>(frame)) == 0;
   }
 
+  [[nodiscard]] std::optional<std::uint64_t> length() override {
+    const ogg_int64_t total = ov_pcm_total(&file_, -1);
+    return total >= 0 ? std::optional{static_cast<std::uint64_t>(total)} : std::nullopt;
+  }
+
   [[nodiscard]] std::uint32_t channels() const override { return channels_; }
   [[nodiscard]] std::uint32_t rate() const override { return rate_; }
 
@@ -321,6 +333,14 @@ class MiniaudioSource final : public Source {
 
   bool seek(std::uint64_t frame) override {
     return ma_decoder_seek_to_pcm_frame(&decoder_, frame) == MA_SUCCESS;
+  }
+
+  [[nodiscard]] std::optional<std::uint64_t> length() override {
+    ma_uint64 frames = 0;
+    if (ma_decoder_get_length_in_pcm_frames(&decoder_, &frames) != MA_SUCCESS || frames == 0) {
+      return std::nullopt;
+    }
+    return frames;
   }
 
   [[nodiscard]] std::uint32_t channels() const override { return decoder_.outputChannels; }
@@ -443,6 +463,14 @@ bool AudioDecoder::seek(std::uint64_t frame) {
 
 std::optional<AudioLoopPoints> AudioDecoder::loop_points() const {
   return impl_->source->loop_points();
+}
+
+std::optional<double> AudioDecoder::seconds() const {
+  const std::optional<std::uint64_t> frames = impl_->source->length();
+  if (!frames) {
+    return std::nullopt;
+  }
+  return static_cast<double>(*frames) / static_cast<double>(impl_->source->rate());
 }
 
 }  // namespace vnmaki

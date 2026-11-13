@@ -145,3 +145,14 @@ say(eileen, "Hello.")
 - `voice_tag` is the voice to follow (the name of the definition by default). `voice(name)` plays `audio/voice/<name>`. A `say` with a character that has `voice_tag`, right after `voice`, gives the voice its tag.
 - The mouth shows the first frame when no voice with the tag plays. It does not change `show` values, saves or rollback. A replay plays no voice, so the mouth stays closed.
 - `vnmaki run` stops the voice while skip mode is on.
+
+## Captions and reduced motion
+
+```lua
+sound("sfx/door", { caption = "a door slams" })
+music("bgm/theme", { fade = 1.5, caption = "soft music" })
+ambient("bgm/night", { caption = "wind" })   -- music on the channel "ambient"
+```
+
+- `caption` (a string) is what the captions screen says when the player turns on Captions in the preferences. A sound's caption shows as long as the sound; a music's caption shows for 5 seconds, and only when the music changes. A replay shows none. `ambient` takes the options of `music`.
+- The preference Reduce motion stops shakes, makes `camera` moves instant and turns every transition (`transition(...)`, `with = ...`) into a dissolve of at most 0.2 seconds.

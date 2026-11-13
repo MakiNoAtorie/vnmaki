@@ -120,6 +120,10 @@ vnmaki_add_fixture_generator(
 
 # Audio: decoders, mixer state, script commands, snapshots (ticket 16).
 target_sources(vnmaki_unit_tests PRIVATE unit/audio_decoder_test.cpp unit/audio_test.cpp)
+
+# Accessibility options: text scale, high contrast, dyslexia font, captions, reduced motion and
+# remappable controls (task 42).
+target_sources(vnmaki_unit_tests PRIVATE unit/accessibility_test.cpp)
 vnmaki_add_fixture_generator(
   audio SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/audio_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)

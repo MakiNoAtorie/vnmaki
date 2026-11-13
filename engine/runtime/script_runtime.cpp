@@ -355,8 +355,9 @@ function music(name, options)
   local fade = option("music", options, "fade", "number")
   local loop_start = option("music", options, "loop_start", "number")
   local loop_end = option("music", options, "loop_end", "number")
+  local caption = option("music", options, "caption", "string")
   require_label("music")
-  local problem = engine.music(name, channel, fade, loop_start, loop_end)
+  local problem = engine.music(name, channel, fade, loop_start, loop_end, caption)
   if problem then
     error(problem, 2)
   end
@@ -382,8 +383,9 @@ function sound(name, options)
   end
   options = options_argument("sound", options)
   local channel = option("sound", options, "channel", "string")
+  local caption = option("sound", options, "caption", "string")
   require_label("sound")
-  local problem = engine.sound(name, channel)
+  local problem = engine.sound(name, channel, caption)
   if problem then
     error(problem, 2)
   end
@@ -392,6 +394,16 @@ function sound(name, options)
     command = command .. " channel " .. channel
   end
   engine.audio_command(command)
+end
+
+-- ambient(name, options) is music on the `ambient` channel; its options are those of music.
+function ambient(name, options)
+  options = options_argument("ambient", options)
+  local merged = { channel = "ambient" }
+  for key, value in pairs(options) do
+    merged[key] = value
+  end
+  return music(name, merged)
 end
 
 function voice(name)
@@ -471,6 +483,9 @@ end
 -- names a style whose options come first. A node takes `style = "name"`; its own options win.
 -- The styles that the engine's default screens declare are the defaults of every theme.
 local styles, default_styles = {}, {}
+-- While styles/high_contrast.lua runs over the game's styles, a style that it declares again keeps
+-- the options that it does not name (and its `extends`).
+local overlaying = false
 local plain_style_options = {
   font = true, size = true, color = true, padding = true, gap = true, margin = true, width = true,
   height = true, grow = true, align = true, justify = true, fill = true,
@@ -531,14 +546,58 @@ function style(name, definition)
     error(format("bad style option 'extends' (string expected, got %s)", type(extends)), 2)
   end
   local entry = { props = flatten_style(definition), extends = extends }
+  local old = overlaying and styles[name]
+  if old then
+    for key, value in pairs(old.props) do
+      if entry.props[key] == nil then
+        entry.props[key] = value
+      end
+    end
+    entry.extends = extends or old.extends
+  end
   styles[name] = entry
   if debug_getinfo(2, "S").source == "=engine/screens.lua" then
     default_styles[name] = entry
   end
 end
 
+-- prefs.high_contrast: styles/high_contrast.lua goes over the game's styles. It is checked when a
+-- style is resolved, so it holds at startup, after a toggle and after a reload. A screen that is
+-- already shown keeps its look until it is built again. A game that has no such file gets a
+-- warning.
+local contrast_on, plain_styles = false, nil
+local function sync_contrast()
+  local saved = rawget(persistent, "prefs")
+  local wanted = type(saved) == "table" and saved.high_contrast == true
+  if wanted == contrast_on then
+    return
+  end
+  contrast_on = wanted
+  if not wanted then
+    styles, plain_styles = plain_styles or styles, nil
+    return
+  end
+  local chunk = engine.load_theme("high_contrast")
+  if type(chunk) ~= "function" then
+    engine.warn(chunk)
+    return
+  end
+  plain_styles, styles = styles, {}
+  for key, entry in pairs(plain_styles) do
+    styles[key] = entry
+  end
+  overlaying = true
+  local ok, problem = pcall(chunk)
+  overlaying = false
+  if not ok then
+    styles, plain_styles = plain_styles, nil
+    engine.warn("styles/high_contrast.lua: " .. tostring(problem))
+  end
+end
+
 -- The options of style `name` for a node of `kind`: the styles it extends first, then its own.
 local function resolve_style(kind, name)
+  sync_contrast()
   if type(name) ~= "string" then
     error(format("bad option 'style' to '%s' (string expected, got %s)", kind, type(name)), 3)
   end
@@ -586,6 +645,7 @@ function theme(name)
     styles = before
     error(problem, 0)
   end
+  contrast_on, plain_styles = false, nil  -- high contrast goes over the new look
 end
 )lua" R"lua(
 -- Screens (docs/SPEC.md section 15). A node is a plain table the engine reads: kind, text (the
@@ -946,13 +1006,23 @@ local function transition_request(fname, options, level)
   return spec
 end
 
--- `level` is the error() level that reaches the script from this function.
+-- Reduced motion (the prefs flag, see engine.reduce_motion below) turns every transition into a
+-- short dissolve. The request is checked first, so a bad option is still an error, and the wait
+-- stays, so a replay counts the same steps.
+local reduced_transition_seconds = 0.2
+
+-- `level` is the error() level that reaches the script from this function. Returns the name of
+-- the transition that runs.
 local function start_transition(fname, name, options, level)
   local spec = transition_request(fname, options, level + 1)
+  if engine.reduce_motion() then
+    name, spec = "dissolve", { duration = math.min(spec.duration or 0.5, reduced_transition_seconds) }
+  end
   local problem = engine.transition(name, spec)
   if problem then
     error(problem, level)
   end
+  return name
 end
 
 local function finish_transition(name)
@@ -966,8 +1036,7 @@ function transition(name, options)
   end
   options = options_argument("transition", options)
   require_label("transition")
-  start_transition("transition", name, options, 3)
-  finish_transition(name)
+  finish_transition(start_transition("transition", name, options, 3))
 end
 
 -- Starts the transition of a `with` option before the change, so that a bad name changes nothing,
@@ -982,8 +1051,8 @@ begin_with = function(fname, options, level)
     error(format("bad option 'with' to '%s' (a transition name, or a table { name, ... } expected)",
                  fname), level)
   end
-  start_transition(fname, name, type(with) == "table" and with or {}, level + 1)
-  return name
+  local started = start_transition(fname, name, type(with) == "table" and with or {}, level + 1)
+  return started  -- not a tail call: it would remove a level that the error levels count
 end
 end_with = function(name)
   if name ~= nil then
@@ -1516,12 +1585,19 @@ end
 -- Preferences, bindings and the bridge the engine calls (docs/SPEC.md sections 15 and 17).
 -- `prefs` keeps what the player changed in persistent.prefs; a value never set reads as its
 -- default. The engine reads these keys: text_speed (characters a second), auto_delay (seconds),
--- volume_<channel> (0 to 1), fullscreen, skip_unseen, window_opacity (0.3 to 1)
--- and reduce_motion.
+-- volume_<channel> (0 to 1), fullscreen, skip_unseen, window_opacity (0.3 to 1), reduce_motion,
+-- and the accessibility keys text_scale (0.75 to 2), high_contrast, dyslexia_font, captions and
+-- input_<action> (the keys and buttons of an action: "key:enter pad:south"; engine/platform/
+-- input_map.hpp has the same defaults).
 local pref_defaults = {
   text_speed = 40, auto_delay = 1, volume_music = 1, volume_sound = 1, volume_voice = 1,
   volume_ambient = 1, volume_ui = 1, fullscreen = false, skip_unseen = false, window_opacity = 1,
-  reduce_motion = false,
+  reduce_motion = false, text_scale = 1, high_contrast = false, dyslexia_font = false,
+  captions = false,
+  input_advance = "key:enter key:keypad_enter key:space pad:south",
+  input_rollback = "key:page_up pad:left_shoulder", input_auto = "key:a",
+  input_skip = "key:s pad:right_shoulder", input_backlog = "key:l pad:north",
+  input_menu = "key:escape pad:start",
 }
 local prefs = setmetatable({}, {
   __index = function(_, key)
@@ -2679,12 +2755,16 @@ void ScriptRuntime::Impl::bind_engine() {
   engine_["music"] = [this, problem_or_nil](
                          sol::this_state state, const std::string& name,
                          const sol::optional<std::string>& channel, sol::optional<double> fade,
-                         sol::optional<double> loop_start, sol::optional<double> loop_end) {
+                         sol::optional<double> loop_start, sol::optional<double> loop_end,
+                         const sol::optional<std::string>& caption) {
     if (options_.audio == nullptr) {
       return problem_or_nil(state, {});
     }
     MusicRequest request;
     request.name = name;
+    if (caption && !replaying_) {
+      request.caption = *caption;
+    }
     if (channel) {
       request.channel = *channel;
     }
@@ -2700,12 +2780,16 @@ void ScriptRuntime::Impl::bind_engine() {
     return problem_or_nil(state, options_.audio->music(request));
   };
   engine_["sound"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
-                                            const sol::optional<std::string>& channel) {
+                                            const sol::optional<std::string>& channel,
+                                            const sol::optional<std::string>& caption) {
     if (options_.audio == nullptr || replaying_) {
       return problem_or_nil(state, {});
     }
     SoundRequest request;
     request.name = name;
+    if (caption) {
+      request.caption = *caption;
+    }
     if (channel) {
       request.channel = *channel;
     }

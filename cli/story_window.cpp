@@ -26,6 +26,7 @@
 #include "engine/jobs/job_system.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
+#include "engine/platform/input_map.hpp"
 #include "engine/platform/main_loop.hpp"
 #include "engine/platform/sdl_platform.hpp"
 #include "engine/platform/viewport.hpp"
@@ -49,6 +50,7 @@
 #include "engine/tools/story_graph.hpp"
 #endif
 #include "engine/ui/backlog_screen.hpp"
+#include "engine/ui/caption_presenter.hpp"
 #include "engine/ui/playback_indicator.hpp"
 #include "engine/ui/preferences.hpp"
 #include "engine/ui/screen_actions.hpp"
@@ -71,9 +73,9 @@ constexpr Duration kFrameTime = std::chrono::duration_cast<Duration>(std::chrono
 /// The organization part of the user-data path, where saves and the persistent file go.
 constexpr std::string_view kUserDataOrganization = "VNMaki";
 
-bool is_advance_key(Key key) {
-  return key == Key::kEnter || key == Key::kKeypadEnter || key == Key::kSpace;
-}
+/// The dyslexia-friendly font (the `dyslexia_font` preference); a game without it has no such
+/// option.
+constexpr std::string_view kDyslexiaFontPath = "fonts/dyslexia.ttf";
 
 // The system output; if there is none, a device that plays to nowhere, so that a game with no
 // sound card still runs. Builds without threads mix by hand (Audio::update does it).
@@ -120,6 +122,11 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     FontSet fonts{.base = {.regular = &font}};
     for (const Font& fallback : fallback_fonts) {
       fonts.fallbacks.push_back(&fallback);
+    }
+    const FontSet plain_fonts = fonts;
+    std::optional<Font> dyslexia_font;
+    if (vfs.exists(kDyslexiaFontPath)) {
+      dyslexia_font.emplace(load_font(vfs, kDyslexiaFontPath));
     }
     // The audio comes first, so that it outlives the scene: a movie stops its audio when it goes.
     const std::unique_ptr<Audio> audio = make_audio(vfs, err);
@@ -234,13 +241,31 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
                       {.voice_playing = [&] { return audio->voice_playing(); },
                        .skip_wait = [&] { return waits.skip() || movies.skip(); }}};
     PlaybackIndicator indicator{ui};
+    CaptionPresenter captions{runtime, ui, warn};
+    InputMap input_map;  // PreferenceApplier fills it from the preferences
+    screens.set_input_map(&input_map);
     const Backlog backlog{runtime, audio.get(), config.backlog_length};
     BacklogScreen backlog_screen{ui, backlog, ui_renderer.text_measure()};
+    backlog_screen.set_input_map(&input_map);
+    const auto use_dyslexia_font = [&](bool on) {
+      if (on && !dyslexia_font) {
+        warn(std::string{kDyslexiaFontPath} + " is missing: the dyslexia-friendly font is off");
+      }
+      const FontSet chosen =
+          on && dyslexia_font ? with_dyslexia_font(plain_fonts, *dyslexia_font) : plain_fonts;
+      ui_renderer.set_fonts(chosen);
+      say_box.set_fonts(chosen);
+      ui.relayout();
+    };
     PreferenceApplier preferences{runtime,
                                   {.presenter = &presenter,
                                    .playback = &playback,
                                    .audio = audio.get(),
-                                   .platform = &platform}};
+                                   .platform = &platform,
+                                   .ui = &ui,
+                                   .say_box = &say_box,
+                                   .controls = &input_map,
+                                   .dyslexia_font = use_dyslexia_font}};
 
 #if VNMAKI_DEV_TOOLS
     dev_overlay.set_profiler(&profiler);
@@ -294,6 +319,10 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
         return;
       }
 #endif
+      // The Controls screen waits for a key or button.
+      if (actions.capture(event)) {
+        return;
+      }
       // L opens the backlog, and L or Esc close it, unless the player types into an input.
       if (!ui.wants_text_input() && backlog_screen.handle_event(event, viewport())) {
         return;
@@ -301,21 +330,20 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       if (screens.handle_event(event, viewport())) {
         return;
       }
-      if (is_rollback_event(event)) {
+      if (is_rollback_event(event, input_map)) {
         playback.set_skip(SkipMode::kOff);
         static_cast<void>(runtime.roll_back());
         return;
       }
-      if (const auto* key = std::get_if<KeyEvent>(&event)) {
-        if (key->pressed && !key->repeat && is_advance_key(key->key)) {
-          playback.set_skip(SkipMode::kOff);
-          advance();
-        } else if (key->pressed && !key->repeat && key->key == Key::kA) {
-          playback.set_auto(!playback.automatic());
-        } else if (key->pressed && !key->repeat && key->key == Key::kS) {
-          playback.toggle_skip(preferences.current().skip_unseen ? SkipMode::kAll
-                                                                 : SkipMode::kSeen);
-        }
+      if (input_map.matches(InputAction::kAdvance, event)) {
+        playback.set_skip(SkipMode::kOff);
+        advance();
+      } else if (input_map.matches(InputAction::kAuto, event)) {
+        playback.set_auto(!playback.automatic());
+      } else if (input_map.matches(InputAction::kSkip, event)) {
+        playback.toggle_skip(preferences.current().skip_unseen ? SkipMode::kAll : SkipMode::kSeen);
+      } else if (input_map.matches(InputAction::kMenu, event)) {
+        static_cast<void>(actions.open("preferences"));
       } else if (const auto* click = std::get_if<PointerButtonEvent>(&event)) {
         if (click->pressed && click->button == MouseButton::kLeft &&
             inside_canvas(click->position)) {
@@ -325,10 +353,6 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
           if (link.empty() || !runtime.activate_link(link)) {
             advance();
           }
-        }
-      } else if (const auto* button = std::get_if<GamepadButtonEvent>(&event)) {
-        if (button->pressed && button->button == GamepadButton::kSouth) {
-          advance();
         }
       }
     };
@@ -347,6 +371,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       saves.poll();  // a script's save or load, or a load in the middle of a line
       presenter.update(seconds);
       preferences.update();
+      captions.update(audio->take_captions(), seconds, preferences.current().captions);
       if (!backlog_screen.is_open() && !ui.has_modal()) {  // auto and skip wait while the player
         playback.update(seconds);                          // reads or sets something
       }
