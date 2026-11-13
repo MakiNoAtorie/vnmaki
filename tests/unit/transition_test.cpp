@@ -496,8 +496,8 @@ TEST_CASE("script: bad transition calls name the script line") {
   CHECK(line_error(R"(transition("mask"))") ==
         "scripts/main.lua:3: the transition 'mask' needs the option 'mask' (an image name)");
   CHECK(line_error(R"(transition("mask", { mask = "masks/none" }))") ==
-        "scripts/main.lua:3: image 'masks/none' not found (no images/masks/none.png or "
-        "images/masks/none.jpg)");
+        "scripts/main.lua:3: image 'masks/none' not found (no images/masks/none.png, "
+        "images/masks/none.jpg or images/masks/none.webp)");
   CHECK(line_error(R"(transition("dissolve", { softness = 1 }))") ==
         "scripts/main.lua:3: option 'softness' does not apply to the transition 'dissolve'");
   CHECK(line_error(R"(show("lucy", { with = 1 }))") ==

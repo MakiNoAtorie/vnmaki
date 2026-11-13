@@ -109,8 +109,10 @@ std::optional<TextureId> UiRenderer::image_texture(const std::string& name) {
     }
   } else if (vfs_ != nullptr) {
     std::string path = "images/" + name + ".png";
-    if (!vfs_->exists(path)) {
-      path = "images/" + name + ".jpg";
+    for (const char* extension : {".jpg", ".webp"}) {
+      if (!vfs_->exists(path)) {
+        path = "images/" + name + extension;
+      }
     }
     const std::optional<std::vector<std::byte>> bytes = vfs_->read(path);
     if (bytes) {

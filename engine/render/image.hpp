@@ -39,8 +39,8 @@ class ImageError : public std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-/// Decodes a whole PNG or JPEG file. Throws ImageError if the data is not a complete PNG or JPEG
-/// or the image is larger than kMaxImageDimension either way. Safe to call from any thread.
+/// Decodes a whole PNG, JPEG or WebP file (lossless or lossy, no animation). Throws ImageError if
+/// the data is not a complete image of one of these kinds or the image is over the size limits. Safe to call from any thread.
 [[nodiscard]] Image decode_image(std::span<const std::byte> encoded);
 
 /// Reads the image at virtual path `path` through `vfs` and decodes it, both on a job of `jobs`.

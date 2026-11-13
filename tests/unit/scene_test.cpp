@@ -45,6 +45,7 @@ vnmaki::Vfs game_files(const std::string& script) {
   return vnmaki::test::memory_vfs({
       {"scripts/main.lua", script},
       {"images/bg/classroom.png", ""},
+      {"images/bg/dusk.webp", ""},
       {"images/bg/street.jpg", ""},
       {"images/eileen.png", ""},
       {"images/eileen_happy.png", ""},
@@ -237,6 +238,16 @@ end)
   CHECK(scene.tags(Layer::kOverlay) == Lines{"rain"});
 }
 
+TEST_CASE("scene: an image name finds a WebP file when there is no PNG or JPEG") {
+  const Stage stage{R"(
+label("start", function()
+  scene("bg/dusk")
+end)
+)"};
+  REQUIRE_MESSAGE(stage.runtime.state() != RunState::kFailed, stage.runtime.error());
+  CHECK(path_of(stage.scene, "background") == "images/bg/dusk.webp");
+}
+
 TEST_CASE("scene: the layers stack from background up to transient") {
   Lines names;
   names.reserve(vnmaki::kLayerOrder.size());
@@ -270,7 +281,8 @@ end)
 )"};
   CHECK(shown.runtime.state() == RunState::kFailed);
   CHECK(shown.runtime.error() ==
-        "scripts/main.lua:4: image 'ghost' not found (no images/ghost.png or images/ghost.jpg)");
+        "scripts/main.lua:4: image 'ghost' not found (no images/ghost.png, images/ghost.jpg or "
+        "images/ghost.webp)");
   // The failed call changed nothing.
   CHECK(shown.scene.tags(Layer::kCharacters) == Lines{"eileen"});
 
@@ -283,8 +295,8 @@ label("start", function()
 end)
 )"};
   CHECK(background.runtime.error() ==
-        "scripts/main.lua:6: image 'bg/moon' not found (no images/bg/moon.png or "
-        "images/bg/moon.jpg)");
+        "scripts/main.lua:6: image 'bg/moon' not found (no images/bg/moon.png, "
+        "images/bg/moon.jpg or images/bg/moon.webp)");
   CHECK(path_of(background.scene, "background") == "images/bg/classroom.png");
   CHECK(background.scene.tags(Layer::kCharacters) == Lines{"eileen"});
 }
@@ -506,5 +518,6 @@ end)
   CHECK(result.outcome == vnmaki::HeadlessOutcome::kFailed);
   CHECK(result.transcript == Lines{"label start", "narrate before"});
   CHECK(result.error ==
-        "scripts/main.lua:4: image 'ghost' not found (no images/ghost.png or images/ghost.jpg)");
+        "scripts/main.lua:4: image 'ghost' not found (no images/ghost.png, images/ghost.jpg or "
+        "images/ghost.webp)");
 }
