@@ -1,0 +1,357 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "model_fixtures.py"
+ },
+ "buffers": [
+  {
+   "byteLength": 960,
+   "uri": "data:application/octet-stream;base64,AACAvgAAAAAAAIC+AACAPgAAAAAAAIC+AACAPgAAAAAAAIA+AACAvgAAAAAAAIA+AACAvgAAgD8AAIC+AACAPgAAgD8AAIC+AACAPgAAgD8AAIA+AACAvgAAgD8AAIA+AACAvgAAAEAAAIC+AACAPgAAAEAAAIC+AACAPgAAAEAAAIA+AACAvgAAAEAAAIA+8wQ1vwAAAADzBDW/8wQ1PwAAAADzBDW/8wQ1PwAAAADzBDU/8wQ1vwAAAADzBDU/8wQ1vwAAAADzBDW/8wQ1PwAAAADzBDW/8wQ1PwAAAADzBDU/8wQ1vwAAAADzBDU/8wQ1vwAAAADzBDW/8wQ1PwAAAADzBDW/8wQ1PwAAAADzBDU/8wQ1vwAAAADzBDU/AAAAAAAAAAAAAAAAAAAAAAABAAAAAQAAAAEAAAABAAABAAAAAQAAAAEAAAABAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAD8AAAA/AAAAAAAAAAAAAAA/AAAAPwAAAAAAAAAAAAAAPwAAAD8AAAAAAAAAAAAAAD8AAAA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAABAAUAAAAFAAQAAQACAAYAAQAGAAUAAgADAAcAAgAHAAYAAwAAAAQAAwAEAAcABAAFAAkABAAJAAgABQAGAAoABQAKAAkABgAHAAsABgALAAoABwAEAAgABwAIAAsAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIC/AAAAAAAAgD8AAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAPMENT/zBDU/AAAAAAAAgD8AAAAAAAAAAPMENb/zBDU/AAAAAAAAAADzBDW/8wQ1PwAAAAAAAIA/AAAAQAAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAABAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 144,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 144,
+   "byteLength": 144,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 288,
+   "byteLength": 48,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 336,
+   "byteLength": 192,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 528,
+   "byteLength": 96,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 624,
+   "byteLength": 128
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 752,
+   "byteLength": 8
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 760,
+   "byteLength": 32
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 792,
+   "byteLength": 8
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 800,
+   "byteLength": 32
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 832,
+   "byteLength": 12
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 844,
+   "byteLength": 36
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 880,
+   "byteLength": 8
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 888,
+   "byteLength": 72
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 12,
+   "type": "VEC3",
+   "min": [
+    -0.25,
+    0.0,
+    -0.25
+   ],
+   "max": [
+    0.25,
+    2.0,
+    0.25
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 12,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5121,
+   "count": 12,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5126,
+   "count": 12,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5123,
+   "count": 48,
+   "type": "SCALAR"
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5126,
+   "count": 2,
+   "type": "MAT4"
+  },
+  {
+   "bufferView": 6,
+   "componentType": 5126,
+   "count": 2,
+   "type": "SCALAR",
+   "min": [
+    0.0
+   ],
+   "max": [
+    1.0
+   ]
+  },
+  {
+   "bufferView": 7,
+   "componentType": 5126,
+   "count": 2,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 8,
+   "componentType": 5126,
+   "count": 2,
+   "type": "SCALAR",
+   "min": [
+    0.0
+   ],
+   "max": [
+    1.0
+   ]
+  },
+  {
+   "bufferView": 9,
+   "componentType": 5126,
+   "count": 2,
+   "type": "VEC4"
+  },
+  {
+   "bufferView": 10,
+   "componentType": 5126,
+   "count": 3,
+   "type": "SCALAR",
+   "min": [
+    0.0
+   ],
+   "max": [
+    2.0
+   ]
+  },
+  {
+   "bufferView": 11,
+   "componentType": 5126,
+   "count": 3,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 12,
+   "componentType": 5126,
+   "count": 2,
+   "type": "SCALAR",
+   "min": [
+    0.0
+   ],
+   "max": [
+    1.0
+   ]
+  },
+  {
+   "bufferView": 13,
+   "componentType": 5126,
+   "count": 6,
+   "type": "VEC3"
+  }
+ ],
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0,
+    2
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "root",
+   "children": [
+    1
+   ]
+  },
+  {
+   "name": "tip",
+   "translation": [
+    0,
+    1,
+    0
+   ]
+  },
+  {
+   "name": "bar",
+   "mesh": 0,
+   "skin": 0
+  }
+ ],
+ "skins": [
+  {
+   "joints": [
+    0,
+    1
+   ],
+   "inverseBindMatrices": 5,
+   "skeleton": 0
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "JOINTS_0": 2,
+      "WEIGHTS_0": 3
+     },
+     "indices": 4,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.8,
+     0.4,
+     0.2,
+     1.0
+    ],
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.5
+   }
+  }
+ ],
+ "animations": [
+  {
+   "name": "bend",
+   "samplers": [
+    {
+     "input": 6,
+     "output": 7,
+     "interpolation": "LINEAR"
+    }
+   ],
+   "channels": [
+    {
+     "sampler": 0,
+     "target": {
+      "node": 1,
+      "path": "rotation"
+     }
+    }
+   ]
+  },
+  {
+   "name": "flip",
+   "samplers": [
+    {
+     "input": 8,
+     "output": 9,
+     "interpolation": "LINEAR"
+    }
+   ],
+   "channels": [
+    {
+     "sampler": 0,
+     "target": {
+      "node": 1,
+      "path": "rotation"
+     }
+    }
+   ]
+  },
+  {
+   "name": "snap",
+   "samplers": [
+    {
+     "input": 10,
+     "output": 11,
+     "interpolation": "STEP"
+    }
+   ],
+   "channels": [
+    {
+     "sampler": 0,
+     "target": {
+      "node": 0,
+      "path": "translation"
+     }
+    }
+   ]
+  },
+  {
+   "name": "slide",
+   "samplers": [
+    {
+     "input": 12,
+     "output": 13,
+     "interpolation": "CUBICSPLINE"
+    }
+   ],
+   "channels": [
+    {
+     "sampler": 0,
+     "target": {
+      "node": 0,
+      "path": "translation"
+     }
+    }
+   ]
+  }
+ ]
+}

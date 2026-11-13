@@ -1,7 +1,6 @@
 // Self-voicing (docs/SPEC.md section 17) without a window or a voice: a recording backend gets the
 // exact strings of scripted sessions. Time stands still; a frame is presenter, sync, voicing.
 
-#include <chrono>
 #include <cstddef>
 #include <filesystem>
 #include <memory>
@@ -29,6 +28,7 @@
 #include "engine/ui/ui_host.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/support/memory_vfs.hpp"
+#include "tests/support/recording_tts.hpp"
 #include "tests/support/temp_dir.hpp"
 
 namespace {
@@ -58,20 +58,6 @@ std::string ja_po() {
   add("", "Stay", "Todomaru");
   return vnmaki::write_po(file);
 }
-
-// Keeps what it is told, in order. A speak stops the speech before it, as a real backend does.
-class RecordingTts final : public vnmaki::TtsBackend {
- public:
-  void speak(std::string_view utf8) override { spoken.emplace_back(utf8); }
-  void stop() override { ++stops; }
-  [[nodiscard]] bool wait_until_done(std::chrono::milliseconds /*timeout*/) override {
-    return true;
-  }
-  [[nodiscard]] bool available() const override { return true; }
-
-  std::vector<std::string> spoken;
-  std::size_t stops = 0;
-};
 
 // A story with a presenter, a screen presenter and self-voicing, as the story window has them.
 struct Game {
@@ -120,7 +106,7 @@ struct Game {
   vnmaki::Vfs vfs;
   vnmaki::ScriptRuntime runtime;
   vnmaki::PersistentStore persistent;
-  RecordingTts tts;
+  vnmaki::test::RecordingTts tts;
   std::unique_ptr<vnmaki::DialoguePresenter> presenter;
   std::unique_ptr<vnmaki::Playback> playback;
   std::unique_ptr<vnmaki::ScreenPresenter> screens;

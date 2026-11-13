@@ -34,10 +34,12 @@ MAX_STATEMENTS = 5
 TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates" / "default"
 # (script, label, ending, edges as (kind, target, the text of the call)), in the order of the files.
 TEMPLATE_STORY = [
+    ("scripts/content.lua", "content", True, []),
     ("scripts/main.lua", "start", False, [("jump", "classroom", 'jump("classroom")')]),
     ("scripts/main.lua", "classroom", False, [("menu", "warm", 'jump("warm")'),
                                               ("menu", "cold", 'jump("cold")'),
-                                              ("menu", "presentation", 'jump("presentation")')]),
+                                              ("menu", "presentation", 'jump("presentation")'),
+                                              ("menu", "content", 'jump("content")')]),
     ("scripts/main.lua", "warm", True, []),
     ("scripts/main.lua", "cold", True, []),
     ("scripts/presentation.lua", "presentation", True, []),

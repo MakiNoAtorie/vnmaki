@@ -42,13 +42,13 @@ using vnmaki::RunState;
 using vnmaki::SayRequest;
 
 constexpr std::uint32_t kEileenColor = 0xC8A2C8;
-constexpr std::size_t kSampleMenuOptions = 3;
+constexpr std::size_t kSampleMenuOptions = 4;
 constexpr std::size_t kPresentationOption = 2;  // 0-based: the third option of the menu
 constexpr std::string_view kFontPath = "fonts/default.ttf";
 constexpr float kFontSize = 40;
 constexpr float kNoWrap = 100000;
-// Thirteen images, the music, the voice line, the font and the shader.
-constexpr std::size_t kAssetCount = 18;
+// Thirteen images, the music, the chime, the voice line, two fonts, the shader and the 3D arm.
+constexpr std::size_t kAssetCount = 20;
 
 // A directory under the system temp directory, empty at the start and removed at the end.
 class TempDir {
@@ -436,8 +436,8 @@ TEST_CASE("template: the assets are the files of tools/generators/template_asset
   std::size_t committed = 0;
   for (const fs::directory_entry& entry : fs::recursive_directory_iterator(default_template())) {
     const std::string folder = fs::relative(entry.path(), default_template()).begin()->string();
-    if (entry.is_regular_file() &&
-        (folder == "images" || folder == "audio" || folder == "fonts" || folder == "shaders")) {
+    if (entry.is_regular_file() && (folder == "images" || folder == "audio" || folder == "fonts" ||
+                                    folder == "shaders" || folder == "models")) {
       ++committed;
     }
   }

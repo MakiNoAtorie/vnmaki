@@ -17,6 +17,9 @@ writes only its own files and never deletes anything:
   images/mask/iris.png               a round mask for the "mask" transition
   audio/bgm/theme.wav                a 4 second loop of sine notes
   audio/voice/eileen/hello.wav       a voice line of tone bursts, for lip sync
+  audio/sfx/chime.wav                a short chime: the sound with a caption in the content demo
+  models/arm.gltf                    a bar with two joints and the clip "bend" (the 3D model of
+                                     the content demo; model_fixtures.skinned())
   shaders/sepia.frag.hlsl            a game shader (shader_fixtures.SEPIA_SHADER)
   fonts/default.ttf                  a 5 by 7 pixel font for ASCII, one rectangle for each run
                                      of pixels (built with text_fixtures.build_font)
@@ -37,6 +40,7 @@ import zlib
 from pathlib import Path
 
 sys.dont_write_bytecode = True  # No __pycache__ in the source tree.
+import model_fixtures as mf  # noqa: E402  (the glTF of the 3D model)
 import render_fixtures as rf  # noqa: E402  (the PNG chunks)
 import shader_fixtures as sf  # noqa: E402  (the sepia shader)
 import text_fixtures as tf  # noqa: E402  (the TrueType writer)
@@ -273,6 +277,21 @@ def theme() -> bytes:
     return wav(bytes(frames))
 
 
+CHIME_HERTZ = 880
+CHIME_SECONDS = 0.5
+
+
+def chime() -> bytes:
+    frames = bytearray()
+    length = round(RATE * CHIME_SECONDS)
+    fade = round(RATE * FADE_SECONDS)
+    for i in range(length):
+        envelope = min(1.0, i / fade, (length - i) / fade)
+        sample = AMPLITUDE * envelope * math.sin(2 * math.pi * CHIME_HERTZ * i / RATE)
+        frames += struct.pack("<h", round(sample * 32767))
+    return wav(bytes(frames))
+
+
 # The voice line: (seconds, amplitude) bursts of a tone. The RMS level of a burst is its amplitude
 # over the square root of 2, so the mouth of "eileen" (thresholds 0.05 and 0.2 in
 # scripts/main.lua) is half open for 0.12 and 0.2, and open for 0.5 and above.
@@ -436,6 +455,7 @@ def pixel_font(advance: int = GLYPH_ADVANCE) -> bytes:
 
 def files() -> dict:
     return {**images(), "audio/bgm/theme.wav": theme(), "audio/voice/eileen/hello.wav": voice(),
+            "audio/sfx/chime.wav": chime(), "models/arm.gltf": mf.text(mf.skinned()),
             "fonts/default.ttf": pixel_font(),
             "fonts/dyslexia.ttf": pixel_font(DYSLEXIA_ADVANCE),
             "shaders/sepia.frag.hlsl": sf.SEPIA_SHADER.encode()}

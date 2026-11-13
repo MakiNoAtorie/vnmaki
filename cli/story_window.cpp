@@ -482,8 +482,10 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
 #endif
       const double seconds = std::chrono::duration<double>(step).count();
       saves.poll();  // a script's save or load, or a load in the middle of a line
-      presenter.update(seconds);
+      // The preferences first: a script that sets prefs.language at a line shows and speaks that
+      // line in the new language.
       preferences.update();
+      presenter.update(seconds);
       captions.update(audio->take_captions(), seconds, preferences.current().captions);
       if (!backlog_screen.is_open() && !ui.has_modal()) {  // auto and skip wait while the player
         playback.update(seconds);                          // reads or sets something

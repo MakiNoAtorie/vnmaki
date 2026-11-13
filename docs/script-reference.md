@@ -1,6 +1,6 @@
 # Script reference: presentation
 
-This is the list of the Lua calls for pictures, motion, shaders, movies and lip sync. The calls for text, menus, audio, saves and screens are in `docs/SPEC.md`. A complete example is the label `presentation` in `templates/default/scripts/presentation.lua`.
+This is the list of the Lua calls for pictures, motion, shaders, movies and lip sync. The calls for text, menus, audio, saves and screens are in `docs/SPEC.md`. Complete examples are the label `presentation` in `templates/default/scripts/presentation.lua` and the label `content` (3D scenes, clips, captions, a plugin transition) in `templates/default/scripts/content.lua`.
 
 Rules for all calls:
 
@@ -193,6 +193,8 @@ say(eileen, "Hello.")
 
 ## Languages
 
+The guide for authors is `docs/localization.md`.
+
 - `languages = ["en", "ja"]` in `project.toml` lists the languages. The first is the one the scripts are written in.
 - `vnmaki extract-strings <folder>` writes `translations/template.pot` and `translations/<code>.po`. Translate the `msgstr` lines. A fuzzy or empty entry shows the source text.
 - `vnmaki run <folder> --lang ja` or `prefs.language = "ja"` plays in that language. `languages()` lists the codes. A button that returns `"@language:ja"` changes the language at once; the default `preferences` screen has these buttons when there is more than one language.
@@ -201,6 +203,8 @@ say(eileen, "Hello.")
 - Vertical text: `[vertical]` with `ja = true` in `project.toml` sets the default say box and NVL screen in columns that run down, the first column at the right. A style file can do the same with `style("say_text", { vertical = true })` and `style("nvl_text", { vertical = true })`. A text node takes `vertical = true` too (give it a `height`: the columns wrap there), and so does the style of a text node. Kana and kanji stand upright, Latin letters and digits turn 90 degrees clockwise, `{ruby=...}` goes to the right of its column, and a column does not start with `。` or a small kana. A font with vertical forms (the `vert` feature) shows them for `。`, `、` and brackets; a font without them shows the horizontal shapes. `style_option(name, key)` reads an option of a style (the default screens use it to see `vertical`).
 - A dev build has a "Translations" window in the overlay (F12): it lists the entries of the current label and saves an edit to the `.po` file.
 ## Captions and reduced motion
+
+The guide is `docs/accessibility.md`.
 
 ```lua
 sound("sfx/door", { caption = "a door slams" })

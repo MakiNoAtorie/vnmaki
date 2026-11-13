@@ -85,6 +85,10 @@ A plugin file is a Vfs file like any other. A game that `vnmaki build windows` p
 - `vnmaki check` does not read `plugins/`. It also does not flag a call to a function that no script defines, so the functions of plugins are not flagged. A `show` that has the option `displayable` is not checked for an image.
 - A plugin cannot be turned on or off while the game runs.
 
+### The plugin of the template
+
+`vnmaki new` makes a game with a Lua plugin, `plugins/flash/`. `project.toml` lists it (`plugins = ["flash"]`), `plugin.toml` gives the engine range `>=0.1.0`, and `flash.lua` is one line: `define_transition("flash", "fade", { color = "#ffffff", duration = 1 })`. The label `content` (`scripts/content.lua`) uses it with `show("eileen", { at = "center", with = "flash" })`. Packs hold it like any file of the game, so the built game has it too.
+
 ## C++ plugins
 
 A C++ plugin is a folder `plugins/<name>/` of the engine source tree with a `CMakeLists.txt`:
@@ -170,3 +174,4 @@ The tests:
 - `tests/render/plugin_render_test.cpp`: a GPU golden of the badge and a `.ppm` picture.
 - `tests/cli/CMakeLists.txt`: a Lua plugin transition and function (`cli.plugin_lua_adds_a_transition_and_a_function`), the version mismatch (`cli.plugin_version_mismatch_stops_the_start`), a Lua plugin from packs, and, in a build with `-DVNMAKI_PLUGINS=example`, the C++ plugin in a run.
 - `tools/generators/plugin_fixtures.py` writes the projects and the golden.
+- `tests/unit/content_demo_test.cpp` and `tests/render/content_render_test.cpp`: the Lua plugin of the template (`flash`) in the content demo, played from packs and drawn on a GPU (the transition at progress 0.25).

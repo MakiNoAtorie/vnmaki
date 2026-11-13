@@ -1,7 +1,7 @@
 Assets of this project
 =====================
 
-images/, audio/, shaders/ and fonts/default.ttf were made by the script
+images/, audio/, models/, shaders/ and fonts/default.ttf were made by the script
 tools/generators/template_assets.py of VNMaki (https://github.com/MakiNoAtorie/vnmaki), from
 rectangles, ellipses and sine waves. No other artwork, music, voice or font file was used.
 
@@ -19,6 +19,8 @@ You may use, change and sell them with your game, with no credit. Replace them w
   images/mask/iris.png               mask of a transition
   audio/bgm/theme.wav                music loop
   audio/voice/eileen/hello.wav       a voice line of tone bursts, for lip sync
+  audio/sfx/chime.wav                a short chime, the sound that has a caption in scripts/content.lua
+  models/arm.gltf                    a 3D arm: a bar with two joints and the clip "bend"
   shaders/sepia.frag.hlsl            a game shader
   movies/clip.webm                   a short movie
   fonts/default.ttf                  5 by 7 pixel font, ASCII only
@@ -32,7 +34,9 @@ for example OpenDyslexic (https://opendyslexic.org/), under the same name, and r
 here. The engine loads fonts/dyslexia.ttf when it exists and puts it first in the font chain while
 the player has "Dyslexia-friendly font" on.
 
-translations/ja.po has one translated line (the narration of the label warm) to show the Japanese language, which is written in columns. With this font the line shows as boxes.
+translations/ja.po is the output of `vnmaki extract-strings`. It translates the narration of the label warm, the menu option that leads to the content demo and every line of the label content, to show the Japanese language, which is written in columns. With this font the lines show as boxes.
+
+plugins/flash/ is a Lua plugin (the transition "flash") that was written for VNMaki. It is CC0 1.0 like the rest.
 
 The font has no accents or non-Latin letters. For a game in another language, use a font that
 has them, and list it under [fonts.fallback] in project.toml.

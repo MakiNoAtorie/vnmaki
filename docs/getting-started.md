@@ -18,9 +18,12 @@ The new game has these files:
 | File | Content |
 |------|---------|
 | `project.toml` | Title, version, resolution (1280 by 720), languages, auto save. |
-| `scripts/main.lua` | A short story: a classroom, Eileen, and a menu that leads to the labels `warm`, `cold` and `presentation`. |
+| `scripts/main.lua` | A short story: a classroom, Eileen, and a menu that leads to the labels `warm`, `cold`, `presentation` and `content`. |
 | `scripts/presentation.lua` | The presentation demo (third menu option): dissolve, layered sprite, blink, camera, shake, sepia shader, lip sync, movie. See `docs/script-reference.md`. |
-| `images/`, `audio/`, `shaders/`, `movies/`, `fonts/default.ttf` | Placeholder art, a music loop, a voice line, a shader, a short movie and a pixel font. |
+| `scripts/content.lua` | The content demo (fourth menu option): a language switch, captions, a 3D model with a clip and a transition from a Lua plugin. See `docs/localization.md`, `docs/accessibility.md` and `docs/plugins.md`. |
+| `plugins/flash/` | A Lua plugin that adds the transition `flash`. Listed in `project.toml`. |
+| `translations/ja.po` | The Japanese translation (`vnmaki extract-strings` made it). |
+| `images/`, `audio/`, `models/`, `shaders/`, `movies/`, `fonts/default.ttf` | Placeholder art, a music loop, a voice line, a chime, a 3D arm, a shader, a short movie and a pixel font. |
 | `ASSETS.txt` | The license of the assets (CC0). They come from `tools/generators/template_assets.py`. |
 
 The font has only ASCII characters. Replace the assets with your own.
@@ -43,7 +46,7 @@ Options:
 - `--frames <n>` closes the window after `n` frames.
 - `--data-dir <path>` gives the folder for saves and for the `persistent` data. Without it, they go to the user-data folder of the game title.
 - `--headless` plays without a window and prints a transcript. It needs no input for lines, but it stops with an error at a menu or a screen. The sample story has both.
-- `--lang <code>` plays in a language of `languages` in `project.toml` (see `docs/script-reference.md`, "Languages").
+- `--lang <code>` plays in a language of `languages` in `project.toml` (see `docs/localization.md`).
 
 ## Change the story
 
@@ -58,3 +61,4 @@ vnmaki build windows my_game --out my_game_build
 - The command imports the assets, packs them into `game.vnpak`, and copies the release runner as `<title>.exe` with its DLLs. Give the folder to a player. `<title>.exe` plays `game.vnpak` with no arguments.
 - Run it with a dev build (it compiles the game shaders). The runner is `build/release/cli/vnmaki.exe`, so build the `release` preset too, or pass `--runner <path>`.
 - A file `patch-*.vnpak` next to `game.vnpak` overrides the files of the game by path, in name order.
+- `docs/build.md` has the details (the importer, the runner, how to build the engine). `docs/accessibility.md` lists the features for players.
