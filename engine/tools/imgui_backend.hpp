@@ -4,6 +4,7 @@
 // makes is ImGui's current one, which overlay.cpp uses directly.
 
 #include "engine/platform/geometry.hpp"
+#include "engine/platform/input.hpp"
 #include "engine/render/sdl_gpu_renderer.hpp"
 
 namespace vnmaki {
@@ -19,6 +20,11 @@ class ImguiBackend {
   ImguiBackend& operator=(const ImguiBackend&) = delete;
   ImguiBackend(ImguiBackend&&) = delete;
   ImguiBackend& operator=(ImguiBackend&&) = delete;
+
+  /// Gives ImGui a key, text, pointer or wheel event. Returns true when ImGui wants that kind of
+  /// input (a text field has the keys, the pointer is over a window); its flags are from the last
+  /// frame. Other events return false.
+  bool handle_event(const InputEvent& event);
 
   /// Starts an ImGui frame for a screen of `pixels`; `seconds` since the last one.
   void begin_frame(Size pixels, double seconds);
