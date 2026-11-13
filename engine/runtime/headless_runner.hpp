@@ -6,12 +6,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "engine/runtime/script_runtime.hpp"
+#include "engine/saves/saves.hpp"
 
 namespace vnmaki {
 
@@ -72,6 +74,10 @@ struct HeadlessOptions {
   std::string start_label = "start";
   /// The observer field is ignored: the runner observes the runtime itself.
   ScriptRuntimeOptions runtime;
+  /// Set: the runner answers `save`, `load`, `quick_save` and `quick_load`, writes the auto-save
+  /// slot, and keeps `persistent` in `saves->directory`. Without it those calls do nothing.
+  /// Warnings of the saves go to the transcript unless `on_warning` is set.
+  std::optional<SavesOptions> saves;
 };
 
 /// Loads every script under `scripts/` in `vfs`, enters the start label and
