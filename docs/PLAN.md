@@ -455,11 +455,11 @@ Files: new `engine/assets/`, `vcpkg.json`, `cli/`.
 
 Files: new `engine/vfs/pak_mount.*`, `engine/vfs/pak_writer.*`, new `cli/build_command.*`, `vcpkg.json`.
 
-- [ ] Format: magic, version, a sorted index (path, offset, size, raw size, hash), and zstd data for each file. Document it.
-- [ ] `PakMount` is a `VfsMount`. `patch-*.vnpak` files mount after `game.vnpak` in name order and override by path.
-- [ ] `vnmaki build windows <dir> --out <folder>` imports, packs, and copies the release runner as `<title>.exe`. The runner plays `game.vnpak` next to it.
-- [ ] A bad pak gives an error, not a crash. Add a fuzz target for the pak reader.
-- [ ] Tests: pack round trip, patch override, and a headless play of the built template from packs only.
+- [x] Format: magic, version, a sorted index (path, offset, size, raw size, hash), and zstd data for each file. Document it.
+- [x] `PakMount` is a `VfsMount`. `patch-*.vnpak` files mount after `game.vnpak` in name order and override by path.
+- [x] `vnmaki build windows <dir> --out <folder>` imports, packs, and copies the release runner as `<title>.exe`. The runner plays `game.vnpak` next to it.
+- [x] A bad pak gives an error, not a crash. Add a fuzz target for the pak reader.
+- [x] Tests: pack round trip, patch override, and a headless play of the built template from packs only.
 
 ### 46: 3D scenes (SPEC §12, §9)
 
