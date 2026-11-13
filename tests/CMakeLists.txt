@@ -189,7 +189,8 @@ vnmaki_add_fixture_generator(
 # Localization (ticket 40): `.po` files, string extraction and the update of translations. The
 # generator writes the projects and the expected files of the `vnmaki extract-strings` CLI tests.
 # The fuzz target shares fuzz/po_properties.hpp.
-target_sources(vnmaki_unit_tests PRIVATE unit/po_test.cpp unit/extract_test.cpp)
+target_sources(vnmaki_unit_tests PRIVATE unit/po_test.cpp unit/extract_test.cpp
+                                           unit/language_test.cpp)
 vnmaki_add_fixture_generator(
   l10n SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/l10n_fixtures.py"
   TEST_TARGETS vnmaki_unit_tests)
@@ -207,6 +208,11 @@ target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)
 # builds with the tools.
 if(VNMAKI_DEV_TOOLS)
   target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp unit/hot_reload_test.cpp)
+endif()
+
+# Dev tools: the translation editor of the overlay, on a temporary project (ticket 41).
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/translation_editor_test.cpp)
 endif()
 
 # Dev tools: the row functions of the inspectors, on the default template (ticket 31).

@@ -595,6 +595,36 @@ vnmaki_add_cli_test(
   NO_STDOUT
   STDERR_REGEX "^usage: vnmaki extract-strings")
 
+# vnmaki run --lang (ticket 41): the transcript has the translations of the language. A fuzzy entry
+# and a line with no entry show the source text.
+vnmaki_add_cli_stdout_file_test(
+  run_headless_prints_the_source_text_without_lang
+  ARGS run "${vnmaki_l10n_fixtures}/lang" --headless
+  EXIT 0
+  STDOUT_FILE "${vnmaki_l10n_fixtures}/lang.en.transcript")
+vnmaki_add_cli_stdout_file_test(
+  run_headless_prints_the_translations_with_lang
+  ARGS run "${vnmaki_l10n_fixtures}/lang" --headless --lang ja
+  EXIT 0
+  STDOUT_FILE "${vnmaki_l10n_fixtures}/lang.ja.transcript")
+vnmaki_add_cli_test(
+  run_rejects_a_language_that_project_toml_does_not_list
+  ARGS run "${vnmaki_l10n_fixtures}/lang" --headless --lang xx
+  EXIT 1
+  NO_STDOUT
+  STDERR_REGEX "language 'xx' is not in 'languages' of project.toml")
+vnmaki_add_cli_test(
+  run_lang_needs_a_code
+  ARGS run "${vnmaki_l10n_fixtures}/lang" --lang --headless
+  EXIT 2
+  NO_STDOUT
+  STDERR_REGEX "vnmaki run: --lang needs a language code")
+set_tests_properties(
+  cli.run_headless_prints_the_source_text_without_lang
+  cli.run_headless_prints_the_translations_with_lang
+  cli.run_rejects_a_language_that_project_toml_does_not_list cli.run_lang_needs_a_code
+  PROPERTIES TIMEOUT 60)
+
 # vnmaki extract-strings never opens a window or waits for input, so a hang is a bug.
 set_tests_properties(
   cli.extract_strings_writes_the_template_and_updates_the_po_files
