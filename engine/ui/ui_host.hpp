@@ -86,6 +86,9 @@ class UiHost final : public ScreenCommands {
   /// Whether screen `name` is the topmost modal screen.
   [[nodiscard]] bool is_top_modal(std::string_view name) const;
 
+  /// The names of the shown screens, bottom first.
+  [[nodiscard]] std::vector<std::string> screen_names() const;
+
   /// The tree of screen `name`, laid out; null if it is not shown.
   [[nodiscard]] UiNode* find(std::string_view name);
   /// The trees of all shown screens, laid out, bottom first.

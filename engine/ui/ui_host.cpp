@@ -107,6 +107,15 @@ std::vector<const UiNode*> UiHost::roots() {
   return trees;
 }
 
+std::vector<std::string> UiHost::screen_names() const {
+  std::vector<std::string> names;
+  names.reserve(screens_.size());
+  for (const Screen& screen : screens_) {
+    names.push_back(screen.name);
+  }
+  return names;
+}
+
 void UiHost::ensure_layout() {
   if (!dirty_) {
     return;

@@ -38,7 +38,9 @@ if(VNMAKI_DEV_TOOLS)
             overlay.cpp
             overlay.hpp
             repl.cpp
-            repl.hpp)
+            repl.hpp
+            screen_editor.cpp
+            screen_editor.hpp)
 
   # The ImGui renderer backend draws through SDL GPU, so only imgui_backend.cpp includes SDL
   # (lint.no_sdl_outside_platform). The ImGui input comes from InputEvents, not from SDL events.
