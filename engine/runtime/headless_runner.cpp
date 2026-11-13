@@ -36,6 +36,8 @@ class TranscriptRecorder final : public ScriptObserver {
       }
     } else if (const auto* screen = std::get_if<CallScreenRequest>(&request)) {
       add("screen ", screen->name);
+    } else if (const auto* wait = std::get_if<WaitRequest>(&request)) {
+      result_->transcript.push_back(wait->tag.empty() ? "wait_all" : "wait " + wait->tag);
     }
   }
 
@@ -69,7 +71,18 @@ HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
 
   runtime.start(options.start_label);
   auto next_input = inputs.begin();
-  while (runtime.state() == RunState::kWaiting && next_input != inputs.end()) {
+  while (runtime.state() == RunState::kWaiting) {
+    if (const auto* wait = std::get_if<WaitRequest>(runtime.request())) {
+      // No clock runs here: the tweens that end are at their end values, and the wait is over.
+      if (runtime_options.scene != nullptr) {
+        runtime_options.scene->finish_tweens(wait->tag);
+      }
+      runtime.advance();
+      continue;
+    }
+    if (next_input == inputs.end()) {
+      break;
+    }
     const auto* menu = std::get_if<MenuRequest>(runtime.request());
     const bool at_screen = std::holds_alternative<CallScreenRequest>(*runtime.request());
     const auto* choice = std::get_if<ChooseInput>(&*next_input);

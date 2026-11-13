@@ -83,9 +83,20 @@ struct CallScreenRequest {
   friend bool operator==(const CallScreenRequest&, const CallScreenRequest&) = default;
 };
 
+/// `wait(tag)` or `wait_all()`: the script waits until the tweens of `tag` (all tweens when `tag`
+/// is empty) have ended. A wait is always a step, also when nothing is tweening, so a replay
+/// counts the same steps as live play. Answered with ScriptRuntime::advance(); see
+/// engine/anim/wait_presenter.hpp. Rollback skips wait steps (ScriptPosition::wait).
+struct WaitRequest {
+  std::string tag{};
+
+  friend bool operator==(const WaitRequest&, const WaitRequest&) = default;
+};
+
 /// What a suspended label waits for. Every alternative is one kind of yield
 /// point; later tickets add pauses.
-using BlockingRequest = std::variant<SayRequest, NarrateRequest, MenuRequest, CallScreenRequest>;
+using BlockingRequest =
+    std::variant<SayRequest, NarrateRequest, MenuRequest, CallScreenRequest, WaitRequest>;
 
 /// The answer to a MenuRequest: the chosen option, counted from 0.
 struct MenuChoice {
@@ -192,7 +203,39 @@ struct ShowRequest {
   std::optional<std::string> layer{};
 };
 
-/// What `scene`, `show` and `hide` do to the engine (engine/scene/scene.hpp
+/// `tween(tag, options)`, or the group `sequence{...}` or `parallel{...}` of tweens. Fields the
+/// script left out are empty. Positions are fractions of the virtual resolution, as for `show`;
+/// `anchor` and `crop` are fractions of the displayable.
+struct TweenRequest {
+  enum class Kind : std::uint8_t { kTween, kSequence, kParallel };
+
+  Kind kind = Kind::kTween;
+  std::string tag{};  ///< The displayable a tween changes.
+  std::optional<double> x{};
+  std::optional<double> y{};
+  std::optional<double> anchor_x{};
+  std::optional<double> anchor_y{};
+  std::optional<double> scale_x{};
+  std::optional<double> scale_y{};
+  std::optional<double> rotation{};  ///< Degrees, clockwise.
+  std::optional<double> alpha{};
+  std::optional<std::uint32_t> tint{};  ///< 0xRRGGBB.
+  std::optional<double> crop_x{};
+  std::optional<double> crop_y{};
+  std::optional<double> crop_width{};
+  std::optional<double> crop_height{};
+  double duration = 0.5;  ///< Seconds.
+  double delay = 0;       ///< Seconds.
+  std::string ease{"linear"};
+  bool loop = false;
+  bool yoyo = false;
+  std::vector<TweenRequest> children{};  ///< The members of a group.
+  /// Set on the outermost request while the runtime replays: tweens that end go to their end
+  /// value at once, and loops start at time 0.
+  bool replaying = false;
+};
+
+/// What `scene`, `show`, `hide`, `tween` and `wait` do to the engine (engine/scene/scene.hpp
 /// implements it). A call that cannot be done returns why, and the runtime
 /// raises that as a script error at the calling script line; it returns an
 /// empty string otherwise. Calls arrive during a replay too.
@@ -208,6 +251,15 @@ class SceneCommands {
   [[nodiscard]] virtual std::string scene(std::string_view image) = 0;
   [[nodiscard]] virtual std::string show(const ShowRequest& request) = 0;
   virtual void hide(std::string_view tag) = 0;
+
+  /// Starts the tweens. Returns why it cannot (an unknown tag or easing, ...), as for `show`. The
+  /// defaults do nothing, for implementations without an animation system.
+  [[nodiscard]] virtual std::string tween(const TweenRequest& /*request*/) { return {}; }
+  /// Puts the tweens of `tag` (all when empty) that end at their end values: a click or skip
+  /// ends a `wait`.
+  virtual void finish_tweens(std::string_view /*tag*/) {}
+  /// True while a tween that ends changes `tag` (any tag when empty): what `wait` waits for.
+  [[nodiscard]] virtual bool tweening(std::string_view /*tag*/) const { return false; }
 };
 
 /// What `show_screen`, `hide_screen` and `call_screen` need from the engine (engine/ui/ui_host.hpp
@@ -276,6 +328,8 @@ class AudioCommands {
 struct ScriptPosition {
   std::string label;
   std::uint32_t step = 0;
+  /// The step is a `wait`. Rollback goes back over it, to the previous say or menu.
+  bool wait = false;
 
   friend bool operator==(const ScriptPosition&, const ScriptPosition&) = default;
 };
@@ -311,9 +365,9 @@ class ScriptObserver {
   virtual void on_label_resumed(std::string_view /*label*/) {}
   /// The running label reached a yield point and waits at `position`.
   virtual void on_blocked(const BlockingRequest& /*request*/, const ScriptPosition& /*position*/) {}
-  /// A `scene`, `show` or `hide` call was done. `command` is its transcript
-  /// form: "scene <image>", "hide <tag>", or "show <tag>" followed by the
-  /// options given, in this order: " image <name>", " at <position>",
+  /// A `scene`, `show`, `hide`, `tween`, `sequence` or `parallel` call was done. `command` is its
+  /// transcript form: "scene <image>", "hide <tag>", "tween <tag>", "sequence", "parallel", or
+  /// "show <tag>" followed by the options given, in this order: " image <name>", " at <position>",
   /// " x <number>", " y <number>", " layer <name>".
   virtual void on_scene_command(std::string_view /*command*/) {}
   /// A `music`, `sound`, `voice`, `stop` or `volume` call was done. `command` is its transcript
@@ -391,6 +445,13 @@ struct ScriptRuntimeOptions {
 /// Audio: `music(name, { channel =, fade =, loop_start =, loop_end = })`,
 /// `sound(name, { channel = })`, `voice(name)`, `stop(channel, { fade = })` and
 /// `volume(channel, number)`; times are in seconds.
+/// Animation: `tween(tag, { x =, y =, anchor = { x =, y = }, scale = number or { x =, y = },
+/// rotation =, alpha =, tint = "#rrggbb", crop = { x =, y =, width =, height = }, duration =,
+/// delay =, ease =, loop =, yoyo = })`; the units are those of `show`. `sequence { item... }` and
+/// `parallel { item... }` start a group, where an item is `{ tag, <the options of tween> }` or a
+/// group `{ sequence = { item... } }` or `{ parallel = { item... } }`; the group table may have
+/// `delay` and `loop`. `wait(tag)` and `wait_all()` block until those tweens have ended. A tween
+/// that is not waited for does not block.
 /// Screens: `screen "name" { node... }` (or a function of the arguments that
 /// returns nodes), the node constructors `box`, `hbox`, `vbox`, `text`, `image` and `button`,
 /// `show_screen(name, args)`, `hide_screen(name)` and `call_screen(name, args)`, which waits for
@@ -426,8 +487,8 @@ class ScriptRuntime {
   void start(std::string_view name);
 
   /// Resumes the waiting label (the player advanced past the request) and
-  /// runs it to its next yield point. Does nothing unless kWaiting at a say
-  /// or narrate.
+  /// runs it to its next yield point. Does nothing unless kWaiting at a say,
+  /// narrate or wait.
   void advance();
 
   /// Answers the MenuRequest the label waits at with option `index` (from 0),

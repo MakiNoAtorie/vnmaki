@@ -141,7 +141,8 @@ std::string script_from(std::span<const std::uint8_t> bytes) {
 
 // A menu is one stop; its first option line stands for it.
 bool is_stop_line(std::string_view line) {
-  return line.starts_with("say ") || line.starts_with("narrate ") || line.starts_with("menu 1: ");
+  return line.starts_with("say ") || line.starts_with("narrate ") || line.starts_with("menu 1: ") ||
+         line.starts_with("wait ") || line == "wait_all";
 }
 
 void check(const vnmaki::HeadlessResult& result) {
