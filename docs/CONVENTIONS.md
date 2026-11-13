@@ -65,7 +65,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Tests use doctest. Each doctest executable needs `DOCTEST_CONFIG_USE_STD_HEADERS`.
 - Every `main` calls `vnmaki::disable_crt_dialogs()` (`engine/core/no_crt_dialogs.hpp`) first. MSVC debug builds otherwise open a modal dialog on `abort()` or an assert, which blocks the run on the desktop. This also applies to throwaway programs. Run them with a timeout.
 - Unit tests are in `tests/unit/*_test.cpp`. They run in `vnmaki_unit_tests`. The ctest name of each test is `unit.<name>`.
-- Platform tests are in `tests/platform/` and have their own executable. On Linux, they use `SDL_VIDEO_DRIVER=offscreen`. `file_watcher_test.cpp` (efsw on a real folder, Windows only) writes real files and polls with a 10 second timeout, so a watcher that reports nothing fails the test and does not hang it.
+- Platform tests are in `tests/platform/` and have their own executable. `tts_test.cpp` speaks "Hi" at 1% volume through the system backend and waits 20 seconds at most; with no voice it prints `VNMAKI_SKIP:` and ctest skips it (the platform tests have `SKIP_REGULAR_EXPRESSION`). `self_voicing_test.cpp` (unit) uses a recording backend for the exact spoken strings. On Linux, they use `SDL_VIDEO_DRIVER=offscreen`. `file_watcher_test.cpp` (efsw on a real folder, Windows only) writes real files and polls with a 10 second timeout, so a watcher that reports nothing fails the test and does not hang it.
 - CLI tests use `vnmaki_add_cli_test(name ARGS ... EXIT n [STDOUT_LINE t | NO_STDOUT] [STDERR_REGEX r] [EXPECTED_FILES f...])`.
 - To compare output with a file, use `vnmaki_add_cli_stdout_file_test(... STDOUT_FILE f)`.
 - A `vnmaki run` or `vnmaki debug` test never touches the user-data directory (AppData). Both helpers add `--data-dir <build>/tests/cli/data/<name>` to every `ARGS` that starts with `run` or `debug`, and the runner script empties that folder first. So no test shares saves with another. A test that adds `add_test` by hand must do the same (`vnmaki_isolate_run_data`).
@@ -126,6 +126,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Text input is off when no text field has the focus. `UiHost::set_platform(&platform)` does this for the `input` node (see UI).
 - `set_fullscreen(bool)` and `set_window_opacity(float)` apply the player's preferences. `HeadlessPlatform` only records them (`fullscreen()`, `window_opacity()`).
 - `user_data_directory(organization, application)` (`sdl_platform.hpp`) is SDL's per-user preference path. Saves go there.
+- `TtsBackend` (`tts.hpp`) speaks for self-voicing: `speak(utf8)` is asynchronous and stops the speech in progress, `stop()`, `wait_until_done(timeout)`, `available()`. `make_system_tts(volume_percent)` gives SAPI (`ISpVoice`, COM) on Windows (`win_tts.cpp`, linked with `sapi` and `ole32`) and a `NullTts` elsewhere (`tts.cpp`). It never throws; no installed voice gives `available() == false`. COM starts on the thread that makes the backend, so make it, use it and destroy it on one thread.
 - Only one `SdlPlatform` can exist. Other SDL users call `SDL_InitSubSystem` and `SDL_QuitSubSystem`. They do not call `SDL_Quit`.
 
 ### Render (`engine/render/`)
@@ -391,11 +392,18 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `@save!<slot>` and `@quit!` are the confirmed forms.
   - `ScreenPresenter::set_action_handler` gives the activations to it first, so a script's own `call_screen` values must not start with `@`.
 - `prefs` is a view of `persistent.prefs` with defaults. A key the player never set reads as its default. `prefs.x = v` writes `persistent.prefs`. A value of the wrong type is a script error.
-  - Keys: `text_speed` (characters a second, 40), `auto_delay` (seconds, 1), `volume_music`, `volume_sound`, `volume_voice`, `volume_ambient`, `volume_ui` (0 to 1, 1), `fullscreen` (false), `skip_unseen` (false), `window_opacity` (0.3 to 1, 1), `reduce_motion` (false).
+  - Keys: `text_speed` (characters a second, 40), `auto_delay` (seconds, 1), `volume_music`, `volume_sound`, `volume_voice`, `volume_ambient`, `volume_ui` (0 to 1, 1), `fullscreen` (false), `skip_unseen` (false), `window_opacity` (0.3 to 1, 1), `reduce_motion` (false), `self_voicing` (false).
   - The defaults are also in the struct `Preferences`. A test checks that they agree.
 - `PreferenceApplier` (`engine/ui/preferences.hpp`) reads the preferences each frame and applies what changed:
   - Text speed to the `DialoguePresenter`, auto delay to `Playback`, volumes to `Audio::set_preference_volume`, fullscreen and window opacity to the `Platform`. A null target is skipped.
+  - `self_voicing` goes to `SelfVoicing::set_enabled` (`PreferenceTargets::self_voicing`).
   - `reduce_motion` has no target yet. Task 23 reads it through `read_preferences`.
+- Self-voicing (`SelfVoicing`, `engine/ui/self_voicing.hpp`) speaks through a `TtsBackend`. Call `update()` once a frame, after `ScreenPresenter::sync()`. Make it after the `Playback`; the story window makes the backend with `make_system_tts()`.
+  - It speaks a new say or narrate line (`line_serial()` changed) as `Speaker: text`, with the tags removed (narration: the text only). It speaks a menu once (`Choose. A. B. C`; same `ScriptRuntime::position()` is the same menu). It speaks the focused node (`state.focused`, the topmost screen first) as `label, role` and then the state: `, on` or `, off` for a toggle, `, N percent` for a slider or bar, the text of an input, `, disabled`. A button label is spoken as written (only text nodes have markup).
+  - A line or a menu is spoken before the focus: the focus that came with it (a modal screen focuses its first button) is not spoken. Each `speak` stops the speech before it.
+  - Skip mode (`Playback::skip() != kOff`) speaks nothing and calls `stop()` once; what passes in skip mode is not spoken later. A rollback or a load that shows another line speaks it, and a replay speaks nothing, because the runtime replays inside one call and `SelfVoicing` only sees the result of a frame.
+  - `set_enabled(true)` forgets what was spoken, so the current line, menu or focus is spoken at the next `update()`. `set_enabled(false)` speaks "Self-voicing off", and then nothing.
+  - `V` toggles `prefs.self_voicing` in the story window, after the screens, so a modal screen or an input that has the keys takes it first. The preferences screen has the toggle "Self-voicing (V key)". The key is fixed in `story_window.cpp` until the input map of task 42 exists: then make it the action `self_voicing`.
 - The story window shows `quick_menu` (top right, not modal) at the start and gives every activation to `ScreenActions`. Auto and skip wait while a modal screen is open.
 
 ### Audio (`engine/audio/`)

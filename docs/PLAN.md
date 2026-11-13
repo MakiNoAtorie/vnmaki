@@ -435,10 +435,10 @@ Files: `engine/ui/`, `engine/text/`, `engine/audio/`, `engine/platform/input.*`,
 
 Files: new `engine/platform/tts.hpp`, `engine/platform/win_tts.cpp`, `engine/dialogue/`, `engine/ui/`.
 
-- [ ] Windows TTS through SAPI (`ISpVoice`, COM). No new dependency. Other platforms get a null backend.
-- [ ] `prefs.self_voicing` and the V key. It speaks each say line (speaker, then text without tags), the menu choices, and the role, label and state of the focused UI node.
-- [ ] New speech stops the old speech. Skip mode and replay do not speak.
-- [ ] Tests: a recording fake backend gives the exact spoken strings for a scripted session. A Windows platform test speaks one line with a timeout.
+- [x] Windows TTS through SAPI (`ISpVoice`, COM). No new dependency. Other platforms get a null backend.
+- [x] `prefs.self_voicing` and the V key. It speaks each say line (speaker, then text without tags), the menu choices, and the role, label and state of the focused UI node.
+- [x] New speech stops the old speech. Skip mode and replay do not speak.
+- [x] Tests: a recording fake backend gives the exact spoken strings for a scripted session. A Windows platform test speaks one line with a timeout.
 
 ### 44: Asset import (SPEC §19, §9)
 
