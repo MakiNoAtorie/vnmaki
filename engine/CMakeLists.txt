@@ -9,6 +9,7 @@ target_include_directories(vnmaki_engine PUBLIC "${PROJECT_SOURCE_DIR}")
 target_compile_features(vnmaki_engine PUBLIC cxx_std_20)
 target_link_libraries(vnmaki_engine PRIVATE vnmaki::options)
 
+add_subdirectory(anim)
 add_subdirectory(core)
 add_subdirectory(dialogue)
 add_subdirectory(jobs)

@@ -53,6 +53,8 @@ enum class HeadlessOutcome : std::uint8_t {
 ///   show <tag> ...        show(tag, options), then the options given (see
 ///                         ScriptObserver::on_scene_command)
 ///   hide <tag>            hide(tag)
+///   tween <tag>           tween(tag, options); also "sequence" and "parallel" for a group
+///   wait <tag>            wait(tag); "wait_all" for wait_all()
 ///   music <name> ...      music(name, options), then the options given (see
 ///                         ScriptObserver::on_audio_command, also for the next four)
 ///   sound <name> ...      sound(name, options)
@@ -65,7 +67,7 @@ struct HeadlessResult {
   HeadlessOutcome outcome = HeadlessOutcome::kFailed;
   std::vector<std::string> transcript;
   /// The position of every yield point reached, in order (one per say or
-  /// narrate line and one per menu in the transcript).
+  /// narrate line, menu and wait in the transcript).
   std::vector<ScriptPosition> stops;
   std::string error;  ///< Why it failed; empty otherwise.
 };
@@ -82,9 +84,11 @@ struct HeadlessOptions {
 
 /// Loads every script under `scripts/` in `vfs`, enters the start label and
 /// answers each yield point with the next input until the story ends, the
-/// inputs run out or a script fails. An input that does not fit the yield
-/// point (an advance at a menu or a screen, a choice at a line or of an option
-/// the menu does not have, a screen result anywhere else) also fails the run.
+/// inputs run out or a script fails. A wait needs no input: no clock runs, so
+/// the tweens it waits for (SceneCommands::finish_tweens) end at once. An
+/// input that does not fit the yield point (an advance at a menu or a screen,
+/// a choice at a line or of an option the menu does not have, a screen result
+/// anywhere else) also fails the run.
 [[nodiscard]] HeadlessResult run_headless(const Vfs& vfs, std::span<const ScriptInput> inputs,
                                           const HeadlessOptions& options = {});
 

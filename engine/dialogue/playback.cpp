@@ -47,6 +47,9 @@ void Playback::observe_line() {
 
 void Playback::skip_step() {
   if (!presenter_->line()) {
+    if (options_.skip_wait && options_.skip_wait()) {
+      return;
+    }
     if (runtime_->state() == RunState::kWaiting) {
       skip_ = SkipMode::kOff;  // a menu or a screen: the player must act
     }

@@ -25,6 +25,10 @@ struct PlaybackOptions {
   /// The hook for voices: auto-advance does not count down while it returns true, and after a
   /// line that had a voice it waits only `auto_base_delay`. Use Audio::voice_playing().
   std::function<bool()> voice_playing{};
+  /// Called while skip is on and the story waits at something that is not a line. It ends a
+  /// `wait` for tweens (WaitPresenter::skip) and returns true if it did; skip then goes on. Any
+  /// other request stops skip.
+  std::function<bool()> skip_wait{};
 };
 
 class Playback {

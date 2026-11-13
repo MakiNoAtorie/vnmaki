@@ -148,10 +148,36 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - Position is in virtual pixels.
   - Anchor and crop are fractions.
   - Rotation is in degrees, clockwise.
-- Tweens write through `Scene::find(tag)->properties()`.
+- `Scene` keeps `std::unique_ptr<Displayable>`. `find(tag)` returns a `Displayable*`. Use `dynamic_cast` to get an `ImageDisplayable`.
+- The snapshot is a map from a part name to bytes: `displayables` and `tweens`. A new feature adds a part. `restore()` ignores a part that it does not know and reads a missing part as empty.
+- The snapshot keeps the properties as a replay leaves them. A tween that ends is at its end value. A loop is at the value where it started.
+- Tweens write through `Scene::find(tag)->properties()`. `Scene::update(seconds)` moves them. `hide` and `scene` end the tweens of the displayables that they remove.
+- `Scene::show` of a tag that is shown does not end its tweens.
 - For each frame, call `scene.prepare(renderer, jobs)` on the main thread. Then call `scene.draw(renderer)` in a pass on the virtual-resolution target.
 - `SceneCommands` calls return an error string. The prelude raises it at the script line.
 - `SceneCommands` calls also run during replay.
+- `SceneCommands` has `tween`, `finish_tweens` and `tweening` with default no-op bodies, so other implementations do not need an animation system.
+
+### Anim (`engine/anim/`)
+
+- `easing.hpp`: `Ease` is linear, and sine, quad, cubic, back and bounce, each as `in`, `out` and `in_out`. The script names are `linear` and `in_sine`, `out_quad`, `in_out_back`, ... `apply_ease` clamps its input to [0, 1].
+- `Timeline` runs `TweenNode` trees: a tween, a `sequence` or a `parallel` group. It has no clock. The caller gives the elapsed seconds to `update()`. Tests use a fake clock.
+- A `Timeline::Lookup` finds the `DisplayProperties` of a tag. The timeline keeps no pointers to displayables. A tween of a tag that is not found does nothing.
+- A tween changes channels (`Channel`: position, anchor, scale, rotation, alpha, tint, crop). A channel without a target stays as it is. Alpha and tint are kept in [0, 1], also for a back easing.
+- A tween starts after its `delay` and reads its start values then. A sequence of tweens on one property continues from the last end. The values do not depend on the step size.
+- `yoyo` goes to the target and back. Without `loop`, it does this one time. `loop` repeats a tween forever. On the outermost group, `loop` repeats the whole group. The `delay` of a group applies one time.
+- A loop in a sequence must be the last item. A nested group cannot loop. `start()` returns the reason.
+- Loops never block a `wait`. `busy(tag)` is true only for tweens that end.
+- `start(node, lookup, instant = true)` is for replay. A tween that ends goes to its end value. A loop starts at time 0.
+- `finish(tag)` puts the tweens that end at their end values. A click or skip does this.
+- `settle()`, `capture()` and `restore()` are the snapshot. `capture()` keeps only loops, with the whole group if it contains a loop. `restore()` starts them at time 0 from the properties that it finds. `Scene::capture()` calls `settle()` on copies first.
+- Script API: `tween(tag, { x, y, anchor = { x, y }, scale = number or { x, y }, rotation, alpha, tint = "#rrggbb", crop = { x, y, width, height }, duration, delay, ease, loop, yoyo })`. The units are those of `show`. `duration` is 0.5 s if the script gives none.
+- `sequence { item, ... }` and `parallel { item, ... }` start a group at once. An item is `{ tag, <options of tween> }`, or a group: `{ sequence = { items } }` or `{ parallel = { items } }`. The group table can have `delay` and `loop`. A group nests up to 16 levels.
+- `tween` has an effect at once and does not block. `wait(tag)` and `wait_all()` block (`WaitRequest`).
+- A wait is always one step, also when nothing is tweening, so replay counts the same steps as live play. `WaitPresenter` (`wait_presenter.hpp`) ends it:
+  - Call `update()` once per update after `Scene::update`. It ends a wait whose tweens have ended.
+  - Call `skip()` on a click or in skip mode, before `DialoguePresenter::advance()`. It puts the tweens at their end values and goes on. If it returns true, the input is used.
+- `ScriptPosition::wait` marks a wait step. Rollback (task 13) must go back over wait steps to the previous say or menu. This is not done yet.
 
 ### Dialogue (`engine/dialogue/`)
 
@@ -232,7 +258,8 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
   - `check_screen` runs on every tree first. Its error string is raised at the script line.
   - The runtime includes no ui headers. It reads the Lua node tables into `ScreenNodeDef`.
 - `label_source_hash(name)` covers the lines of the label function. It does not cover the helpers that it calls.
-- The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it.
+- `wait(tag)` and `wait_all()` are blocking calls too (`WaitRequest`). `advance()` ends them. See Anim.
+- The headless runner prints a transcript (`label X`, `say Who: text`, ...). `vnmaki run <dir> --headless` runs it. It ends a wait at once and needs no input for it.
 - `project.toml` has `title` (required), `version`, `resolution`, `languages` and `auto_save` (a list of `"label"` and `"menu"`).
 - `save(slot)`, `load(slot)`, `quick_save()` and `quick_load()` only queue a `SaveRequest`. `take_save_requests()` gives them to the host. They are dropped during a replay.
   - A slot is an integer from 1. `load` with a number is a slot. With a string or function it is Lua's `load`.

@@ -332,6 +332,36 @@ TEST_CASE("skip all: reads unseen lines and stops at a menu") {
   CHECK(game.shown() == "four");
 }
 
+TEST_CASE("skip: ends a wait for tweens through the hook, and goes on") {
+  const TempDir dir{"skip_wait"};
+  constexpr auto kScript = R"(
+label("start", function()
+  narrate("before")
+  wait_all()
+  narrate("after")
+  menu { "x" }
+end)
+)";
+  vnmaki::ScriptRuntime* runtime_ptr = nullptr;
+  int ended_waits = 0;
+  Game game{kScript, dir.path(),
+            {.skip_interval = kSkipInterval, .skip_wait = [&] {
+               if (std::holds_alternative<vnmaki::WaitRequest>(*runtime_ptr->request())) {
+                 ++ended_waits;
+                 runtime_ptr->advance();
+                 return true;
+               }
+               return false;
+             }}};
+  runtime_ptr = &game.runtime;
+  game.playback->set_skip(SkipMode::kAll);
+  game.tick_while_skipping(SkipMode::kAll);
+
+  CHECK(ended_waits == 1);
+  CHECK(std::holds_alternative<vnmaki::MenuRequest>(*game.runtime.request()));
+  CHECK(game.playback->skip() == SkipMode::kOff);
+}
+
 TEST_CASE("script: skip and auto turn the modes on and off") {
   const TempDir dir{"script"};
   constexpr auto kScript = R"(

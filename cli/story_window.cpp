@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "engine/anim/wait_presenter.hpp"
 #include "engine/audio/audio.hpp"
 #include "engine/dialogue/dialogue_presenter.hpp"
 #include "engine/dialogue/playback.hpp"
@@ -137,6 +138,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     runtime.start("start");
     saves.poll();
     ScreenPresenter screens{runtime, ui};
+    WaitPresenter waits{runtime, scene};
     DialoguePresenter presenter{
         runtime,
         [&](const DialogueLine& line) { return say_box.glyph_count(line); },
@@ -147,7 +149,8 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
     Playback playback{runtime,
                       presenter,
                       persistent,
-                      {.voice_playing = [&] { return audio->voice_playing(); }}};
+                      {.voice_playing = [&] { return audio->voice_playing(); },
+                       .skip_wait = [&] { return waits.skip(); }}};
     PlaybackIndicator indicator{ui};
 
     SteadyClock clock;
@@ -161,6 +164,12 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
              point.y < static_cast<float>(virtual_size.height);
     };
 
+    // A click, key or button ends a wait for tweens first (skip mode will do the same).
+    const auto advance = [&] {
+      if (!waits.skip()) {
+        presenter.advance();
+      }
+    };
     MainLoopHooks hooks;
     hooks.on_event = [&](const InputEvent& event) {
       if (screens.handle_event(event, viewport())) {
@@ -169,7 +178,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       if (const auto* key = std::get_if<KeyEvent>(&event)) {
         if (key->pressed && !key->repeat && is_advance_key(key->key)) {
           playback.set_skip(SkipMode::kOff);
-          presenter.advance();
+          advance();
         } else if (key->pressed && !key->repeat && key->key == Key::kA) {
           playback.set_auto(!playback.automatic());
         } else if (key->pressed && !key->repeat && key->key == Key::kS) {
@@ -182,12 +191,12 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
           const std::string link =
               line ? say_box.link_at(*line, window_to_virtual(viewport(), click->position)) : "";
           if (link.empty() || !runtime.activate_link(link)) {
-            presenter.advance();
+            advance();
           }
         }
       } else if (const auto* button = std::get_if<GamepadButtonEvent>(&event)) {
         if (button->pressed && button->button == GamepadButton::kSouth) {
-          presenter.advance();
+          advance();
         }
       }
     };
@@ -198,6 +207,7 @@ int run_story_window(const Vfs& vfs, const ProjectConfig& config,
       playback.update(seconds);
       scene.update(seconds);
       audio->update(seconds);
+      waits.update();
       screens.sync();
       indicator.sync(playback.skip(), playback.automatic());
       persistent.flush();
