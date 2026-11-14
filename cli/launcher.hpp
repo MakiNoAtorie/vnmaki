@@ -70,7 +70,9 @@ class Launcher {
   /// Runs `action` on `folder` (for New: the folder to make). Returns the exit code of the
   /// command: 0 on success, 1 when it fails, 2 when `folder` is empty. A folder with exit code 0
   /// goes to the recent projects. The log gets the command line `> vnmaki ...` and the output.
-  int run(LauncherAction action, std::string_view folder);
+  /// For New, `languages` are the add-ons to apply (`--lang <code>` for each).
+  int run(LauncherAction action, std::string_view folder,
+          const std::vector<std::string>& languages = {});
 
   [[nodiscard]] const RecentProjects& recent() const { return recent_; }
   [[nodiscard]] const std::string& log() const { return log_; }

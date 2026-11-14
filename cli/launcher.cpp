@@ -90,7 +90,8 @@ LauncherHost system_launcher_host() {
           .runner = std::nullopt};
 }
 
-int Launcher::run(LauncherAction action, std::string_view folder) {
+int Launcher::run(LauncherAction action, std::string_view folder,
+                  const std::vector<std::string>& languages) {
   if (folder.empty()) {
     log_ += "Enter a project folder first.\n";
     return kExitUsage;
@@ -108,7 +109,10 @@ int Launcher::run(LauncherAction action, std::string_view folder) {
     };
     switch (action) {
       case LauncherAction::kNew: {
-        const std::string_view args[] = {dir};
+        std::vector<std::string_view> args = {dir};
+        for (const std::string& language : languages) {
+          args.insert(args.end(), {"--lang", language});
+        }
         code = call("new", new_command, args);
         break;
       }

@@ -8,10 +8,13 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <imgui.h>
 
 #include "cli/launcher.hpp"
+#include "cli/new_command.hpp"
 #include "engine/core/utf8_path.hpp"
 #include "engine/platform/main_loop.hpp"
 #include "engine/platform/sdl_platform.hpp"
@@ -40,9 +43,15 @@ constexpr std::array<Button, 6> kButtons{{{"New", LauncherAction::kNew},
                                           {"Build windows", LauncherAction::kBuildWindows},
                                           {"Open folder", LauncherAction::kOpenFolder}}};
 
+// A language add-on of templates/addons/ and whether New applies it.
+struct AddonChoice {
+  std::string name;
+  bool selected = false;
+};
+
 // One frame of the launcher. `folder` is the text field.
 void draw_launcher(Launcher& launcher, std::array<char, kFolderBytes>& folder,
-                   std::size_t& shown_log_size) {
+                   std::vector<AddonChoice>& addons, std::size_t& shown_log_size) {
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
   ImGui::SetNextWindowPos(viewport->Pos);
   ImGui::SetNextWindowSize(viewport->Size);
@@ -58,7 +67,20 @@ void draw_launcher(Launcher& launcher, std::array<char, kFolderBytes>& folder,
       ImGui::SameLine();
     }
     if (ImGui::Button(kButtons[i].label)) {
-      launcher.run(kButtons[i].action, folder.data());
+      std::vector<std::string> languages;
+      for (const AddonChoice& addon : addons) {
+        if (addon.selected && kButtons[i].action == LauncherAction::kNew) {
+          languages.push_back(addon.name);
+        }
+      }
+      launcher.run(kButtons[i].action, folder.data(), languages);
+    }
+  }
+  if (!addons.empty()) {
+    ImGui::TextUnformatted("New with the language:");
+    for (AddonChoice& addon : addons) {
+      ImGui::SameLine();
+      ImGui::Checkbox(addon.name.c_str(), &addon.selected);
     }
   }
 
@@ -99,6 +121,10 @@ int run_launcher_window(Launcher& launcher, std::optional<std::uint64_t> max_fra
     MainLoop loop{platform, clock, {.min_frame_time = kFrameTime}};
     std::array<char, kFolderBytes> folder{};
     std::size_t shown_log_size = 0;
+    std::vector<AddonChoice> addons;
+    for (std::string& name : available_addons()) {
+      addons.push_back({.name = std::move(name)});
+    }
     bool text_input = false;
     auto last_frame = std::chrono::steady_clock::now();
 
@@ -113,7 +139,7 @@ int run_launcher_window(Launcher& launcher, std::optional<std::uint64_t> max_fra
       renderer->begin_frame();
       renderer->begin_pass({.target = kScreen, .clear = rgba8(24, 24, 28)});
       backend.begin_frame(platform.window_metrics().pixels, seconds);
-      draw_launcher(launcher, folder, shown_log_size);
+      draw_launcher(launcher, folder, addons, shown_log_size);
       const bool wants_text = ImGui::GetIO().WantTextInput;
       if (wants_text != text_input) {
         platform.set_text_input(wants_text);
