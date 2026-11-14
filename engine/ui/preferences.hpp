@@ -50,7 +50,7 @@ struct Preferences {
   double text_scale = 1;
   /// Styles from `styles/high_contrast.lua` go over the game's (the prelude does it).
   bool high_contrast = false;
-  /// `fonts/dyslexia.ttf` first in the font chain.
+  /// `fonts/dyslexia.ttf` or `.otf` first in the font chain.
   bool dyslexia_font = false;
   /// Captions of sounds and music (`caption = "..."`) show on the `captions` screen.
   bool captions = false;

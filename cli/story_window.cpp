@@ -1,6 +1,7 @@
 #include "cli/story_window.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -81,9 +82,10 @@ constexpr Duration kFrameTime = std::chrono::duration_cast<Duration>(std::chrono
 /// The organization part of the user-data path, where saves and the persistent file go.
 constexpr std::string_view kUserDataOrganization = "VNMaki";
 
-/// The dyslexia-friendly font (the `dyslexia_font` preference); a game without it has no such
-/// option.
-constexpr std::string_view kDyslexiaFontPath = "fonts/dyslexia.ttf";
+/// The dyslexia-friendly font (the `dyslexia_font` preference), in either format; a game without it
+/// has no such option.
+constexpr std::array<std::string_view, 2> kDyslexiaFontPaths{"fonts/dyslexia.ttf",
+                                                             "fonts/dyslexia.otf"};
 
 // The fonts of one language: the default font and the fallback chain of project.toml (the subset
 // of a pack for the language, when there is one) and the dyslexia-friendly font, if the game has
@@ -99,9 +101,12 @@ struct LanguageFonts {
         set.fallbacks.push_back(&chain_fonts.back());
       }
     }
-    if (const std::string path = font_path_for_language(vfs, kDyslexiaFontPath, code);
-        vfs.exists(path)) {
-      dyslexia.emplace(load_font(vfs, path));
+    for (const std::string_view candidate : kDyslexiaFontPaths) {
+      if (const std::string path = font_path_for_language(vfs, candidate, code);
+          vfs.exists(path)) {
+        dyslexia.emplace(load_font(vfs, path));
+        break;
+      }
     }
   }
   LanguageFonts(const LanguageFonts&) = delete;
@@ -350,7 +355,7 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     backlog_screen.set_input_map(&input_map);
     const auto use_dyslexia_font = [&](bool on) {
       if (on && !fonts_of(translator.language()).dyslexia) {
-        warn(std::string{kDyslexiaFontPath} + " is missing: the dyslexia-friendly font is off");
+        warn("fonts/dyslexia.ttf (or .otf) is missing: the dyslexia-friendly font is off");
       }
       dyslexia_on = on;
       const FontSet chosen = current_fonts();
