@@ -1,0 +1,60 @@
+#include "engine/ui/ui_node.hpp"
+
+#include <algorithm>
+
+#include "engine/text/markup.hpp"
+
+namespace vnmaki {
+
+UiNode make_node(NodeKind kind) {
+  UiNode node;
+  node.kind = kind;
+  switch (kind) {
+    case NodeKind::kText:
+      node.role = NodeRole::kText;
+      break;
+    case NodeKind::kImage:
+      node.role = NodeRole::kImage;
+      break;
+    case NodeKind::kButton:
+      node.role = NodeRole::kButton;
+      break;
+    case NodeKind::kToggle:
+      node.role = NodeRole::kToggle;
+      break;
+    case NodeKind::kSlider:
+      node.role = NodeRole::kSlider;
+      break;
+    case NodeKind::kBar:
+      node.role = NodeRole::kProgress;
+      break;
+    case NodeKind::kInput:
+      node.role = NodeRole::kTextInput;
+      break;
+    case NodeKind::kBox:
+    case NodeKind::kHbox:
+    case NodeKind::kVbox:
+      node.role = NodeRole::kGroup;
+      break;
+  }
+  return node;
+}
+
+bool is_focusable(const UiNode& node) {
+  const bool takes_focus = node.kind == NodeKind::kButton || node.kind == NodeKind::kToggle ||
+                           node.kind == NodeKind::kSlider || node.kind == NodeKind::kInput;
+  return takes_focus && !node.state.disabled;
+}
+
+void scale_text_sizes(UiNode& node, float factor) {
+  node.style.text_size = std::min(node.style.text_size * factor, kMaxFontPixelSize);
+  for (UiNode& child : node.children) {
+    scale_text_sizes(child, factor);
+  }
+}
+
+const std::string& display_text(const UiNode& node) {
+  return node.kind == NodeKind::kInput && node.text.empty() ? node.placeholder : node.text;
+}
+
+}  // namespace vnmaki

@@ -1,0 +1,19 @@
+---
+# Check groups from docs/SPEC.md section 5. Every finding is an error.
+# Disabled checks, and why:
+#   bugprone-easily-swappable-parameters: flags most multi-argument APIs;
+#     strong types are preferred where it matters, case by case.
+#   modernize-use-trailing-return-type: a style choice the project does not make.
+Checks: >
+  -*,
+  bugprone-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  -bugprone-easily-swappable-parameters,
+  -modernize-use-trailing-return-type
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/(engine|cli|tests|fuzz|bench|tools)/.*'
+FormatStyle: none
+...

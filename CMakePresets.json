@@ -1,0 +1,581 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    },
+    {
+      "name": "vcpkg",
+      "hidden": true,
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+    },
+    {
+      "name": "cfg-debug",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "cfg-release",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "cfg-asan-ubsan",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VNMAKI_SANITIZERS": "address;undefined"
+      },
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "cfg-tsan",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VNMAKI_SANITIZERS": "thread"
+      },
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "cfg-fuzz",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "VNMAKI_SANITIZERS": "address;undefined",
+        "VNMAKI_BUILD_FUZZERS": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "cfg-clang-tidy",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_CXX_CLANG_TIDY": "clang-tidy",
+        "VNMAKI_BUILD_FUZZERS": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "debug",
+      "description": "Debug: warnings as errors, hardened standard library (dependencies from vcpkg; needs VCPKG_ROOT)",
+      "inherits": [
+        "base",
+        "vcpkg",
+        "cfg-debug"
+      ]
+    },
+    {
+      "name": "release",
+      "displayName": "release",
+      "description": "Release: optimized build (dependencies from vcpkg; needs VCPKG_ROOT)",
+      "inherits": [
+        "base",
+        "vcpkg",
+        "cfg-release"
+      ]
+    },
+    {
+      "name": "asan-ubsan",
+      "displayName": "asan-ubsan",
+      "description": "Debug with AddressSanitizer and UndefinedBehaviorSanitizer (dependencies from vcpkg; needs VCPKG_ROOT)",
+      "inherits": [
+        "base",
+        "vcpkg",
+        "cfg-asan-ubsan"
+      ]
+    },
+    {
+      "name": "tsan",
+      "displayName": "tsan",
+      "description": "Debug with ThreadSanitizer (dependencies from vcpkg; needs VCPKG_ROOT)",
+      "inherits": [
+        "base",
+        "vcpkg",
+        "cfg-tsan"
+      ]
+    },
+    {
+      "name": "fuzz",
+      "displayName": "fuzz",
+      "description": "libFuzzer targets with ASan and UBSan (LLVM Clang) (dependencies from vcpkg; needs VCPKG_ROOT)",
+      "inherits": [
+        "base",
+        "vcpkg",
+        "cfg-fuzz"
+      ]
+    },
+    {
+      "name": "clang-tidy",
+      "displayName": "clang-tidy",
+      "description": "Debug build (fuzzers included) that runs clang-tidy on every first-party file (dependencies from vcpkg; needs VCPKG_ROOT)",
+      "inherits": [
+        "base",
+        "vcpkg",
+        "cfg-clang-tidy"
+      ]
+    },
+    {
+      "name": "system-debug",
+      "displayName": "system-debug",
+      "description": "Debug: warnings as errors, hardened standard library (dependencies from system packages; no vcpkg)",
+      "inherits": [
+        "base",
+        "cfg-debug"
+      ]
+    },
+    {
+      "name": "system-release",
+      "displayName": "system-release",
+      "description": "Release: optimized build (dependencies from system packages; no vcpkg)",
+      "inherits": [
+        "base",
+        "cfg-release"
+      ]
+    },
+    {
+      "name": "system-asan-ubsan",
+      "displayName": "system-asan-ubsan",
+      "description": "Debug with AddressSanitizer and UndefinedBehaviorSanitizer (dependencies from system packages; no vcpkg)",
+      "inherits": [
+        "base",
+        "cfg-asan-ubsan"
+      ]
+    },
+    {
+      "name": "system-tsan",
+      "displayName": "system-tsan",
+      "description": "Debug with ThreadSanitizer (dependencies from system packages; no vcpkg)",
+      "inherits": [
+        "base",
+        "cfg-tsan"
+      ]
+    },
+    {
+      "name": "system-fuzz",
+      "displayName": "system-fuzz",
+      "description": "libFuzzer targets with ASan and UBSan (LLVM Clang) (dependencies from system packages; no vcpkg)",
+      "inherits": [
+        "base",
+        "cfg-fuzz"
+      ]
+    },
+    {
+      "name": "system-clang-tidy",
+      "displayName": "system-clang-tidy",
+      "description": "Debug build (fuzzers included) that runs clang-tidy on every first-party file (dependencies from system packages; no vcpkg)",
+      "inherits": [
+        "base",
+        "cfg-clang-tidy"
+      ]
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan-ubsan",
+      "configurePreset": "asan-ubsan"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz"
+    },
+    {
+      "name": "clang-tidy",
+      "configurePreset": "clang-tidy"
+    },
+    {
+      "name": "system-debug",
+      "configurePreset": "system-debug"
+    },
+    {
+      "name": "system-release",
+      "configurePreset": "system-release"
+    },
+    {
+      "name": "system-asan-ubsan",
+      "configurePreset": "system-asan-ubsan"
+    },
+    {
+      "name": "system-tsan",
+      "configurePreset": "system-tsan"
+    },
+    {
+      "name": "system-fuzz",
+      "configurePreset": "system-fuzz"
+    },
+    {
+      "name": "system-clang-tidy",
+      "configurePreset": "system-clang-tidy"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "test-base",
+      "hidden": true,
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "inherits": [
+        "test-base"
+      ]
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "inherits": [
+        "test-base"
+      ]
+    },
+    {
+      "name": "asan-ubsan",
+      "configurePreset": "asan-ubsan",
+      "inherits": [
+        "test-base"
+      ],
+      "environment": {
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "inherits": [
+        "test-base"
+      ]
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz",
+      "inherits": [
+        "test-base"
+      ],
+      "environment": {
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "clang-tidy",
+      "configurePreset": "clang-tidy",
+      "inherits": [
+        "test-base"
+      ]
+    },
+    {
+      "name": "system-debug",
+      "configurePreset": "system-debug",
+      "inherits": [
+        "test-base"
+      ]
+    },
+    {
+      "name": "system-release",
+      "configurePreset": "system-release",
+      "inherits": [
+        "test-base"
+      ]
+    },
+    {
+      "name": "system-asan-ubsan",
+      "configurePreset": "system-asan-ubsan",
+      "inherits": [
+        "test-base"
+      ],
+      "environment": {
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "system-tsan",
+      "configurePreset": "system-tsan",
+      "inherits": [
+        "test-base"
+      ]
+    },
+    {
+      "name": "system-fuzz",
+      "configurePreset": "system-fuzz",
+      "inherits": [
+        "test-base"
+      ],
+      "environment": {
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "system-clang-tidy",
+      "configurePreset": "system-clang-tidy",
+      "inherits": [
+        "test-base"
+      ]
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "debug",
+      "displayName": "debug",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "debug"
+        },
+        {
+          "type": "build",
+          "name": "debug"
+        },
+        {
+          "type": "test",
+          "name": "debug"
+        }
+      ]
+    },
+    {
+      "name": "release",
+      "displayName": "release",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "release"
+        },
+        {
+          "type": "build",
+          "name": "release"
+        },
+        {
+          "type": "test",
+          "name": "release"
+        }
+      ]
+    },
+    {
+      "name": "asan-ubsan",
+      "displayName": "asan-ubsan",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "asan-ubsan"
+        },
+        {
+          "type": "build",
+          "name": "asan-ubsan"
+        },
+        {
+          "type": "test",
+          "name": "asan-ubsan"
+        }
+      ]
+    },
+    {
+      "name": "tsan",
+      "displayName": "tsan",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "tsan"
+        },
+        {
+          "type": "build",
+          "name": "tsan"
+        },
+        {
+          "type": "test",
+          "name": "tsan"
+        }
+      ]
+    },
+    {
+      "name": "fuzz",
+      "displayName": "fuzz",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "fuzz"
+        },
+        {
+          "type": "build",
+          "name": "fuzz"
+        },
+        {
+          "type": "test",
+          "name": "fuzz"
+        }
+      ]
+    },
+    {
+      "name": "clang-tidy",
+      "displayName": "clang-tidy",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "clang-tidy"
+        },
+        {
+          "type": "build",
+          "name": "clang-tidy"
+        },
+        {
+          "type": "test",
+          "name": "clang-tidy"
+        }
+      ]
+    },
+    {
+      "name": "system-debug",
+      "displayName": "system-debug",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "system-debug"
+        },
+        {
+          "type": "build",
+          "name": "system-debug"
+        },
+        {
+          "type": "test",
+          "name": "system-debug"
+        }
+      ]
+    },
+    {
+      "name": "system-release",
+      "displayName": "system-release",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "system-release"
+        },
+        {
+          "type": "build",
+          "name": "system-release"
+        },
+        {
+          "type": "test",
+          "name": "system-release"
+        }
+      ]
+    },
+    {
+      "name": "system-asan-ubsan",
+      "displayName": "system-asan-ubsan",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "system-asan-ubsan"
+        },
+        {
+          "type": "build",
+          "name": "system-asan-ubsan"
+        },
+        {
+          "type": "test",
+          "name": "system-asan-ubsan"
+        }
+      ]
+    },
+    {
+      "name": "system-tsan",
+      "displayName": "system-tsan",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "system-tsan"
+        },
+        {
+          "type": "build",
+          "name": "system-tsan"
+        },
+        {
+          "type": "test",
+          "name": "system-tsan"
+        }
+      ]
+    },
+    {
+      "name": "system-fuzz",
+      "displayName": "system-fuzz",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "system-fuzz"
+        },
+        {
+          "type": "build",
+          "name": "system-fuzz"
+        },
+        {
+          "type": "test",
+          "name": "system-fuzz"
+        }
+      ]
+    },
+    {
+      "name": "system-clang-tidy",
+      "displayName": "system-clang-tidy",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "system-clang-tidy"
+        },
+        {
+          "type": "build",
+          "name": "system-clang-tidy"
+        },
+        {
+          "type": "test",
+          "name": "system-clang-tidy"
+        }
+      ]
+    }
+  ]
+}

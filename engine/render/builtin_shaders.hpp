@@ -1,0 +1,31 @@
+#pragma once
+
+// The engine's own shaders (shaders/*.hlsl), compiled and embedded at build time.
+
+#include "engine/render/shader.hpp"
+
+namespace vnmaki::shaders {
+
+/// shaders/sprite.vert.hlsl: every quad's vertex shader.
+[[nodiscard]] ShaderBytecode sprite_vert();
+/// shaders/sprite.frag.hlsl: the default fragment shader (texel times tint).
+[[nodiscard]] ShaderBytecode sprite_frag();
+/// shaders/sdf_text.frag.hlsl: effect text from a distance-field glyph atlas (see
+/// sdf_text_shader() in engine/text/text.hpp).
+[[nodiscard]] ShaderBytecode sdf_text_frag();
+
+/// shaders/mesh.vert.hlsl: the vertex shader of every mesh (IRenderer::draw_mesh).
+[[nodiscard]] ShaderBytecode mesh_vert();
+/// shaders/mesh_*.frag.hlsl: the built-in mesh shaders (engine/model3d/scene3d.hpp).
+[[nodiscard]] ShaderBytecode mesh_unlit_frag();
+[[nodiscard]] ShaderBytecode mesh_toon_frag();
+[[nodiscard]] ShaderBytecode mesh_pbr_frag();
+
+/// shaders/transition_*.frag.hlsl: the built-in transitions (engine/anim/transition.hpp).
+[[nodiscard]] ShaderBytecode transition_dissolve_frag();
+[[nodiscard]] ShaderBytecode transition_fade_frag();
+[[nodiscard]] ShaderBytecode transition_slide_frag();
+[[nodiscard]] ShaderBytecode transition_wipe_frag();
+[[nodiscard]] ShaderBytecode transition_mask_frag();
+
+}  // namespace vnmaki::shaders

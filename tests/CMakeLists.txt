@@ -1,0 +1,355 @@
+find_package(doctest 2.4 CONFIG REQUIRED)
+include(doctest)
+
+add_executable(vnmaki_unit_tests unit/main.cpp unit/version_test.cpp)
+target_link_libraries(vnmaki_unit_tests PRIVATE vnmaki::engine vnmaki::options
+                                                doctest::doctest)
+# The version declared in project() is the source of truth the tests check
+# the engine against.
+target_compile_definitions(
+  vnmaki_unit_tests PRIVATE VNMAKI_EXPECTED_VERSION="${PROJECT_VERSION}"
+                            VNMAKI_EXPECTED_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+                            VNMAKI_EXPECTED_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+                            VNMAKI_EXPECTED_VERSION_PATCH=${PROJECT_VERSION_PATCH})
+# Make doctest include the real <ostream> instead of forward-declaring it.
+# Without this, MSVC fails to stringify std::string_view in assertions.
+target_compile_definitions(vnmaki_unit_tests PRIVATE DOCTEST_CONFIG_USE_STD_HEADERS)
+target_sources(vnmaki_unit_tests PRIVATE unit/job_system_test.cpp)
+doctest_discover_tests(vnmaki_unit_tests TEST_PREFIX "unit.")
+
+# VFS (ticket 02).
+target_sources(vnmaki_unit_tests PRIVATE unit/vfs_path_test.cpp unit/vfs_test.cpp)
+include(VnmakiFixtures)
+vnmaki_add_fixture_generator(
+  vfs SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/vfs_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
+# A build without a run-time shader compiler (release) cannot compile the sepia shader of the
+# template when a test loads it. This builds its `.vnshader` file, which the tests mount over the
+# project (VNMAKI_PRECOMPILED_DIR), so release tests load a precompiled game shader.
+include(VnmakiShaders)
+set(VNMAKI_PRECOMPILED_DIR "${PROJECT_BINARY_DIR}/precompiled")
+if(NOT VNMAKI_SHADER_COMPILER)
+  vnmaki_add_precompiled_shader(
+    vnmaki_precompiled_sepia
+    OUTPUT "${VNMAKI_PRECOMPILED_DIR}/shaders/sepia.frag.vnshader"
+    SHADER "${PROJECT_SOURCE_DIR}/templates/default/shaders/sepia.frag.hlsl"
+    INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/shaders")
+  add_dependencies(vnmaki_unit_tests vnmaki_precompiled_sepia)
+endif()
+target_compile_definitions(vnmaki_unit_tests PRIVATE VNMAKI_PRECOMPILED_DIR="${VNMAKI_PRECOMPILED_DIR}")
+
+add_subdirectory(cli)
+
+# The launcher (task 51): the recent-project list and the action functions, without ImGui. They
+# call the CLI commands, so the test executable links the command library.
+target_sources(vnmaki_unit_tests PRIVATE unit/launcher_test.cpp unit/build_command_test.cpp
+                                         unit/utf8_path_test.cpp)
+target_link_libraries(vnmaki_unit_tests PRIVATE vnmaki_cli)
+
+# Platform: window, input, main loop, virtual resolution (ticket 04).
+add_subdirectory(platform)
+
+# Render: image loading, the renderer interface, the SDL GPU backend (ticket 05).
+target_sources(vnmaki_unit_tests PRIVATE unit/image_test.cpp)
+add_subdirectory(render)
+vnmaki_add_fixture_generator(
+  render SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
+# WebP images for the image decoder (ticket 31).
+vnmaki_add_fixture_generator(
+  webp SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/webp_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+# Script runtime (ticket 06).
+target_sources(vnmaki_unit_tests PRIVATE unit/headless_runner_test.cpp
+                                         unit/script_sandbox_test.cpp
+                                         unit/project_config_test.cpp)
+vnmaki_add_fixture_generator(
+  runtime SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/runtime_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
+# Text: layout, glyph atlas, typewriter reveal (ticket 07).
+target_sources(vnmaki_unit_tests PRIVATE unit/text_test.cpp unit/markup_test.cpp
+                                         unit/styled_text_test.cpp
+                                         unit/vertical_text_test.cpp
+                                         unit/script_text_test.cpp)
+vnmaki_add_fixture_generator(
+  text SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
+
+# State store, step counting and replay (ticket 11).
+target_sources(vnmaki_unit_tests PRIVATE unit/script_state_test.cpp
+                                         unit/replay_property_test.cpp)
+vnmaki_add_fixture_generator(
+  replay SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/replay_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
+# Scene graph, layers and displayables (ticket 09).
+target_sources(vnmaki_unit_tests PRIVATE unit/scene_test.cpp)
+
+# Animation: easings, tweens, the timeline and the script's wait (ticket 20).
+target_sources(vnmaki_unit_tests PRIVATE unit/anim_test.cpp)
+
+# Game shaders: the run-time compiler, the script API and uniform tweens (ticket 24).
+target_sources(vnmaki_unit_tests PRIVATE unit/shader_test.cpp)
+vnmaki_add_fixture_generator(
+  shader SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/shader_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
+# Transitions: the clock, options, the script API and blocking, and GPU goldens (ticket 21).
+target_sources(vnmaki_unit_tests PRIVATE unit/transition_test.cpp)
+vnmaki_add_fixture_generator(
+  transition SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/transition_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
+# Layered sprites: attributes, crossfade, snapshot, drawing order (ticket 22).
+target_sources(vnmaki_unit_tests PRIVATE unit/layered_test.cpp)
+vnmaki_add_fixture_generator(
+  layered SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/layered_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
+# Frame animation: sheets and sequences, frame at a time, wait, snapshot (ticket 27).
+target_sources(vnmaki_unit_tests PRIVATE unit/frame_animation_test.cpp)
+vnmaki_add_fixture_generator(
+  frame_anim SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/frame_anim_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
+# Camera: the view maths, shake noise, script calls, snapshot, reduced motion, GPU goldens
+# (ticket 23).
+target_sources(vnmaki_unit_tests PRIVATE unit/camera_test.cpp)
+vnmaki_add_fixture_generator(
+  camera SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/camera_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
+# Lip sync: the voice level of the audio and the mouth of a layered sprite (ticket 26).
+target_sources(vnmaki_unit_tests PRIVATE unit/lipsync_test.cpp)
+vnmaki_add_fixture_generator(
+  lipsync SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/lipsync_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
+# Audio: decoders, mixer state, script commands, snapshots (ticket 16).
+target_sources(vnmaki_unit_tests PRIVATE unit/audio_decoder_test.cpp unit/audio_test.cpp)
+
+# Accessibility options: text scale, high contrast, dyslexia font, captions, reduced motion and
+# remappable controls (task 42).
+target_sources(vnmaki_unit_tests PRIVATE unit/accessibility_test.cpp)
+vnmaki_add_fixture_generator(
+  audio SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/audio_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
+# Say box: characters, the dialogue presenter and the say box view (ticket 08).
+target_sources(vnmaki_unit_tests PRIVATE unit/character_test.cpp
+                                         unit/dialogue_test.cpp)
+
+# UI: nodes, Yoga layout, focus, the screen host, menus and call_screen (ticket 10).
+target_sources(vnmaki_unit_tests PRIVATE unit/ui_test.cpp)
+
+# UI styles, themes and the `input` node (ticket 30a).
+target_sources(vnmaki_unit_tests PRIVATE unit/styles_test.cpp)
+
+# Saves: file format, slots, quick save, auto save, on_load (ticket 12).
+target_sources(vnmaki_unit_tests PRIVATE unit/saves_test.cpp)
+
+# `vnmaki new` and the default template: the copy, the sample game played end to end, and the
+# generator of its assets (ticket 19).
+target_sources(vnmaki_unit_tests PRIVATE unit/new_project_test.cpp)
+target_compile_definitions(vnmaki_unit_tests
+                           PRIVATE VNMAKI_TEMPLATES_DIR="${PROJECT_SOURCE_DIR}/templates")
+vnmaki_add_fixture_generator(
+  template SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/shader_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
+# The presentation demo (ticket 28): GPU goldens of three frames of its label, drawn by
+# tools/generators/presentation_fixtures.py from the template's pictures.
+vnmaki_add_fixture_generator(
+  presentation SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/presentation_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/shader_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
+# The Phase 5 demo (ticket 49): GPU goldens of three frames of the label content (the arm at rest
+# and sliding, the flash of the Lua plugin), drawn by tools/generators/content_fixtures.py.
+vnmaki_add_fixture_generator(
+  content SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/content_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
+# The Phase 7 demo (ticket 53): the golden of the template say box in vertical Japanese, drawn by
+# tools/generators/template_vertical_fixtures.py.
+vnmaki_add_fixture_generator(
+  template_vertical SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/template_vertical_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/template_assets.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_render_tests)
+
+# Persistent store, seen text, skip and auto-advance (ticket 14).
+target_sources(vnmaki_unit_tests PRIVATE unit/playback_test.cpp)
+
+# Rollback: history, labels, menus, depth, the inputs (ticket 13).
+target_sources(vnmaki_unit_tests PRIVATE unit/rollback_test.cpp)
+
+# Preferences and the default screens: bind, toggle, slider, bar, grid, prefs, actions (ticket 18).
+target_sources(vnmaki_unit_tests PRIVATE unit/screens_test.cpp)
+
+# Backlog: entries from the step log, voice replay, the scrolling screen (ticket 15).
+target_sources(vnmaki_unit_tests PRIVATE unit/backlog_test.cpp)
+
+# Story graph: the Lua scan, the graph with its traces, DOT and CSV (ticket 34). The template is
+# one more input. The fuzz target shares fuzz/script_scan_properties.hpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/script_scan_test.cpp unit/story_graph_test.cpp)
+# The projects and expected CSV and DOT text of the `vnmaki graph` CLI tests.
+vnmaki_add_fixture_generator(
+  graph SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/graph_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/templates/default/scripts/main.lua"
+          "${PROJECT_SOURCE_DIR}/templates/default/scripts/presentation.lua"
+  TEST_TARGETS vnmaki_unit_tests)
+
+# `vnmaki check` (ticket 35): the findings of a project, with the template as one input. The
+# projects and expected CSV text of the CLI tests.
+target_sources(vnmaki_unit_tests PRIVATE unit/check_test.cpp)
+vnmaki_add_fixture_generator(
+  check SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/check_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
+# Localization (ticket 40): `.po` files, string extraction and the update of translations. The
+# generator writes the projects and the expected files of the `vnmaki extract-strings` CLI tests.
+# The fuzz target shares fuzz/po_properties.hpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/po_test.cpp unit/extract_test.cpp
+                                           unit/language_test.cpp)
+vnmaki_add_fixture_generator(
+  l10n SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/l10n_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests)
+
+# Asset import (ticket 44): the cache, the audio gain, font subsets, glTF checks, the project
+# importer and the precompiled shader file. The generator writes the inputs and the projects of the
+# `vnmaki import` CLI tests.
+target_sources(vnmaki_unit_tests PRIVATE unit/import_test.cpp)
+vnmaki_add_fixture_generator(
+  import SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/import_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/templates/default/shaders/sepia.frag.hlsl"
+  TEST_TARGETS vnmaki_unit_tests)
+
+# `.vnpak` archives (ticket 45): the format, the writer, the mount, patch packs and the font subset
+# choice. The fuzz target shares fuzz/pak_properties.hpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/pak_test.cpp)
+
+# Video: WebM, AV1 and Opus, the player and its clocks, `movie` and the movie displayable (ticket
+# 25). clip.webm is the one committed binary fixture; its README has the ffmpeg command.
+target_sources(vnmaki_unit_tests PRIVATE unit/video_test.cpp)
+target_compile_definitions(
+  vnmaki_unit_tests PRIVATE VNMAKI_VIDEO_FIXTURES_DIR="${PROJECT_SOURCE_DIR}/tests/fixtures/video")
+
+# pause, NVL mode and the gallery (ticket 29).
+target_sources(vnmaki_unit_tests PRIVATE unit/pause_nvl_gallery_test.cpp)
+
+# Dev tools: the REPL and the log buffer (ticket 30), hot reload (ticket 32). They exist only in
+# builds with the tools.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/repl_test.cpp unit/hot_reload_test.cpp
+                                           unit/hot_import_test.cpp)
+endif()
+
+# Dev tools: the screen editor (ticket 50): the literal spans of a screen table, the byte-exact
+# rewrite, the map from a node to its table, and hot reload on the saved file. The generator writes
+# the project and the expected file.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/screen_editor_test.cpp)
+  vnmaki_add_fixture_generator(
+    screen_editor SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/screen_editor_fixtures.py"
+    TEST_TARGETS vnmaki_unit_tests)
+endif()
+
+# Dev tools: the translation editor of the overlay, on a temporary project (ticket 41).
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/translation_editor_test.cpp)
+endif()
+
+# Dev tools: the row functions of the inspectors, on the default template (ticket 31).
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/inspect_test.cpp)
+endif()
+
+# Dev tools: the DAP transport and the script debugger (ticket 36).
+if(VNMAKI_DEV_TOOLS)
+  find_package(nlohmann_json CONFIG REQUIRED)
+  target_sources(vnmaki_unit_tests PRIVATE unit/debugger_test.cpp)
+  target_link_libraries(vnmaki_unit_tests PRIVATE nlohmann_json::nlohmann_json)
+  # The project and the DAP sessions of the `vnmaki debug --headless` CLI tests.
+  vnmaki_add_fixture_generator(
+    debug SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/debug_fixtures.py"
+    DEPENDS "${PROJECT_SOURCE_DIR}/templates/default/scripts/main.lua"
+    TEST_TARGETS vnmaki_unit_tests)
+endif()
+
+# Dev tools demo (ticket 37): hot reload on the template. The DAP, check, graph and profile parts
+# are CLI tests.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/tools_demo_test.cpp)
+endif()
+
+# The Phase 7 demo (ticket 53): the screen editor on the template quick menu. The launcher and the
+# vertical say box are in launcher_test.cpp and tests/render/template_vertical_render_test.cpp.
+if(VNMAKI_DEV_TOOLS)
+  target_sources(vnmaki_unit_tests PRIVATE unit/later_demo_test.cpp)
+endif()
+
+# Profiler: frame phases with a fake clock, the CSV text and the load timing (ticket 33). It needs
+# no ImGui, so it is in every build.
+target_sources(vnmaki_unit_tests PRIVATE unit/profiler_test.cpp)
+
+# Self-voicing: the strings spoken for scripted sessions, with a recording backend (ticket 43).
+target_sources(vnmaki_unit_tests PRIVATE unit/self_voicing_test.cpp)
+
+# 3D scenes (ticket 46): the glTF loader, the maths, the script calls, tweens, the snapshot, and
+# the GPU cases (unlit golden, toon and PBR probes, a custom shader) of the generated cubes.
+target_sources(vnmaki_unit_tests PRIVATE unit/model3d_test.cpp)
+# 3D animation (ticket 47): joint matrices, morph weights, crossfades, clips in scripts and snapshots,
+# lip sync, with a fake clock; the GPU probe is in render/model3d_render_test.cpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/model3d_anim_test.cpp)
+vnmaki_add_fixture_generator(
+  model3d SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/model_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
+
+# Plugins (task 48): version ranges, Lua plugins, the C++ plugin context and the example plugin
+# of plugins/example/. The generator writes the projects of the CLI tests and the project and
+# golden of the GPU test (tests/render/plugin_render_test.cpp).
+target_sources(vnmaki_unit_tests PRIVATE unit/plugin_test.cpp)
+target_link_libraries(vnmaki_unit_tests PRIVATE vnmaki_plugin_example)
+vnmaki_add_fixture_generator(
+  plugin SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/plugin_fixtures.py"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/render_fixtures.py"
+          "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
+  TEST_TARGETS vnmaki_unit_tests vnmaki_render_tests)
+
+# The Phase 5 demo (ticket 49): the label content of the template, built with `build windows` and
+# played from the packs in both languages with self-voicing on a recording backend. The GPU goldens
+# are tests/render/content_render_test.cpp.
+target_sources(vnmaki_unit_tests PRIVATE unit/content_demo_test.cpp)

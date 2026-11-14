@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ \"$CLAUDE_CODE_REMOTE\" = \"true\" ]; then bash \"$CLAUDE_PROJECT_DIR/tools/dev/bootstrap-deps.sh\" && echo 'export CMAKE_PREFIX_PATH=/opt/vnmaki-deps' >> \"$CLAUDE_ENV_FILE\"; fi",
+            "timeout": 1800
+          }
+        ]
+      }
+    ]
+  }
+}

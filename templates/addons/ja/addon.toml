@@ -1,0 +1,12 @@
+# The Japanese add-on of `vnmaki new <name> --lang ja`. Every file next to this one is copied into
+# the game. The line `language` is added to `languages` of project.toml, and the keys of each table
+# are added to that table of project.toml (docs/localization.md, "Add a language add-on").
+language = "ja"
+
+# Japanese text runs in columns from the right.
+[vertical]
+ja = true
+
+# Noto Sans has no Japanese letters; this font supplies them.
+[fonts.fallback]
+ja = ["fonts/NotoSansJP.ttf"]

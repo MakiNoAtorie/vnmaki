@@ -1,0 +1,18 @@
+Japanese add-on
+===============
+
+These files came with `vnmaki new <name> --lang ja` (the add-on templates/addons/ja/ of VNMaki,
+https://github.com/MakiNoAtorie/vnmaki).
+
+  fonts/NotoSansJP.ttf    Noto Sans JP, a variable font, Copyright 2014-2021 Adobe.
+                          https://github.com/google/fonts/tree/main/ofl/notosansjp
+                          SIL Open Font License 1.1: licenses/NotoSansJP-OFL.txt. It is the
+                          fallback of "ja" in project.toml ([fonts.fallback]). Its Reserved Font
+                          Name is "Source", which the name "Noto Sans JP" does not use, so a subset
+                          of this font may keep its name. Keep the license text in your game.
+  translations/ja.po      The output of `vnmaki extract-strings`. It translates the narration of
+                          the label warm, the menu option that leads to the content demo and every
+                          line of the label content, to show the Japanese language, which is written
+                          in columns. CC0 1.0, like the rest of the template.
+
+project.toml has `"ja"` in `languages`, and `[vertical] ja = true` and `[fonts.fallback] ja`.

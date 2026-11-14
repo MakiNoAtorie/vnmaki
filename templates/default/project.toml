@@ -1,0 +1,15 @@
+title = "{{title}}"
+version = "0.1.0"
+resolution = [1280, 720]
+# `vnmaki new <name> --lang ja` adds Japanese here (templates/addons/ja/).
+languages = ["en"]
+# The story writes the "auto" save slot at each label and each menu.
+auto_save = ["label", "menu"]
+# The Lua plugins of plugins/ that are on. The content demo uses the transition of "flash".
+plugins = ["flash"]
+
+# Fonts that the build copies unchanged, not as a subset for each language. The SIL Open Font
+# License forbids a changed copy to use a Reserved Font Name, and OpenDyslexic has one. Noto Sans
+# may be subset.
+[build.fonts]
+keep = ["fonts/dyslexia.otf"]
