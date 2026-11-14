@@ -50,7 +50,7 @@ constexpr vnmaki::Version kEngine{.major = 1, .minor = 4, .patch = 2};
 constexpr float kBadgeSize = 10;
 constexpr float kHalf = 0.5F;
 constexpr float kQuarterOfWidth = 16;  // 0.25 of 64
-constexpr double kShortFlash = 0.3;  // past the 0.25 s of "flash", short of the 0.5 s of "fade"
+constexpr double kShortFlash = 0.3;    // past the 0.25 s of "flash", short of the 0.5 s of "fade"
 constexpr std::size_t kPpmSide = 2;
 constexpr std::uint8_t kOpaqueAlpha = 255;
 

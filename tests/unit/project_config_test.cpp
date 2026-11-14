@@ -168,8 +168,9 @@ TEST_CASE("project.toml: gallery lists image names, none by default") {
 }
 
 TEST_CASE("project.toml: a language code is a file name, so '..' and separators are refused") {
-  CHECK(vnmaki::parse_project_config("title = \"A\"\nlanguages = [\"en\", \"zh-Hans\", \"pt_BR\"]\n")
-            .languages == Strings{"en", "zh-Hans", "pt_BR"});
+  CHECK(
+      vnmaki::parse_project_config("title = \"A\"\nlanguages = [\"en\", \"zh-Hans\", \"pt_BR\"]\n")
+          .languages == Strings{"en", "zh-Hans", "pt_BR"});
   for (const char* bad : {"../../../x", "a/b", "a\\\\b", "..", "a.b", "a b", "\xE6\x97\xA5"}) {
     const std::string text = std::string{"title = \"A\"\nlanguages = [\"en\", \""} + bad + "\"]\n";
     CHECK_MESSAGE(error_for(text).find("is not a language code") != std::string::npos, bad);

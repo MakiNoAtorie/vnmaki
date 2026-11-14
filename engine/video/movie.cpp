@@ -70,9 +70,9 @@ std::uint64_t opus_packet_samples(std::span<const std::byte> packet) {
   if (code < kOpusArbitraryFrames) {
     return per_frame * kOpusTwoFrames;
   }
-  return packet.size() > 1
-             ? per_frame * (std::to_integer<unsigned>(packet.subspan(1).front()) & kOpusFrameCountMask)
-             : 0;
+  return packet.size() > 1 ? per_frame * (std::to_integer<unsigned>(packet.subspan(1).front()) &
+                                          kOpusFrameCountMask)
+                           : 0;
 }
 
 // Reads from bytes in memory.

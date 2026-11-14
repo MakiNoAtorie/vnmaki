@@ -177,7 +177,8 @@ local function slot_screen(args)
 end
 screen("save", slot_screen)
 screen("load", slot_screen)
-)lua" R"lua(
+)lua"
+                                     R"lua(
 -- Every control is bound to `prefs`, so a change takes effect at once and is kept.
 screen("preferences", function()
   local function range(key, low, high, step, caption)

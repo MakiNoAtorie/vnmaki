@@ -2,8 +2,9 @@
 // on a real GPU device. The test does what the story window does for `--lang ja`: it reads
 // project.toml (`[vertical] ja = true`), takes the sample translation of translations/ja.po for a
 // narrated line, runs the default `say` screen with that language's styles, and draws it with the
-// Greek-only font of the text fixtures (not the template's Noto fonts, see below). tools/generators/template_vertical_fixtures.py drew the golden image; its header
-// says what the golden proves.
+// Greek-only font of the text fixtures (not the template's Noto fonts, see below).
+// tools/generators/template_vertical_fixtures.py drew the golden image; its header says what the
+// golden proves.
 
 #include <cstddef>
 #include <cstdint>
@@ -59,10 +60,9 @@ TEST_CASE("template: the say box in vertical Japanese matches the golden") {
   REQUIRE(translator.vertical());
 
   vnmaki::Scene scene{vfs, kVirtualSize};  // the template's top-level code makes sprites
-  vnmaki::ScriptRuntime runtime{vfs,
-                                {.scene = &scene,
-                                 .canvas_width = kVirtualSize.width,
-                                 .canvas_height = kVirtualSize.height}};
+  vnmaki::ScriptRuntime runtime{
+      vfs,
+      {.scene = &scene, .canvas_width = kVirtualSize.width, .canvas_height = kVirtualSize.height}};
   // As the story window does it, before the scripts load.
   REQUIRE(runtime.set_language_styles(translator.style_file(), translator.vertical()).empty());
   runtime.load_scripts();
@@ -82,8 +82,8 @@ TEST_CASE("template: the say box in vertical Japanese matches the golden") {
   vnmaki::SayBoxView view{*renderer, font, vnmaki::SayBoxStyle::for_resolution(kVirtualSize)};
   view.set_screen_source(
       [&](const vnmaki::DialogueLine& shown) -> std::optional<vnmaki::UiNode> {
-        const vnmaki::ScreenNodeDef args{.kind = "args", .props = {{"speaker", shown.speaker},
-                                                                   {"text", shown.text}}};
+        const vnmaki::ScreenNodeDef args{
+            .kind = "args", .props = {{"speaker", shown.speaker}, {"text", shown.text}}};
         vnmaki::ScreenNodeDef tree;
         REQUIRE(runtime.build_screen("say", args, tree).empty());
         return vnmaki::build_ui_tree(tree);

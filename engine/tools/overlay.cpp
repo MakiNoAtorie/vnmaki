@@ -23,8 +23,8 @@
 #include "engine/tools/inspect.hpp"
 #include "engine/tools/profiler.hpp"
 #include "engine/tools/repl.hpp"
-#include "engine/tools/translation_editor.hpp"
 #include "engine/tools/screen_editor.hpp"
+#include "engine/tools/translation_editor.hpp"
 
 namespace vnmaki {
 

@@ -149,8 +149,7 @@ TEST_CASE("script_scan: finds labels and the story calls in them") {
   CHECK_FALSE(labels[0].ending);
   ScanCall say = call(ScanCallKind::kSay, 3, 0, {std::nullopt, "Hello"});
   say.speaker = "eileen";
-  const std::vector<ScanCall> expected{say,
-                                       call(ScanCallKind::kShow, 4, 0, {"eileen"}),
+  const std::vector<ScanCall> expected{say, call(ScanCallKind::kShow, 4, 0, {"eileen"}),
                                        call(ScanCallKind::kCall, 5, 0, {"aside"}),
                                        call(ScanCallKind::kJump, 6, 0, {"next"})};
   CHECK(labels[0].calls == expected);
@@ -178,11 +177,11 @@ TEST_CASE("script_scan: a computed target or name is not a string literal") {
   CHECK_FALSE(labels[0].name.has_value());
   CHECK(labels[0].calls == std::vector<ScanCall>{call(ScanCallKind::kJump, 2, 0, {std::nullopt})});
   CHECK(labels[1].name == "a");
-  const std::vector<ScanCall> expected{call(ScanCallKind::kJump, 5, 0, {std::nullopt}),
-                                       call(ScanCallKind::kCall, 6, 0, {std::nullopt}),
-                                       call(ScanCallKind::kJump, 7, 0, {std::nullopt}),
-                                       menu_call(8, {{.text = "one", .line = 8},
-                                                     {.text = "two", .line = 8}})};
+  const std::vector<ScanCall> expected{
+      call(ScanCallKind::kJump, 5, 0, {std::nullopt}),
+      call(ScanCallKind::kCall, 6, 0, {std::nullopt}),
+      call(ScanCallKind::kJump, 7, 0, {std::nullopt}),
+      menu_call(8, {{.text = "one", .line = 8}, {.text = "two", .line = 8}})};
   CHECK(labels[1].calls == expected);
 }
 
@@ -236,13 +235,13 @@ TEST_CASE("script_scan: depth counts the blocks inside the label function") {
       "label(\"after\", function() end)\n";  // 17
   const std::vector<ScanLabel> labels = vnmaki::scan_labels(source);
   REQUIRE(labels.size() == 2);
-  const std::vector<ScanCall> expected{menu_call(2, {{.text = "x", .line = 2},
-                                                     {.text = "y", .line = 2}}),
-                                       call(ScanCallKind::kJump, 4, 1, {"b"}),
-                                       call(ScanCallKind::kCall, 7, 2, {"c"}),
-                                       call(ScanCallKind::kJump, 11, 2, {"d"}),
-                                       call(ScanCallKind::kRet, 14, 1, {}),
-                                       call(ScanCallKind::kJump, 15, 0, {"e"})};
+  const std::vector<ScanCall> expected{
+      menu_call(2, {{.text = "x", .line = 2}, {.text = "y", .line = 2}}),
+      call(ScanCallKind::kJump, 4, 1, {"b"}),
+      call(ScanCallKind::kCall, 7, 2, {"c"}),
+      call(ScanCallKind::kJump, 11, 2, {"d"}),
+      call(ScanCallKind::kRet, 14, 1, {}),
+      call(ScanCallKind::kJump, 15, 0, {"e"})};
   CHECK(labels[0].calls == expected);
   CHECK(labels[0].end_line == 16);
   CHECK(labels[1].name == "after");
@@ -389,11 +388,11 @@ TEST_CASE("script_scan: the properties hold on random scripts") {
 
 TEST_CASE("script_scan: asset calls and the keys of an option table") {
   const std::string source =
-      "label('start', function()\n"                                                 // 1
-      "  scene('bg/a', { with = 'dissolve' })\n"                                    // 2
-      "  show('x', { at = 'left', image = 'y', f = { a = 1 }, g = (b == 2) })\n"    // 3
-      "  music 'm'\n"                                                               // 4
-      "  sound('s') voice('v') movie('movies/m.webm') narrate('n')\n"               // 5
+      "label('start', function()\n"                                               // 1
+      "  scene('bg/a', { with = 'dissolve' })\n"                                  // 2
+      "  show('x', { at = 'left', image = 'y', f = { a = 1 }, g = (b == 2) })\n"  // 3
+      "  music 'm'\n"                                                             // 4
+      "  sound('s') voice('v') movie('movies/m.webm') narrate('n')\n"             // 5
       "end)\n";
   const std::vector<ScanLabel> labels = vnmaki::scan_labels(source);
   REQUIRE(labels.size() == 1);
@@ -432,14 +431,14 @@ TEST_CASE("script_scan: an ambient call is an asset call like music") {
 
 TEST_CASE("script_scan: the speaker of say and the options of menu") {
   const std::string source =
-      "label('start', function()\n"                                // 1
-      "  say(eileen, 'Hi')\n"                                      // 2
-      "  say(chars.bob, 'Yo') say('Zed', 'Hey') say(nil, 'x')\n"   // 3
-      "  say(who(), 'y')\n"                                        // 4
-      "  local c = menu { 'A', 'B', fixed = true,\n"               // 5
-      "                   'C' .. x, [1] = 'k' }\n"                 // 6
-      "  menu({ 'D' })\n"                                          // 7
-      "  menu(options)\n"                                          // 8
+      "label('start', function()\n"                               // 1
+      "  say(eileen, 'Hi')\n"                                     // 2
+      "  say(chars.bob, 'Yo') say('Zed', 'Hey') say(nil, 'x')\n"  // 3
+      "  say(who(), 'y')\n"                                       // 4
+      "  local c = menu { 'A', 'B', fixed = true,\n"              // 5
+      "                   'C' .. x, [1] = 'k' }\n"                // 6
+      "  menu({ 'D' })\n"                                         // 7
+      "  menu(options)\n"                                         // 8
       "end)\n";
   const std::vector<ScanLabel> labels = vnmaki::scan_labels(source);
   REQUIRE(labels.size() == 1);
@@ -459,15 +458,15 @@ TEST_CASE("script_scan: the speaker of say and the options of menu") {
 
 TEST_CASE("script_scan: the texts of screens") {
   const std::string source =
-      "screen 'quick' {\n"                                                        // 1
+      "screen 'quick' {\n"                                                         // 1
       "  hbox { button { 'Save', on_click = f }, text { name, style = 's' } },\n"  // 2
-      "  image { 'pic.png' }, x.text { 'no' }\n"                                  // 3
-      "}\n"                                                                       // 4
-      "screen('title', function(args)\n"                                          // 5
-      "  local text = 1\n"                                                        // 6
-      "  return vbox { text { 'Hello' }, text { args.title or '' } }\n"           // 7
-      "end)\n"                                                                    // 8
-      "screen(name, { button { 'X' } })\n"                                        // 9
+      "  image { 'pic.png' }, x.text { 'no' }\n"                                   // 3
+      "}\n"                                                                        // 4
+      "screen('title', function(args)\n"                                           // 5
+      "  local text = 1\n"                                                         // 6
+      "  return vbox { text { 'Hello' }, text { args.title or '' } }\n"            // 7
+      "end)\n"                                                                     // 8
+      "screen(name, { button { 'X' } })\n"                                         // 9
       "label('l', function() say(nil, 'a') end)\n";
   const std::vector<vnmaki::ScanScreen> screens = vnmaki::scan_screens(source);
   REQUIRE(screens.size() == 3);

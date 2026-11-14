@@ -63,8 +63,9 @@ class PackedGame {
   PackedGame() : root_(vnmaki::test::unique_temp_path("vnmaki_content_demo_", "packed")) {
     fs::remove_all(root_);
     const fs::path project = root_ / "project";
-    vnmaki::test::make_template_project(project, "content_demo", {"ja"});  // the demo has the language switch
-    if (!vnmaki::shader_compiler_available()) {  // a release build cannot import the sepia shader
+    vnmaki::test::make_template_project(project, "content_demo",
+                                        {"ja"});  // the demo has the language switch
+    if (!vnmaki::shader_compiler_available()) {   // a release build cannot import the sepia shader
       const fs::path shaders = project / "shaders";
       fs::copy_file(fs::path{VNMAKI_PRECOMPILED_DIR} / "shaders" / "sepia.frag.vnshader",
                     shaders / "sepia.frag.vnshader");

@@ -42,10 +42,10 @@ using vnmaki::ScreenResult;
 using vnmaki::ScreenValue;
 using vnmaki::ScriptPosition;
 using vnmaki::StoreSnapshot;
-using vnmaki::StoreWrite;
 using vnmaki::StoreTable;
 using vnmaki::StoreTableRef;
 using vnmaki::StoreValue;
+using vnmaki::StoreWrite;
 using vnmaki::Thumbnail;
 using Bytes = std::vector<std::byte>;
 
@@ -750,7 +750,8 @@ label("aside", function()
   narrate("a1")
   narrate("a2 " .. tostring(store.v))
 end)
-)", dir.path()};
+)",
+            dir.path()};
   game.runtime.start("start");
   game.runtime.advance();
   REQUIRE(game.narrated() == "a1");
@@ -768,7 +769,8 @@ label("aside", function()
   narrate("a1")
   narrate("a2 " .. tostring(store.v))
 end)
-)", dir.path()};
+)",
+             dir.path()};
   CHECK(fresh.saves.load("1").empty());
   CHECK(fresh.narrated() == "a2 2");
 }

@@ -15,12 +15,13 @@ inline constexpr std::string_view kBuildUsage =
 /// project has game shaders) and writes the game to <folder>:
 ///   - `game.vnpak`: every file of the project in its imported form (the `.opus` file in place of
 ///     the `.wav`, the `.vnshader` file in place of the `.hlsl`, the font subsets in place of the
-///     font), without the folders that start with '.', and without <folder> if it is inside <dir>, and without the `game.vnpak`, `patch-*.vnpak`, `.exe` and
+///     font), without the folders that start with '.', and without <folder> if it is inside <dir>,
+///     and without the `game.vnpak`, `patch-*.vnpak`, `.exe` and
 ///     `.dll` files at the top of <dir> (an earlier build); <folder> as <dir> itself is an error;
 ///   - `<title>.exe`: a copy of the release runner, and all `.dll` files of its folder.
 /// The runner is `--runner`, else the `vnmaki.exe` of the sibling folder `build/release/cli` of the
-/// folder of the running executable (`build/debug/cli`). It plays `game.vnpak` when that is next to it (see
-/// `build_or_packed_command`). A problem of the import (a file that fails) stops the build.
+/// folder of the running executable (`build/debug/cli`). It plays `game.vnpak` when that is next to
+/// it (see `build_or_packed_command`). A problem of the import (a file that fails) stops the build.
 ///
 /// `args` are the arguments after "build". Returns the process exit code: 0, 1 when the project
 /// cannot be imported or packed or there is no runner, 2 on a usage error.

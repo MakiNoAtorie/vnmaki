@@ -73,8 +73,8 @@ std::optional<BuildArguments> parse_arguments(std::span<const std::string_view> 
 fs::path default_runner() {
   const fs::path executable = executable_directory();  // SDL ends it with a separator
   const fs::path folder = executable.has_filename() ? executable : executable.parent_path();
-  return folder.parent_path().parent_path() / std::string{kReleaseDirectory} /
-         folder.filename() / std::string{kRunnerName};
+  return folder.parent_path().parent_path() / std::string{kReleaseDirectory} / folder.filename() /
+         std::string{kRunnerName};
 }
 
 // A title as a file name: Windows rejects some characters and a trailing dot or space.
@@ -94,8 +94,8 @@ std::string exe_name_of(std::string title) {
 // The virtual path of `out` inside the project, or empty when it is outside.
 std::string out_inside(const fs::path& project, const fs::path& out) {
   std::error_code error;
-  const fs::path relative = fs::weakly_canonical(out, error).lexically_relative(
-      fs::weakly_canonical(project, error));
+  const fs::path relative =
+      fs::weakly_canonical(out, error).lexically_relative(fs::weakly_canonical(project, error));
   if (error || relative.empty() || *relative.begin() == "..") {
     return {};
   }
@@ -221,8 +221,8 @@ int build_command(std::span<const std::string_view> args, std::ostream& out, std
 
     const std::string exe_name = exe_name_of(config.title);
     copy_runner(runner, arguments->out, exe_name);
-    out << "runner " << to_utf8(runner) << " -> "
-        << to_utf8(arguments->out / utf8_path(exe_name)) << "\n";
+    out << "runner " << to_utf8(runner) << " -> " << to_utf8(arguments->out / utf8_path(exe_name))
+        << "\n";
     return 0;
   } catch (const ProjectConfigError& error) {
     err << "vnmaki: " << error.what() << "\n";

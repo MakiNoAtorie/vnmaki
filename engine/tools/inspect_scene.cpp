@@ -1,5 +1,3 @@
-#include "engine/tools/inspect.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -13,6 +11,7 @@
 #include "engine/scene/frame_animation.hpp"
 #include "engine/scene/layered_sprite.hpp"
 #include "engine/scene/movie_displayable.hpp"
+#include "engine/tools/inspect.hpp"
 
 namespace vnmaki {
 
@@ -30,11 +29,11 @@ struct Field {
 
 std::vector<Field> fields_of(DisplayProperties& p) {
   std::vector<Field> fields{
-      {"x", &p.position.x},      {"y", &p.position.y},         {"anchor_x", &p.anchor.x},
-      {"anchor_y", &p.anchor.y}, {"scale_x", &p.scale.x},      {"scale_y", &p.scale.y},
-      {"rotation", &p.rotation}, {"alpha", &p.alpha, true},    {"tint_r", &p.tint.r, true},
-      {"tint_g", &p.tint.g, true}, {"tint_b", &p.tint.b, true}, {"tint_a", &p.tint.a, true},
-      {"crop_x", &p.crop.x},     {"crop_y", &p.crop.y},        {"crop_width", &p.crop.width},
+      {"x", &p.position.x},           {"y", &p.position.y},        {"anchor_x", &p.anchor.x},
+      {"anchor_y", &p.anchor.y},      {"scale_x", &p.scale.x},     {"scale_y", &p.scale.y},
+      {"rotation", &p.rotation},      {"alpha", &p.alpha, true},   {"tint_r", &p.tint.r, true},
+      {"tint_g", &p.tint.g, true},    {"tint_b", &p.tint.b, true}, {"tint_a", &p.tint.a, true},
+      {"crop_x", &p.crop.x},          {"crop_y", &p.crop.y},       {"crop_width", &p.crop.width},
       {"crop_height", &p.crop.height}};
   if (p.shader != 0) {
     for (std::size_t i = 0; i < p.uniforms.size(); ++i) {
@@ -109,8 +108,8 @@ std::string set_property(Scene& scene, std::string_view tag, std::string_view na
   }
   for (const Field& field : fields_of(displayable->properties())) {
     if (field.name == name) {
-      *field.value = static_cast<float>(
-          field.unit ? std::clamp(value, 0.0, 1.0) : std::clamp(value, -kMaxEdit, kMaxEdit));
+      *field.value = static_cast<float>(field.unit ? std::clamp(value, 0.0, 1.0)
+                                                   : std::clamp(value, -kMaxEdit, kMaxEdit));
       return {};
     }
   }

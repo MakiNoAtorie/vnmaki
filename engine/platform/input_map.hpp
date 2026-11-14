@@ -26,13 +26,12 @@ enum class InputAction : std::uint8_t {
   kSelfVoicing
 };
 
-inline constexpr std::array kInputActions{InputAction::kAdvance, InputAction::kRollback,
-                                          InputAction::kAuto,    InputAction::kSkip,
-                                          InputAction::kBacklog, InputAction::kMenu,
-                                          InputAction::kSelfVoicing};
+inline constexpr std::array kInputActions{
+    InputAction::kAdvance, InputAction::kRollback, InputAction::kAuto,       InputAction::kSkip,
+    InputAction::kBacklog, InputAction::kMenu,     InputAction::kSelfVoicing};
 
-/// The id of an action: "advance", "rollback", "auto", "skip", "backlog", "menu" or "self_voicing". It is the
-/// suffix of the preference `input_<id>`.
+/// The id of an action: "advance", "rollback", "auto", "skip", "backlog", "menu" or "self_voicing".
+/// It is the suffix of the preference `input_<id>`.
 [[nodiscard]] std::string_view action_id(InputAction action);
 /// What the Controls screen calls an action.
 [[nodiscard]] std::string_view action_label(InputAction action);

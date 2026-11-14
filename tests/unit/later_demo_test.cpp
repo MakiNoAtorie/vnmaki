@@ -74,9 +74,8 @@ class TemplateGame {
         vfs_(prepare()),
         scene_(vfs_, kCanvas),
         ui_(kCanvas),
-        runtime_(vfs_, {.screens = &ui_,
-                        .canvas_width = kCanvas.width,
-                        .canvas_height = kCanvas.height}),
+        runtime_(vfs_,
+                 {.screens = &ui_, .canvas_width = kCanvas.width, .canvas_height = kCanvas.height}),
         hot_(runtime_, scene_, jobs_, ui_, log_),
         editor_(vfs_, project_, ui_) {
     runtime_.load_scripts();
@@ -149,7 +148,8 @@ vnmaki::ScreenEditor::Field& gap_field(vnmaki::ScreenEditor& editor) {
 
 }  // namespace
 
-TEST_CASE("later demo: the template quick menu gap changes through the editor and shows after reload") {
+TEST_CASE(
+    "later demo: the template quick menu gap changes through the editor and shows after reload") {
   TemplateGame game{"quick_menu_gap"};
   const vnmaki::UiNode& before = row_of(game.ui());
   const vnmaki::RectF old_row = before.rect;

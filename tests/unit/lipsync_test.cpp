@@ -147,7 +147,8 @@ label("start", function()
     order = { "base", "mouth" },
     base = "eileen/base",
     mouth = { closed = "eileen/closed", open = "eileen/open" },
-    lip_sync = )" + lip_sync + R"(,
+    lip_sync = )" + lip_sync +
+                    R"(,
   })
 end)
 )"};

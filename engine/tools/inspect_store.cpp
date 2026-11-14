@@ -1,5 +1,3 @@
-#include "engine/tools/inspect.hpp"
-
 #include <cstdint>
 #include <format>
 #include <set>
@@ -7,6 +5,8 @@
 #include <type_traits>
 #include <variant>
 #include <vector>
+
+#include "engine/tools/inspect.hpp"
 
 namespace vnmaki {
 

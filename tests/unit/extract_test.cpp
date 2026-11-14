@@ -57,15 +57,15 @@ TEST_CASE("extract: a key is the scope and the FNV-1a hash of the speaker and th
 
 TEST_CASE("extract: the template lists say, narrate, menu and screen texts") {
   const PoFile file = extract(
-      "screen 'title' { button { 'Start' }, text { args.name } }\n"        // 1
-      "label('start', function()\n"                                        // 2
-      "  say(eileen, 'You came back.')\n"                                  // 3
-      "  say(nil, 'Hello')\n"                                              // 4
-      "  narrate 'Night.'\n"                                               // 5
-      "  local c = menu { 'Yes', 'No', fixed = true, 'Maybe' .. x }\n"     // 6
-      "  say(eileen, 'You came back.')\n"                                  // 7
-      "  say(eileen, text)\n"                                              // 8
-      "  say(eileen, '')\n"                                                // 9
+      "screen 'title' { button { 'Start' }, text { args.name } }\n"     // 1
+      "label('start', function()\n"                                     // 2
+      "  say(eileen, 'You came back.')\n"                               // 3
+      "  say(nil, 'Hello')\n"                                           // 4
+      "  narrate 'Night.'\n"                                            // 5
+      "  local c = menu { 'Yes', 'No', fixed = true, 'Maybe' .. x }\n"  // 6
+      "  say(eileen, 'You came back.')\n"                               // 7
+      "  say(eileen, text)\n"                                           // 8
+      "  say(eileen, '')\n"                                             // 9
       "end)\n");
   REQUIRE(file.entries.size() == 7);
   const PoEntry& header = file.entries[0];
@@ -156,8 +156,7 @@ TEST_CASE("extract: a changed text at the same position moves its translation as
   CHECK(updated.entries[2].id == "Twos");
   CHECK(updated.entries[2].str == "Ni");
   CHECK(updated.entries[2].fuzzy());
-  CHECK(updated.entries[2].context ==
-        vnmaki::translation_key("start", "", "Twos"));
+  CHECK(updated.entries[2].context == vnmaki::translation_key("start", "", "Twos"));
   CHECK(updated.entries[3].str == "San");
   CHECK_FALSE(updated.entries[3].fuzzy());
 }

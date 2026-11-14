@@ -14,8 +14,8 @@
 //                        [key, value, key, value, ...]; a value that is a table is [index]
 //   scene       bin      the scene snapshot of the label-entry snapshot
 //   inputs      array    the input log: [0, choice] for a menu choice, [1, value] for the result
-//                        of a call_screen (value: nil, bool, int, float or str), [2, [wait, key, value]]
-//                        for a write to the store through a UI binding
+//                        of a call_screen (value: nil, bool, int, float or str), [2, [wait, key,
+//                        value]] for a write to the store through a UI binding
 //   persistent  str      where the persistent store lives (it is not copied into the save)
 //   thumbnail   array    [width, height, rgba bytes]
 //   time        int      Unix time of the save, in seconds

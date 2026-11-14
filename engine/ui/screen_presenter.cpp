@@ -95,8 +95,8 @@ void ScreenPresenter::answer(const ScreenValue& value) {
 
 bool ScreenPresenter::handle_event(const InputEvent& event, const Viewport& viewport) {
   // The player may roll back from a menu or `call_screen`, but not from a screen over it.
-  if (shown_ && is_rollback_event(event, input_map_ != nullptr ? *input_map_ : InputMap{}) && host_->is_top_modal(shown_->name) &&
-      !host_->wants_text_input()) {
+  if (shown_ && is_rollback_event(event, input_map_ != nullptr ? *input_map_ : InputMap{}) &&
+      host_->is_top_modal(shown_->name) && !host_->wants_text_input()) {
     return false;
   }
   const UiEventResult result = host_->handle_event(event, viewport);

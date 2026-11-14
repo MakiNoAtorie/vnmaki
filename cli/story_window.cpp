@@ -102,8 +102,7 @@ struct LanguageFonts {
       }
     }
     for (const std::string_view candidate : kDyslexiaFontPaths) {
-      if (const std::string path = font_path_for_language(vfs, candidate, code);
-          vfs.exists(path)) {
+      if (const std::string path = font_path_for_language(vfs, candidate, code); vfs.exists(path)) {
         dyslexia.emplace(load_font(vfs, path));
         break;
       }
@@ -459,8 +458,8 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
       } else if (input_map.matches(InputAction::kMenu, event)) {
         static_cast<void>(actions.open("preferences"));
       } else if (input_map.matches(InputAction::kSelfVoicing, event)) {
-        static_cast<void>(runtime.set_binding("prefs", "self_voicing",
-                                              !preferences.current().self_voicing));
+        static_cast<void>(
+            runtime.set_binding("prefs", "self_voicing", !preferences.current().self_voicing));
       } else if (const auto* click = std::get_if<PointerButtonEvent>(&event)) {
         if (click->pressed && click->button == MouseButton::kLeft &&
             inside_canvas(click->position)) {

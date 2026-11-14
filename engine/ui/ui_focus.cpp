@@ -94,7 +94,8 @@ bool move_focus(UiNode& root, FocusMove move) {
   if (nodes.empty()) {
     return false;
   }
-  const auto current = std::ranges::find_if(nodes, [](const UiNode* n) { return n->state.focused; });
+  const auto current =
+      std::ranges::find_if(nodes, [](const UiNode* n) { return n->state.focused; });
   if (current == nodes.end()) {
     return set_focus(root, move == FocusMove::kPrevious ? nodes.back() : nodes.front());
   }

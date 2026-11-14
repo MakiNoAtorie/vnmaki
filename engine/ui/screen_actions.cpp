@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "engine/dialogue/playback.hpp"
-#include "engine/ui/backlog_screen.hpp"
 #include "engine/platform/input.hpp"
+#include "engine/ui/backlog_screen.hpp"
 #include "engine/ui/preferences.hpp"
 #include "engine/ui/ui_build.hpp"
 
@@ -112,8 +112,8 @@ void ScreenActions::write_controls(const InputMap& before, const InputMap& after
     if (before.binding(action) == after.binding(action)) {
       continue;
     }
-    const std::string problem = runtime_->set_binding("prefs", controls_key(action),
-                                                      format_binding(after.binding(action)));
+    const std::string problem =
+        runtime_->set_binding("prefs", controls_key(action), format_binding(after.binding(action)));
     if (!problem.empty()) {
       warn(problem);
     }

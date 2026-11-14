@@ -157,11 +157,10 @@ TEST_CASE("ui: layout gives each node its rectangle") {
                                        .height = kBoxHeight});
   CHECK(root.children[1].children[0].rect ==
         RectF{.x = kPadding, .y = row_top, .width = kBoxWidth, .height = kBoxHeight});
-  CHECK(root.children[1].children[1].rect ==
-        RectF{.x = kPadding + kBoxWidth + kSmallGap,
-              .y = row_top,
-              .width = kWideBoxWidth,
-              .height = kBoxHeight});
+  CHECK(root.children[1].children[1].rect == RectF{.x = kPadding + kBoxWidth + kSmallGap,
+                                                   .y = row_top,
+                                                   .width = kWideBoxWidth,
+                                                   .height = kBoxHeight});
   CHECK(root.children[2].rect ==
         RectF{.x = kFarX, .y = kFarY, .width = kTinyWidth, .height = kTinyHeight});
 }
@@ -253,10 +252,10 @@ TEST_CASE("ui host: a modal screen takes keys, d-pad and pointer, and answers wi
       vnmaki::PointerMoveEvent{.position = vnmaki::virtual_to_window(kViewport, over_first)},
       kViewport);
   CHECK(focused_index(*host.find("choices")) == 0);
-  result = host.handle_event(vnmaki::PointerButtonEvent{.button = vnmaki::MouseButton::kLeft,
-                                                        .pressed = true,
-                                                        .position = over_first},
-                             kViewport);
+  result = host.handle_event(
+      vnmaki::PointerButtonEvent{
+          .button = vnmaki::MouseButton::kLeft, .pressed = true, .position = over_first},
+      kViewport);
   CHECK(result.consumed);
   REQUIRE(result.activation.has_value());
   CHECK(result.activation->value == ScreenValue{std::int64_t{0}});
@@ -363,10 +362,10 @@ end)
 )"};
   vnmaki::ScreenPresenter screens{game.runtime, game.host};
   const PointF second = center_of(game.host.find(vnmaki::kMenuScreenName)->children[1]);
-  CHECK(screens.handle_event(vnmaki::PointerButtonEvent{.button = vnmaki::MouseButton::kLeft,
-                                                        .pressed = true,
-                                                        .position = second},
-                             kViewport));
+  CHECK(screens.handle_event(
+      vnmaki::PointerButtonEvent{
+          .button = vnmaki::MouseButton::kLeft, .pressed = true, .position = second},
+      kViewport));
   CHECK(game.narration() == "picked 2");
 }
 
@@ -494,10 +493,9 @@ namespace {
 
 // Wheel up, Page Up and the left shoulder: what the story window rolls back on.
 std::vector<vnmaki::InputEvent> rollback_events() {
-  return {vnmaki::WheelEvent{.dy = 1},
-          press(vnmaki::Key::kPageUp),
-          vnmaki::GamepadButtonEvent{.button = vnmaki::GamepadButton::kLeftShoulder,
-                                     .pressed = true}};
+  return {
+      vnmaki::WheelEvent{.dy = 1}, press(vnmaki::Key::kPageUp),
+      vnmaki::GamepadButtonEvent{.button = vnmaki::GamepadButton::kLeftShoulder, .pressed = true}};
 }
 
 }  // namespace

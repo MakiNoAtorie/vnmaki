@@ -17,7 +17,7 @@
 
 TEST_CASE("layered: a composed sprite and the middle of a crossfade match the goldens") {
   constexpr vnmaki::Size kVirtualSize{.width = 32, .height = 32};
-  constexpr double kFadeStep = 0.1;  // 0.4 of the 0.25 s crossfade.
+  constexpr double kFadeStep = 0.1;            // 0.4 of the 0.25 s crossfade.
   constexpr std::uint32_t kComposedQuads = 4;  // The backdrop, the base, the outfit, the face.
   constexpr std::uint32_t kFadingQuads = 5;    // And the new face over the old one.
   const auto renderer = vnmaki::test::make_headless_renderer();

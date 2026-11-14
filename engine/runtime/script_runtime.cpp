@@ -5,10 +5,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <optional>
-#include <iterator>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -486,7 +486,8 @@ function menu(options)
   engine.stage_nvl(nvl_page())
   return engine.menu(texts, fixed == true)
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Styles and themes (docs/SPEC.md section 15). A style is a named table of node options: font,
 -- size, color, background, padding, gap, margin, width, height, grow, align, justify, fill,
 -- border = { width, color }, focus = { background, color, border } and hover = { ... }; `extends`
@@ -669,7 +670,8 @@ function theme(name)
   contrast_on, plain_styles = false, nil  -- high contrast goes over the new look
   apply_language_styles()
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Languages (docs/SPEC.md section 16). languages() lists the codes of project.toml, the source
 -- language first. engine.set_language_styles(chunk) puts the styles back as the scripts and the theme
 -- made them, then runs `chunk`, the style override file of the player's language (nil: none).
@@ -721,7 +723,8 @@ function engine.set_language_styles(chunk, vertical)
   language_chunk, language_vertical = chunk, vertical == true
   apply_language_styles()
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Screens (docs/SPEC.md section 15). A node is a plain table the engine reads: kind, text (the
 -- caption or image name), props (booleans, numbers and strings) and children.
 local pairs, math_type = pairs, math.type
@@ -855,7 +858,8 @@ function call_screen(name, args)
   stage_screen(name, screen_root("call_screen", name, args))
   return engine.call_screen(name)
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Tweens (docs/SPEC.md section 10). A tween item is a table { tag, option = value, ... }; a group
 -- item is { sequence = { items } } or { parallel = { items } }. `level` is the error() level that
 -- reaches the script from the function that holds it.
@@ -1001,7 +1005,8 @@ function wait_all()
   require_label("wait_all")
   engine.wait("")
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Shaders (docs/SPEC.md section 9). shader(name, { "uniform", ... }) declares the game shader
 -- shaders/<name>.frag.hlsl and the floats of its constant buffer. `show` and `layer` set a shader
 -- and uniform values; `tween` changes the values.
@@ -1060,7 +1065,8 @@ function layer(name, options)
   engine.layer_parallax(name, options)
   engine.scene_command("layer " .. name .. engine.shader_options("layer", name, true, options))
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Transitions (docs/SPEC.md section 10). transition(name, options) mixes the frame from before
 -- the changes of this step into the frame after them, and blocks like `wait` until it ends: the
 -- script waits for the tag "@transition". The `with` option of scene, show and hide does the same
@@ -1168,7 +1174,8 @@ end_with = function(name)
     finish_transition(name)
   end
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Camera (docs/SPEC.md sections 10 and 17). camera { x, y, zoom, rotation, duration, ease } moves
 -- the view of the layers from the background to the overlay: it is a tween of the tag "@camera",
 -- instant without a duration. shake { strength, duration } shakes it. layer(name, { parallax = f })
@@ -1233,7 +1240,8 @@ function shake(options)
   end
   engine.scene_command("shake")
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- 3D scenes (docs/SPEC.md section 12).
 --   scene3d(name, { layer = "3d" })                       makes a scene that draws on a layer
 --   model(tag, path, { scene =, position =, rotation =, scale =, shader = "unlit" | "toon" |
@@ -1367,7 +1375,8 @@ do
     node.uniforms = values
   end
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- 3D animation (docs/SPEC.md section 12).
 --   play("@3d.<scene>.<model>", clip, { loop =, fade =, speed =, seek = })
 --   model(..., { lip_sync = { morph = "mouth_open", voice_tag = }, ... })    (see model above)
@@ -1436,7 +1445,8 @@ do
     engine.scene_command("play " .. tag)
   end
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Layered sprites: layered(name, { order = { group, ... }, <group> = "image" or
 -- { value = "image", ... }, default = { group = value }, crossfade = seconds }).
 -- `show` of the name then takes a value for each group: show("eileen", { face = "smile" }).
@@ -1478,7 +1488,8 @@ local function layered_group(name, spec)
   end
   return { name = name, values = values }
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- lip_sync = { group =, frames = { value, ... }, thresholds = { level, ... }, voice_tag = }:
 -- the group shows the frame for the level of the voice. `listed` has the groups of `order`.
 local function lip_sync_request(spec, listed)
@@ -1596,7 +1607,8 @@ layered_attributes = function(options, name)
   end
   return attributes, text
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Frame animations: animation(name, { frames = { "image", ... }, fps = n, loop = true }) or
 -- animation(name, { sheet = "image", columns = n, rows = n, count = n, fps = n, loop = true }).
 -- `show` and the values of a layered group take the name as they take an image name.
@@ -1623,7 +1635,8 @@ function animation(name, definition)
     error(problem, 2)
   end
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Movies (docs/SPEC.md section 14). movie(path, { skippable = true }) plays a movie over all
 -- layers and blocks until it has played. Replay and skip mode do not play it.
 function movie(path, options)
@@ -1639,7 +1652,8 @@ function movie(path, options)
   end
   engine.movie(path, skippable == true)
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 
 -- Saves. A call only queues a request; the host carries it out when the story waits.
 local function slot_name(slot)
@@ -1795,7 +1809,8 @@ string.dump = nil
 
 -- Globals the engine owns: scripts read them but cannot replace them.
 local persistent = {}
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Pause, NVL mode and the gallery (docs/SPEC.md sections 7, 8 and 15).
 -- pause(seconds) blocks like `wait`: a step that a click or skip mode ends, and a replay does not
 -- wait for.
@@ -1894,7 +1909,8 @@ end
 function gallery_images()
   return { gallery_unpack(engine.gallery) }
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- Preferences, bindings and the bridge the engine calls (docs/SPEC.md sections 15 and 17).
 -- `prefs` keeps what the player changed in persistent.prefs; a value never set reads as its
 -- default. The engine reads these keys: text_speed (characters a second), auto_delay (seconds),
@@ -2001,7 +2017,8 @@ function bridge.build(name, args)
   end
   return screen_root(nil, name, args)
 end
-)lua" R"lua(
+)lua"
+                                      R"lua(
 -- A function of a C++ plugin (engine/plugin/plugin.hpp): the error it throws is a script error at
 -- the line of the call.
 function engine.plugin_function(name, raw)
@@ -2756,7 +2773,7 @@ class ScriptRuntime::Impl {
   sol::main_function on_load_;
   std::vector<SaveRequest> save_requests_;
   std::vector<PlaybackRequest> playback_requests_;
-  std::vector<Frame> frames_;  // back() is the running label; the rest called it
+  std::vector<Frame> frames_;        // back() is the running label; the rest called it
   std::vector<Frame> held_callers_;  // begin_load()'s, until end_load()
   std::vector<RollbackStep> held_rollback_;
   std::optional<std::variant<BlockingRequest, Transfer>> pending_;
@@ -2768,7 +2785,7 @@ class ScriptRuntime::Impl {
   RunState state_ = RunState::kIdle;
   std::uint32_t hook_period_ = 0;
   BlockingRequest request_;
-  ScreenNodeDef staged_screen_;  // the tree stage_screen read, for show_screen or call_screen
+  ScreenNodeDef staged_screen_;        // the tree stage_screen read, for show_screen or call_screen
   std::optional<NvlPage> staged_nvl_;  // the page stage_nvl read, for the next say, narrate or menu
   std::string error_;
   bool replaying_ = false;
@@ -2941,14 +2958,15 @@ void ScriptRuntime::Impl::bind_engine() {
       rgb = static_cast<std::uint32_t>(*color);
     }
     // The voice call before this line plays for this character: lip sync follows the tag.
-    if (options_.audio != nullptr && !replaying_ && !pending_voice_.empty() &&
-        !voice_tag.empty()) {
+    if (options_.audio != nullptr && !replaying_ && !pending_voice_.empty() && !voice_tag.empty()) {
       options_.audio->tag_voice(voice_tag);
     }
-    yield_at(state,
-             SayRequest{.speaker = speaker, .text = text, .color = rgb, .voice_tag = voice_tag,
-                         .auto_multiplier = auto_multiplier,
-                         .nvl = std::exchange(staged_nvl_, std::nullopt)});
+    yield_at(state, SayRequest{.speaker = speaker,
+                               .text = text,
+                               .color = rgb,
+                               .voice_tag = voice_tag,
+                               .auto_multiplier = auto_multiplier,
+                               .nvl = std::exchange(staged_nvl_, std::nullopt)});
   });
   engine_["narrate"] = sol::yielding([this](sol::this_state state, const std::string& text) {
     yield_at(state, NarrateRequest{.text = text, .nvl = std::exchange(staged_nvl_, std::nullopt)});
@@ -2975,16 +2993,16 @@ void ScriptRuntime::Impl::bind_engine() {
   };
   // The prelude checked that `options` is a list of strings. A stack_table
   // makes no registry reference, so nothing here can raise a Lua error.
-  engine_["menu"] = sol::yielding([this](sol::this_state state, const sol::stack_table& options,
-                                         bool fixed) {
-    MenuRequest request{.fixed = fixed, .nvl = std::exchange(staged_nvl_, std::nullopt)};
-    const std::size_t count = options.size();
-    request.options.reserve(count);
-    for (std::size_t i = 1; i <= count; ++i) {
-      request.options.push_back(options.get<std::string>(i));
-    }
-    yield_at(state, std::move(request));
-  });
+  engine_["menu"] =
+      sol::yielding([this](sol::this_state state, const sol::stack_table& options, bool fixed) {
+        MenuRequest request{.fixed = fixed, .nvl = std::exchange(staged_nvl_, std::nullopt)};
+        const std::size_t count = options.size();
+        request.options.reserve(count);
+        for (std::size_t i = 1; i <= count; ++i) {
+          request.options.push_back(options.get<std::string>(i));
+        }
+        yield_at(state, std::move(request));
+      });
   // Screens: the prelude stages a screen tree, then shows it or waits on it.
   engine_["stage_screen"] = [this](sol::this_state state, const std::string& name,
                                    const sol::table& root) -> sol::object {
@@ -3113,8 +3131,7 @@ void ScriptRuntime::Impl::bind_engine() {
     }
     return problem_or_nil(state, problem);
   };
-  engine_["declare_shader"] = [this, problem_or_nil](sol::this_state state,
-                                                     const std::string& name,
+  engine_["declare_shader"] = [this, problem_or_nil](sol::this_state state, const std::string& name,
                                                      const sol::table& uniforms) {
     const MemoryLimitScope unlimited{allocator_, false};
     if (options_.scene == nullptr) {
@@ -3183,15 +3200,14 @@ void ScriptRuntime::Impl::bind_engine() {
                                      : options_.scene->set_parallax(layer, factor));
   };
   // A replay, or reduced motion (`still`), checks a shake and does not show it.
-  engine_["shake"] = [this, problem_or_nil](sol::this_state state, double strength,
-                                            double duration, bool still) {
+  engine_["shake"] = [this, problem_or_nil](sol::this_state state, double strength, double duration,
+                                            bool still) {
     const MemoryLimitScope unlimited{allocator_, false};
-    return problem_or_nil(
-        state, options_.scene == nullptr
-                   ? std::string{}
-                   : options_.scene->shake({.strength = strength,
-                                            .duration = duration,
-                                            .replaying = replaying_ || still}));
+    return problem_or_nil(state, options_.scene == nullptr
+                                     ? std::string{}
+                                     : options_.scene->shake({.strength = strength,
+                                                              .duration = duration,
+                                                              .replaying = replaying_ || still}));
   };
   // The 3D scenes are state: the calls arrive during a replay too, which only checks the files.
   engine_["scene3d"] = [this, problem_or_nil](sol::this_state state, const sol::table& spec) {
@@ -3219,10 +3235,10 @@ void ScriptRuntime::Impl::bind_engine() {
     }
     return problem_or_nil(state, options_.scene->check_movie(path));
   };
-  engine_["movie"] = sol::yielding([this](sol::this_state state, const std::string& path,
-                                          bool skippable) {
-    yield_at(state, MovieRequest{.path = path, .skippable = skippable});
-  });
+  engine_["movie"] =
+      sol::yielding([this](sol::this_state state, const std::string& path, bool skippable) {
+        yield_at(state, MovieRequest{.path = path, .skippable = skippable});
+      });
   engine_["scene_command"] = [this](const std::string& command) {
     if (!replaying_) {
       observer_->on_scene_command(command);
@@ -3306,7 +3322,7 @@ void ScriptRuntime::Impl::bind_engine() {
   };
   engine_["skip_request"] = [this](const std::string& mode) {
     if (!replaying_) {
-      const SkipMode skip = mode == "seen" ? SkipMode::kSeen
+      const SkipMode skip = mode == "seen"  ? SkipMode::kSeen
                             : mode == "all" ? SkipMode::kAll
                                             : SkipMode::kOff;
       playback_requests_.push_back(PlaybackRequest{.skip = skip});
@@ -3678,16 +3694,16 @@ void ScriptRuntime::Impl::install_plugin_functions() {
       throw ScriptError("plugin function '" + name + "' would replace a global of the engine");
     }
     const PluginFunction* function = &entry.second;
-    const sol::object raw = sol::make_object(
-        lua_.lua_state(),
-        [function](sol::this_state state, sol::variadic_args args) -> sol::object {
-          std::vector<PluginValue> values;
-          values.reserve(args.size());
-          for (const auto& arg : args) {
-            values.push_back(read_plugin_value(sol::object{arg}));
-          }
-          return push_plugin_value(state, (*function)(values));
-        });
+    const sol::object raw =
+        sol::make_object(lua_.lua_state(),
+                         [function](sol::this_state state, sol::variadic_args args) -> sol::object {
+                           std::vector<PluginValue> values;
+                           values.reserve(args.size());
+                           for (const auto& arg : args) {
+                             values.push_back(read_plugin_value(sol::object{arg}));
+                           }
+                           return push_plugin_value(state, (*function)(values));
+                         });
     const sol::protected_function_result wrapped = wrap(name, raw);
     globals.raw_set(name, wrapped.get<sol::object>());
   }
@@ -4223,10 +4239,9 @@ void ScriptRuntime::Impl::run(std::optional<ScreenValue> resume_value) {
         push_rollback_step(std::move(voice));
       }
       rolling_back_ = false;
-      observer_->on_blocked(request_,
-                            ScriptPosition{.label = frame.label,
-                                           .step = frame.step,
-                                           .wait = is_pause(request_)});
+      observer_->on_blocked(
+          request_,
+          ScriptPosition{.label = frame.label, .step = frame.step, .wait = is_pause(request_)});
       return;
     }
     TransferKind kind = TransferKind::kReturn;
@@ -4363,7 +4378,6 @@ void CompositeSceneState::restore(std::span<const std::byte> state) {
     }
   }
 }
-
 
 namespace {
 

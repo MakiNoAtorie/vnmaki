@@ -220,8 +220,7 @@ TEST_CASE("import settings: the keys of [build.audio]") {
 }
 
 TEST_CASE("font import: a subset keeps the glyphs of the characters only") {
-  const std::vector<std::byte> font =
-      read_bytes(fixtures() / "project" / "fonts" / "default.ttf");
+  const std::vector<std::byte> font = read_bytes(fixtures() / "project" / "fonts" / "default.ttf");
   const vnmaki::FontSubset ascii = vnmaki::subset_font(font, vnmaki::ascii_codepoints());
   const vnmaki::FontSubset three = vnmaki::subset_font(font, {U'A', U'B', U'C'});
   const vnmaki::FontSubset four = vnmaki::subset_font(font, {U'A', U'B', U'C', U'D'});

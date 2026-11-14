@@ -71,9 +71,9 @@ class Generator {
 };
 
 constexpr std::array<std::string_view, 24> kFragments = {
-    "msgid ", "msgstr ", "msgctxt ", "\"", "\"\"", "\"a\"", "\"b\\n\"", "\\", "\\n", "\\x4",
-    "\\07", "\n", "\n\n", "#~ ", "# ", "#. ", "#: a:1 ", "#, fuzzy", "#| ", "\r\n", "\xFF",
-    " ", "z", "\t"};
+    "msgid ",  "msgstr ",  "msgctxt ", "\"",   "\"\"", "\"a\"", "\"b\\n\"", "\\",
+    "\\n",     "\\x4",     "\\07",     "\n",   "\n\n", "#~ ",   "# ",       "#. ",
+    "#: a:1 ", "#, fuzzy", "#| ",      "\r\n", "\xFF", " ",     "z",        "\t"};
 
 constexpr std::uint64_t kSeed = 0x90A;
 constexpr std::size_t kRandomCases = 3000;
@@ -170,18 +170,18 @@ TEST_CASE("po: set_fuzzy adds and removes the flag once") {
 }
 
 TEST_CASE("po: a text that is not valid .po gives the line of the problem") {
-  CHECK(error_line("msgid \"a\"") == 1);                                   // no msgstr
-  CHECK(error_line("msgid \"a\"\nmsgstr \"b") == 2);                       // not closed
-  CHECK(error_line("msgid \"a\"\nmsgstr \"b\" x\n") == 2);                 // text after the quote
-  CHECK(error_line("\n\nmsgstr \"a\"\n") == 3);                            // no msgid
-  CHECK(error_line("msgid \"a\"\nmsgid \"b\"\n") == 2);                    // two msgid
-  CHECK(error_line("msgid a\nmsgstr \"\"\n") == 1);                        // no quote
-  CHECK(error_line("\"a\"\n") == 1);                                       // nothing to continue
-  CHECK(error_line("msgid_plural \"a\"\n") == 1);                          // plurals: no
-  CHECK(error_line("msgid \"\\q\"\nmsgstr \"\"\n") == 1);                  // unknown escape
-  CHECK(error_line("msgid \"\\777\"\nmsgstr \"\"\n") == 1);                // beyond a byte
-  CHECK(error_line("msgid \"\\xg\"\nmsgstr \"\"\n") == 1);                 // no hex digit
-  CHECK(error_line("msgid \"a\"\nmsgstr \"b\"\n\n# lost\n") == 4);         // comment, no message
+  CHECK(error_line("msgid \"a\"") == 1);                            // no msgstr
+  CHECK(error_line("msgid \"a\"\nmsgstr \"b") == 2);                // not closed
+  CHECK(error_line("msgid \"a\"\nmsgstr \"b\" x\n") == 2);          // text after the quote
+  CHECK(error_line("\n\nmsgstr \"a\"\n") == 3);                     // no msgid
+  CHECK(error_line("msgid \"a\"\nmsgid \"b\"\n") == 2);             // two msgid
+  CHECK(error_line("msgid a\nmsgstr \"\"\n") == 1);                 // no quote
+  CHECK(error_line("\"a\"\n") == 1);                                // nothing to continue
+  CHECK(error_line("msgid_plural \"a\"\n") == 1);                   // plurals: no
+  CHECK(error_line("msgid \"\\q\"\nmsgstr \"\"\n") == 1);           // unknown escape
+  CHECK(error_line("msgid \"\\777\"\nmsgstr \"\"\n") == 1);         // beyond a byte
+  CHECK(error_line("msgid \"\\xg\"\nmsgstr \"\"\n") == 1);          // no hex digit
+  CHECK(error_line("msgid \"a\"\nmsgstr \"b\"\n\n# lost\n") == 4);  // comment, no message
   CHECK(error_line("# a\nmsgctxt \"c\"\n# b\nmsgid \"x\"\nmsgstr \"\"\n") == 3);  // comment inside
   CHECK(error_line("msgid \"a\"\nmsgstr \"b\"\n") == 0);
 }

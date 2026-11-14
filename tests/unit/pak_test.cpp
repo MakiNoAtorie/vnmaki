@@ -1,8 +1,6 @@
 // `.vnpak` archives: the writer, the mount, the patch packs and the choice of a font subset. The
 // fuzz target shares fuzz/pak_properties.hpp.
 
-#include "engine/vfs/pak_mount.hpp"
-
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -18,6 +16,7 @@
 #include <doctest/doctest.h>
 
 #include "engine/text/text.hpp"
+#include "engine/vfs/pak_mount.hpp"
 #include "engine/vfs/pak_writer.hpp"
 #include "fuzz/pak_properties.hpp"
 #include "tests/support/temp_dir.hpp"
@@ -227,8 +226,10 @@ TEST_CASE("pak: the index is sorted whatever the order of adding") {
 
 TEST_CASE("pak: font_path_for_language picks the subset of a pack when it is there") {
   vnmaki::Vfs vfs;
-  vfs.mount(PakMount::from_bytes(pak_bytes({{"fonts/a.en.ttf", "x"}, {"fonts/a.ttf", "y"},
-                                            {"fonts/b.ttf", "z"}, {"fonts/c.ja.otf", "w"},
+  vfs.mount(PakMount::from_bytes(pak_bytes({{"fonts/a.en.ttf", "x"},
+                                            {"fonts/a.ttf", "y"},
+                                            {"fonts/b.ttf", "z"},
+                                            {"fonts/c.ja.otf", "w"},
                                             {"fonts/d.ttf", "v"}})));
   CHECK(vnmaki::font_path_for_language(vfs, "fonts/a.ttf", "en") == "fonts/a.en.ttf");
   CHECK(vnmaki::font_path_for_language(vfs, "fonts/a.ttf", "ja") == "fonts/a.ttf");

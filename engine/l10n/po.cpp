@@ -63,16 +63,26 @@ void read_escape(std::string_view text, std::size_t& i, std::string& out, std::u
     ++i;
   };
   switch (c) {
-    case 'n': return simple('\n');
-    case 't': return simple('\t');
-    case 'r': return simple('\r');
-    case 'a': return simple(kBell);
-    case 'b': return simple(kBackspace);
-    case 'f': return simple(kFormFeed);
-    case 'v': return simple(kVerticalTab);
-    case '\\': return simple('\\');
-    case '"': return simple('"');
-    default: break;
+    case 'n':
+      return simple('\n');
+    case 't':
+      return simple('\t');
+    case 'r':
+      return simple('\r');
+    case 'a':
+      return simple(kBell);
+    case 'b':
+      return simple(kBackspace);
+    case 'f':
+      return simple(kFormFeed);
+    case 'v':
+      return simple(kVerticalTab);
+    case '\\':
+      return simple('\\');
+    case '"':
+      return simple('"');
+    default:
+      break;
   }
   const bool hex = c == 'x';
   const int base = hex ? kHexBase : kOctalBase;
@@ -338,8 +348,8 @@ void append_string(std::string& out, std::string_view prefix, std::string_view k
   }
   out += " \"\"\n";
   while (!value.empty()) {
-    const std::size_t end = value.find('\n') == std::string_view::npos ? value.size()
-                                                                       : value.find('\n') + 1;
+    const std::size_t end =
+        value.find('\n') == std::string_view::npos ? value.size() : value.find('\n') + 1;
     out += prefix;
     out += '"';
     append_escaped(out, value.substr(0, end));

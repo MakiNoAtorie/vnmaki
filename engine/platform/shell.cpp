@@ -7,11 +7,10 @@
 #include "engine/core/utf8_path.hpp"
 
 #ifdef _WIN32
-#include <windows.h>
+#include <cstddef>
 
 #include <shellapi.h>
-
-#include <cstddef>
+#include <windows.h>
 #endif
 
 namespace vnmaki {

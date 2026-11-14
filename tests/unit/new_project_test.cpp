@@ -494,8 +494,7 @@ TEST_CASE("addon ja: adds the files, the language, the vertical flag and the fon
   CHECK_FALSE(fs::exists(game / "addon.toml"));
   CHECK(read_file(game / "translations/ja.po") ==
         read_file(vnmaki::test::addon_dir("ja") / "translations/ja.po"));
-  CHECK(read_file(game / "project.toml").find("languages = [\"en\", \"ja\"]") !=
-        std::string::npos);
+  CHECK(read_file(game / "project.toml").find("languages = [\"en\", \"ja\"]") != std::string::npos);
 
   vnmaki::Vfs vfs;
   REQUIRE(vfs.mount(vnmaki::make_directory_mount(game)));
@@ -504,7 +503,8 @@ TEST_CASE("addon ja: adds the files, the language, the vertical flag and the fon
   CHECK(config.languages == std::vector<std::string>{"en", "ja"});
   CHECK(config.vertical.at("ja"));
   CHECK(config.font_fallbacks.at("ja") == std::vector<std::string>{"fonts/NotoSansJP.ttf"});
-  CHECK(read_file(game / "project.toml").find("keep = [\"fonts/dyslexia.otf\"]") != std::string::npos);
+  CHECK(read_file(game / "project.toml").find("keep = [\"fonts/dyslexia.otf\"]") !=
+        std::string::npos);
 }
 
 TEST_CASE("addon: the keys go into a table that exists, a second add-on adds its own, errors") {
@@ -553,7 +553,8 @@ TEST_CASE("addon: finds the add-ons next to the executable first, then in the so
         temp.path() / "source/addons/fr");
   CHECK_FALSE(vnmaki::find_addon("broken", temp.path() / "bin", temp.path() / "source"));
   CHECK_FALSE(vnmaki::find_addon("de", temp.path() / "bin", temp.path() / "source"));
-  CHECK_FALSE(vnmaki::find_addon("../source/addons/fr", temp.path() / "bin", temp.path() / "source"));
+  CHECK_FALSE(
+      vnmaki::find_addon("../source/addons/fr", temp.path() / "bin", temp.path() / "source"));
   CHECK_FALSE(vnmaki::find_addon("", temp.path() / "bin", temp.path() / "source"));
   CHECK(vnmaki::list_addons(temp.path() / "bin", temp.path() / "source") ==
         std::vector<std::string>{"fr", "ja"});
@@ -566,7 +567,7 @@ namespace {
 // The glyphs of every line, with the font each one uses.
 struct Drawn {
   std::size_t count = 0;
-  std::size_t missing = 0;                    // glyph 0, the box of a missing character
+  std::size_t missing = 0;  // glyph 0, the box of a missing character
   std::map<const vnmaki::Font*, std::size_t> by_font{};
 };
 
@@ -586,7 +587,8 @@ Drawn drawn_by(const vnmaki::TextLayout& layout) {
 
 // FreeType and HarfBuzz read the variable TrueType fonts (Noto Sans, Noto Sans JP) and the CFF
 // OpenType font (OpenDyslexic) of the template.
-TEST_CASE("template: Latin, Japanese through the fallback, and the dyslexia font lay out and draw") {
+TEST_CASE(
+    "template: Latin, Japanese through the fallback, and the dyslexia font lay out and draw") {
   const vnmaki::test::TemplateProject project{"fonts", {"ja"}};
   vnmaki::Vfs vfs;
   REQUIRE(vfs.mount(vnmaki::make_directory_mount(project.path())));
@@ -611,14 +613,15 @@ TEST_CASE("template: Latin, Japanese through the fallback, and the dyslexia font
 
   // Noto Sans has no kana: all seven glyphs come from the fallback, in a row and in columns.
   const std::string kana = "おわり。あなた";
-  const vnmaki::TextLayout row = vnmaki::layout_text(set, vnmaki::plain_text(kana), kFontSize, kWidth);
+  const vnmaki::TextLayout row =
+      vnmaki::layout_text(set, vnmaki::plain_text(kana), kFontSize, kWidth);
   const Drawn row_drawn = drawn_by(row);
   CHECK(row_drawn.count == 7);
   CHECK(row_drawn.missing == 0);
   CHECK(row_drawn.by_font.at(&japanese) == 7);
   CHECK(atlas.prepare(row));
-  const vnmaki::TextLayout column = vnmaki::layout_text(
-      set, vnmaki::plain_text(kana), kFontSize, kWidth, vnmaki::TextOrientation::kVertical);
+  const vnmaki::TextLayout column = vnmaki::layout_text(set, vnmaki::plain_text(kana), kFontSize,
+                                                        kWidth, vnmaki::TextOrientation::kVertical);
   CHECK(column.vertical);
   CHECK(drawn_by(column).missing == 0);
   CHECK(atlas.prepare(column));
@@ -627,8 +630,8 @@ TEST_CASE("template: Latin, Japanese through the fallback, and the dyslexia font
   CHECK(drawn_by(no_fallback).missing == 7);  // the box of Noto Sans
 
   // Mixed text: the Latin letters stay in Noto Sans.
-  const Drawn mixed = drawn_by(
-      vnmaki::layout_text(set, vnmaki::plain_text("ABC あ"), kFontSize, kWidth));
+  const Drawn mixed =
+      drawn_by(vnmaki::layout_text(set, vnmaki::plain_text("ABC あ"), kFontSize, kWidth));
   CHECK(mixed.missing == 0);
   CHECK(mixed.by_font.at(&latin) == 4);  // "ABC" and the space
   CHECK(mixed.by_font.at(&japanese) == 1);
@@ -642,8 +645,8 @@ TEST_CASE("template: Latin, Japanese through the fallback, and the dyslexia font
   CHECK(dyslexic_drawn.by_font.at(&dyslexia) == 12);
   CHECK(dyslexic.lines.front().width != hello.lines.front().width);
   CHECK(atlas.prepare(dyslexic));
-  const Drawn dyslexic_ja = drawn_by(vnmaki::layout_text(
-      with_dyslexia, vnmaki::plain_text(kana), kFontSize, kWidth));
+  const Drawn dyslexic_ja =
+      drawn_by(vnmaki::layout_text(with_dyslexia, vnmaki::plain_text(kana), kFontSize, kWidth));
   CHECK(dyslexic_ja.missing == 0);
   CHECK(dyslexic_ja.by_font.at(&japanese) == 7);
 }

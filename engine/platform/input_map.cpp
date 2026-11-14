@@ -19,23 +19,35 @@ constexpr std::size_t kButtonCount = static_cast<std::size_t>(GamepadButton::kDp
 
 // In the order of the enumerators.
 constexpr std::array<std::string_view, kKeyCount> kKeyNames{
-    "a",          "b",           "c",         "d",          "e",          "f",
-    "g",          "h",           "i",         "j",          "k",          "l",
-    "m",          "n",           "o",         "p",          "q",          "r",
-    "s",          "t",           "u",         "v",          "w",          "x",
-    "y",          "z",           "digit0",    "digit1",     "digit2",     "digit3",
-    "digit4",     "digit5",      "digit6",    "digit7",     "digit8",     "digit9",
-    "f1",         "f2",          "f3",        "f4",         "f5",         "f6",
-    "f7",         "f8",          "f9",        "f10",        "f11",        "f12",
-    "escape",     "enter",       "keypad_enter", "space",   "tab",        "backspace",
-    "delete",     "insert",      "home",      "end",        "page_up",    "page_down",
-    "left",       "right",       "up",        "down",       "left_shift", "right_shift",
-    "left_ctrl",  "right_ctrl",  "left_alt",  "right_alt",  "left_gui",   "right_gui"};
+    "a",         "b",          "c",
+    "d",         "e",          "f",
+    "g",         "h",          "i",
+    "j",         "k",          "l",
+    "m",         "n",          "o",
+    "p",         "q",          "r",
+    "s",         "t",          "u",
+    "v",         "w",          "x",
+    "y",         "z",          "digit0",
+    "digit1",    "digit2",     "digit3",
+    "digit4",    "digit5",     "digit6",
+    "digit7",    "digit8",     "digit9",
+    "f1",        "f2",         "f3",
+    "f4",        "f5",         "f6",
+    "f7",        "f8",         "f9",
+    "f10",       "f11",        "f12",
+    "escape",    "enter",      "keypad_enter",
+    "space",     "tab",        "backspace",
+    "delete",    "insert",     "home",
+    "end",       "page_up",    "page_down",
+    "left",      "right",      "up",
+    "down",      "left_shift", "right_shift",
+    "left_ctrl", "right_ctrl", "left_alt",
+    "right_alt", "left_gui",   "right_gui"};
 
 constexpr std::array<std::string_view, kButtonCount> kButtonNames{
-    "south",      "east",        "west",       "north",         "back",
-    "guide",      "start",       "left_stick", "right_stick",   "left_shoulder",
-    "right_shoulder", "dpad_up", "dpad_down",  "dpad_left",     "dpad_right"};
+    "south",          "east",    "west",       "north",       "back",
+    "guide",          "start",   "left_stick", "right_stick", "left_shoulder",
+    "right_shoulder", "dpad_up", "dpad_down",  "dpad_left",   "dpad_right"};
 
 std::string_view key_name(Key key) { return kKeyNames[static_cast<std::size_t>(key)]; }
 std::string_view button_name(GamepadButton button) {

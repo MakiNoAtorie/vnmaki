@@ -42,8 +42,7 @@ const GraphLabel& label_of(const StoryGraph& graph, std::string_view name) {
   return graph.labels.front();
 }
 
-std::vector<std::string> names_where(const StoryGraph& graph, bool GraphLabel::* flag,
-                                     bool wanted) {
+std::vector<std::string> names_where(const StoryGraph& graph, bool GraphLabel::*flag, bool wanted) {
   std::vector<std::string> names;
   for (const GraphLabel& label : graph.labels) {
     if (label.*flag == wanted) {
@@ -339,11 +338,11 @@ TEST_CASE("story_graph: an observer chain gives every call to every observer") {
 }
 
 TEST_CASE("story_graph: a load adds no edge from the label that ran before it") {
-  const vnmaki::Vfs vfs = vnmaki::test::memory_vfs(
-      {{"scripts/main.lua",
-        "label('start', function() jump('b') end)\n"
-        "label('b', function() narrate('x') narrate('y') jump('c') end)\n"
-        "label('c', function() narrate('z') end)"}});
+  const vnmaki::Vfs vfs =
+      vnmaki::test::memory_vfs({{"scripts/main.lua",
+                                 "label('start', function() jump('b') end)\n"
+                                 "label('b', function() narrate('x') narrate('y') jump('c') end)\n"
+                                 "label('c', function() narrate('z') end)"}});
   vnmaki::TraceRecorder trace;
   vnmaki::ScriptRuntime runtime{vfs, {.observer = &trace}};
   runtime.load_scripts();

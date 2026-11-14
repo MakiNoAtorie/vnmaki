@@ -441,13 +441,12 @@ UiNode make_menu_screen(const std::vector<std::string>& options, Size canvas) {
 
 ScreenNodeDef make_nvl_args(const NvlPage& page, bool typing,
                             std::span<const std::string> options) {
-  ScreenNodeDef args{.kind = "args",
-                     .props = {{"lines", static_cast<std::int64_t>(page.size())},
-                               {"typing", typing}}};
+  ScreenNodeDef args{
+      .kind = "args",
+      .props = {{"lines", static_cast<std::int64_t>(page.size())}, {"typing", typing}}};
   args.children.reserve(page.size() + options.size());
   for (const NvlLine& line : page) {
-    ScreenNodeDef entry{.kind = "line",
-                        .props = {{"speaker", line.speaker}, {"text", line.text}}};
+    ScreenNodeDef entry{.kind = "line", .props = {{"speaker", line.speaker}, {"text", line.text}}};
     if (line.color) {
       entry.props.emplace_back("color", std::format("#{:06x}", *line.color));
     }

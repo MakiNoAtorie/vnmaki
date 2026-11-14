@@ -176,8 +176,8 @@ int launcher_command(std::span<const std::string_view> args, std::ostream& err) 
     } else if (args[i] == "--data-dir" && i + 1 < args.size()) {
       data_directory = utf8_path(args[++i]);
     } else {
-      err << "vnmaki launcher: unexpected argument '" << args[i] << "'\nusage:"
-          << kLauncherUsage.substr(std::string_view{"      "}.size());
+      err << "vnmaki launcher: unexpected argument '" << args[i]
+          << "'\nusage:" << kLauncherUsage.substr(std::string_view{"      "}.size());
       return kExitUsage;
     }
   }

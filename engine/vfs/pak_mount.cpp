@@ -27,8 +27,7 @@ constexpr std::size_t kMinEntrySize = sizeof(std::uint32_t) + 4 * sizeof(std::ui
 constexpr std::size_t kMagicSize = 4;
 
 bool has_text(std::span<const std::byte> bytes, std::string_view text) {
-  return bytes.size() >= text.size() &&
-         std::memcmp(bytes.data(), text.data(), text.size()) == 0;
+  return bytes.size() >= text.size() && std::memcmp(bytes.data(), text.data(), text.size()) == 0;
 }
 
 }  // namespace

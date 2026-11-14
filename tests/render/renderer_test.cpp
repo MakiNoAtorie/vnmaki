@@ -401,8 +401,8 @@ TEST_CASE("renderer: counts the bytes of textures and render targets on create a
 
   renderer->destroy_texture(texture);
   renderer->destroy_texture(texture);  // a second destroy changes nothing
-  CHECK(renderer->texture_memory() == vnmaki::TextureMemory{.target_bytes = kTargetBytes,
-                                                            .targets = 1});
+  CHECK(renderer->texture_memory() ==
+        vnmaki::TextureMemory{.target_bytes = kTargetBytes, .targets = 1});
   renderer->destroy_texture(target);
   CHECK(renderer->texture_memory() == vnmaki::TextureMemory{});
 }

@@ -55,8 +55,8 @@ std::optional<std::uint32_t> take_number(std::string_view& text) {
 
 // Lua and ProjectConfigError messages are "<file>:<line>: <reason>"; a config message can also
 // have a column, and has no line when the problem is not at a place in the file.
-void add_located_finding(std::vector<Finding>& findings, std::string_view file,
-                         Severity severity, std::string_view code, std::string_view what) {
+void add_located_finding(std::vector<Finding>& findings, std::string_view file, Severity severity,
+                         std::string_view code, std::string_view what) {
   std::uint32_t line = 0;
   const std::size_t colon = what.find(':');
   if (colon != std::string_view::npos) {
@@ -85,9 +85,9 @@ void add_text_finding(std::vector<Finding>& findings, const ScriptSource& script
   try {
     static_cast<void>(parse_markup(text));
   } catch (const MarkupError& error) {
-    findings.push_back(make_finding(script.path, call.line, Severity::kError, "bad-text-tag",
-                                    std::string{error.what()} + " (byte " +
-                                        std::to_string(error.offset()) + " of the text)"));
+    findings.push_back(make_finding(
+        script.path, call.line, Severity::kError, "bad-text-tag",
+        std::string{error.what()} + " (byte " + std::to_string(error.offset()) + " of the text)"));
   }
 }
 
@@ -164,8 +164,8 @@ void add_asset_finding(std::vector<Finding>& findings, const Vfs& vfs, const Scr
   }
 }
 
-void add_not_literal(std::vector<Finding>& findings, const ScriptSource& script,
-                     std::uint32_t line, std::string_view what) {
+void add_not_literal(std::vector<Finding>& findings, const ScriptSource& script, std::uint32_t line,
+                     std::string_view what) {
   findings.push_back(make_finding(script.path, line, Severity::kWarning, "non-literal-string",
                                   std::string{what} + " is not a string literal, so it is not "
                                                       "extracted for translation"));
@@ -184,8 +184,7 @@ void add_string_findings(std::vector<Finding>& findings, const ScriptSource& scr
     if (call.arguments[index]) {
       add_text_finding(findings, script, call, *call.arguments[index]);
     } else {
-      add_not_literal(findings, script, call.line,
-                      say ? "the text of say" : "the text of narrate");
+      add_not_literal(findings, script, call.line, say ? "the text of say" : "the text of narrate");
     }
   } else if (!call.table) {
     add_not_literal(findings, script, call.line, "the table of menu options");
@@ -248,10 +247,10 @@ void add_translation_findings(std::vector<Finding>& findings, const Vfs& vfs) {
       try {
         static_cast<void>(parse_markup(entry.str));
       } catch (const MarkupError& error) {
-        findings.push_back(make_finding(
-            path, entry.line, Severity::kError, "bad-translation-tag",
-            "translation of " + in_quotes(entry.context) + ": " + error.what() + " (byte " +
-                std::to_string(error.offset()) + " of the text)"));
+        findings.push_back(make_finding(path, entry.line, Severity::kError, "bad-translation-tag",
+                                        "translation of " + in_quotes(entry.context) + ": " +
+                                            error.what() + " (byte " +
+                                            std::to_string(error.offset()) + " of the text)"));
       }
     }
   }
@@ -262,9 +261,9 @@ void add_graph_findings(std::vector<Finding>& findings, const StoryGraph& graph)
   for (const GraphLabel& label : graph.labels) {
     names.insert(label.name);
     if (!label.reachable) {
-      findings.push_back(make_finding(label.script, label.line, Severity::kWarning,
-                                      "unreachable-label",
-                                      "no path from 'start' reaches label " + in_quotes(label.name)));
+      findings.push_back(
+          make_finding(label.script, label.line, Severity::kWarning, "unreachable-label",
+                       "no path from 'start' reaches label " + in_quotes(label.name)));
     }
     if (label.dead_end) {
       findings.push_back(make_finding(label.script, label.line, Severity::kWarning, "dead-end",

@@ -2,6 +2,8 @@
 // the tests pass elapsed seconds to the presenter and to Playback, so there is no clock. Expected
 // values are written out by hand from the scripts.
 
+#include "engine/dialogue/playback.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -18,7 +20,6 @@
 #include <doctest/doctest.h>
 
 #include "engine/dialogue/dialogue_presenter.hpp"
-#include "engine/dialogue/playback.hpp"
 #include "engine/runtime/headless_runner.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/saves/persistent_store.hpp"
@@ -399,15 +400,15 @@ end)
 )";
   vnmaki::ScriptRuntime* runtime_ptr = nullptr;
   int ended_waits = 0;
-  Game game{kScript, dir.path(),
-            {.skip_interval = kSkipInterval, .skip_wait = [&] {
-               if (std::holds_alternative<vnmaki::WaitRequest>(*runtime_ptr->request())) {
-                 ++ended_waits;
-                 runtime_ptr->advance();
-                 return true;
-               }
-               return false;
-             }}};
+  Game game{kScript, dir.path(), {.skip_interval = kSkipInterval, .skip_wait = [&] {
+                                    if (std::holds_alternative<vnmaki::WaitRequest>(
+                                            *runtime_ptr->request())) {
+                                      ++ended_waits;
+                                      runtime_ptr->advance();
+                                      return true;
+                                    }
+                                    return false;
+                                  }}};
   runtime_ptr = &game.runtime;
   game.playback->set_skip(SkipMode::kAll);
   game.tick_while_skipping(SkipMode::kAll);
@@ -457,8 +458,8 @@ TEST_CASE("script: bad arguments of skip, auto and auto_multiplier are errors") 
 
 TEST_CASE("auto: waits a base time plus a time for each glyph") {
   const TempDir dir{"auto"};
-  Game game{kStory, dir.path(),
-            {.auto_base_delay = kBaseDelay, .auto_seconds_per_glyph = kGlyphDelay}};
+  Game game{
+      kStory, dir.path(), {.auto_base_delay = kBaseDelay, .auto_seconds_per_glyph = kGlyphDelay}};
   game.playback->set_auto(true);
   CHECK(game.playback->auto_delay() == doctest::Approx(kBaseDelay + (kGlyphDelay * kThreeLines)));
   CHECK(game.ticks_until_next_line() == kTicksForOne);
@@ -467,7 +468,8 @@ TEST_CASE("auto: waits a base time plus a time for each glyph") {
 
 TEST_CASE("auto: the delay is exact, and a character's multiplier scales the glyph part") {
   const TempDir dir{"auto_exact"};
-  Game game{kHelloStory, dir.path(),
+  Game game{kHelloStory,
+            dir.path(),
             {.auto_base_delay = kBaseDelay, .auto_seconds_per_glyph = kGlyphDelay}};
   game.playback->set_auto(true);
   REQUIRE(game.presenter->glyph_count() == kHelloLength);
@@ -486,7 +488,8 @@ TEST_CASE("auto: the delay is exact, and a character's multiplier scales the gly
 TEST_CASE("auto: waits while a voice plays, then only the base delay") {
   const TempDir dir{"auto_voice"};
   bool voice = true;
-  Game game{kHelloStory, dir.path(),
+  Game game{kHelloStory,
+            dir.path(),
             {.auto_base_delay = kBaseDelay,
              .auto_seconds_per_glyph = kGlyphDelay,
              .voice_playing = [&voice] { return voice; }}};

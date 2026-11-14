@@ -88,8 +88,7 @@ std::vector<Item> script_items(const ScriptSource& script) {
       }
     }
   }
-  std::ranges::stable_sort(items,
-                           [](const Item& a, const Item& b) { return a.line < b.line; });
+  std::ranges::stable_sort(items, [](const Item& a, const Item& b) { return a.line < b.line; });
   return items;
 }
 

@@ -41,7 +41,8 @@ class ImageError : public std::runtime_error {
 };
 
 /// Decodes a whole PNG, JPEG or WebP file (lossless or lossy, no animation). Throws ImageError if
-/// the data is not a complete image of one of these kinds or the image is over the size limits. Safe to call from any thread.
+/// the data is not a complete image of one of these kinds or the image is over the size limits.
+/// Safe to call from any thread.
 [[nodiscard]] Image decode_image(std::span<const std::byte> encoded);
 
 /// A decoder of a file format that is not built in (a plugin's: engine/plugin/plugin.hpp). It

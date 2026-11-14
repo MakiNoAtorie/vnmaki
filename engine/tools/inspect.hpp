@@ -49,8 +49,7 @@ struct PropertyRow {
 
 /// The properties of the displayable `tag` (virtual pixels, fractions, degrees); empty when
 /// no such displayable is shown. The `uniform_n` rows exist when it has a game shader.
-[[nodiscard]] std::vector<PropertyRow> inspect_properties(const Scene& scene,
-                                                          std::string_view tag);
+[[nodiscard]] std::vector<PropertyRow> inspect_properties(const Scene& scene, std::string_view tag);
 
 /// Sets one property at once, from the next frame on. Alpha and tint stay in [0, 1]. The edit
 /// is not in any snapshot: it stays until a rollback, a load or a tween writes the property.

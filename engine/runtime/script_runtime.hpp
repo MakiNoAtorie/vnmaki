@@ -417,21 +417,21 @@ struct Scene3dRequest {
   std::string path{};  ///< The Vfs path of the model file, with its extension.
   /// "unlit", "toon" or "pbr", or the name of a declared game shader.
   std::optional<std::string> shader{};
-  std::vector<UniformValue> uniforms{};  ///< Uniforms of the model's game shader.
+  std::vector<UniformValue> uniforms{};     ///< Uniforms of the model's game shader.
   std::optional<std::string> light_kind{};  ///< "directional", "point" or "ambient".
-  std::optional<Vec3Option> position{};   ///< Model, point light, camera.
-  std::optional<Vec3Option> rotation{};   ///< Model, in degrees.
-  std::optional<Vec3Option> direction{};  ///< Directional light: the way the light travels.
-  std::optional<Vec3Option> look_at{};    ///< Camera.
-  std::optional<double> scale{};          ///< Model: uniform scale.
-  std::optional<double> fov{};            ///< Camera: vertical field of view in degrees.
-  std::optional<std::uint32_t> color{};   ///< Light: 0xRRGGBB.
-  std::optional<double> intensity{};      ///< Light.
-  std::string clip{};                     ///< Play: the clip's name.
-  bool loop = false;                      ///< Play.
-  double fade = 0;                        ///< Play: seconds of crossfade.
-  double speed = 1;                       ///< Play.
-  double seek = 0;                        ///< Play: seconds into the clip to start at.
+  std::optional<Vec3Option> position{};     ///< Model, point light, camera.
+  std::optional<Vec3Option> rotation{};     ///< Model, in degrees.
+  std::optional<Vec3Option> direction{};    ///< Directional light: the way the light travels.
+  std::optional<Vec3Option> look_at{};      ///< Camera.
+  std::optional<double> scale{};            ///< Model: uniform scale.
+  std::optional<double> fov{};              ///< Camera: vertical field of view in degrees.
+  std::optional<std::uint32_t> color{};     ///< Light: 0xRRGGBB.
+  std::optional<double> intensity{};        ///< Light.
+  std::string clip{};                       ///< Play: the clip's name.
+  bool loop = false;                        ///< Play.
+  double fade = 0;                          ///< Play: seconds of crossfade.
+  double speed = 1;                         ///< Play.
+  double seek = 0;                          ///< Play: seconds into the clip to start at.
   /// Model: the morph target that follows the voice (`lip_sync = { morph =, voice_tag = }`), and
   /// the tag of that voice (the model's tag if empty).
   std::optional<std::string> lip_morph{};

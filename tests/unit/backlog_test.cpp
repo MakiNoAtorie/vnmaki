@@ -2,6 +2,8 @@
 // through Audio, and the scrolling screen. Expected values are written out by hand from the
 // script text.
 
+#include "engine/dialogue/backlog.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -11,7 +13,6 @@
 #include <doctest/doctest.h>
 
 #include "engine/audio/audio.hpp"
-#include "engine/dialogue/backlog.hpp"
 #include "engine/platform/geometry.hpp"
 #include "engine/platform/input.hpp"
 #include "engine/platform/viewport.hpp"
@@ -62,9 +63,9 @@ end)
 
 struct Story {
   explicit Story(const char* script, std::size_t depth = vnmaki::kDefaultRollbackDepth)
-      : vfs(vnmaki::test::memory_vfs({{"scripts/main.lua", script},
-                                      {"audio/voice/eileen/001.opus",
-                                       vnmaki::test::audio_fixture("tone.opus")}})),
+      : vfs(vnmaki::test::memory_vfs(
+            {{"scripts/main.lua", script},
+             {"audio/voice/eileen/001.opus", vnmaki::test::audio_fixture("tone.opus")}})),
         audio(vfs),
         runtime(vfs, {.rollback_depth = depth, .scene_state = &audio, .audio = &audio}) {
     runtime.load_scripts();
@@ -137,8 +138,8 @@ TEST_CASE("backlog: entries hold speaker, text, label, step and voice; menus are
                                    .step = 1,
                                    .voice = "eileen/001"});
   CHECK(entries[1] == BacklogEntry{.text = "Silence.", .label = "start", .step = 2});
-  CHECK(entries[2] == BacklogEntry{.speaker = "Eileen", .text = "After.", .label = "start",
-                                   .step = 4});
+  CHECK(entries[2] ==
+        BacklogEntry{.speaker = "Eileen", .text = "After.", .label = "start", .step = 4});
 }
 
 TEST_CASE("backlog: a rollback takes the lines after the one it goes back to") {

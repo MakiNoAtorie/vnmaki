@@ -81,8 +81,7 @@ void ImportCache::store(const std::string& key, std::span<const std::byte> data)
   }
   std::filesystem::rename(temporary, directory_ / key, error);
   if (error) {
-    throw std::runtime_error{"cannot write " + to_utf8(directory_ / key) + ": " +
-                             error.message()};
+    throw std::runtime_error{"cannot write " + to_utf8(directory_ / key) + ": " + error.message()};
   }
 }
 

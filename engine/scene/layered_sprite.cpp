@@ -106,8 +106,8 @@ std::string LayeredSprite::set_attributes(const LayerAttributes& changes, bool c
   std::vector<std::pair<std::size_t, std::size_t>> resolved;  // (group, value) indices
   resolved.reserve(changes.size());
   for (const auto& [group_name, value_name] : changes) {
-    const auto group = std::ranges::find(definition_->groups, group_name,
-                                         &LayeredDefinition::Group::name);
+    const auto group =
+        std::ranges::find(definition_->groups, group_name, &LayeredDefinition::Group::name);
     if (group == definition_->groups.end()) {
       return unknown_group(*definition_, group_name);
     }

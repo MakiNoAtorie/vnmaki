@@ -96,8 +96,7 @@ const UiNode* focused_in(const UiNode& node) {
 }  // namespace
 
 SelfVoicing::SelfVoicing(TtsBackend& tts, const ScriptRuntime& runtime,
-                         const DialoguePresenter& presenter, const Playback& playback,
-                         UiHost& ui)
+                         const DialoguePresenter& presenter, const Playback& playback, UiHost& ui)
     : tts_(&tts), runtime_(&runtime), presenter_(&presenter), playback_(&playback), ui_(&ui) {}
 
 void SelfVoicing::set_enabled(bool enabled) {

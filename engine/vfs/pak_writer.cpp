@@ -57,8 +57,8 @@ void PakWriter::add(std::string_view path, std::span<const std::byte> data) {
   // A file and a folder cannot have one name.
   const std::string folder = std::string{path} + "/";
   const auto inside = paths_.lower_bound(folder);
-  bool clash = paths_.contains(std::string{path}) ||
-               (inside != paths_.end() && inside->starts_with(folder));
+  bool clash =
+      paths_.contains(std::string{path}) || (inside != paths_.end() && inside->starts_with(folder));
   for (std::size_t slash = path.find('/'); slash != std::string_view::npos && !clash;
        slash = path.find('/', slash + 1)) {
     clash = paths_.contains(std::string{path.substr(0, slash)});

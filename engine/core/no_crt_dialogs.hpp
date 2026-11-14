@@ -1,8 +1,9 @@
 #pragma once
 
 #if defined(_MSC_VER)
-#include <crtdbg.h>
 #include <cstdlib>
+
+#include <crtdbg.h>
 #endif
 
 namespace vnmaki {

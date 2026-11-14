@@ -1,6 +1,8 @@
 // Self-voicing (docs/SPEC.md section 17) without a window or a voice: a recording backend gets the
 // exact strings of scripted sessions. Time stands still; a frame is presenter, sync, voicing.
 
+#include "engine/ui/self_voicing.hpp"
+
 #include <cstddef>
 #include <filesystem>
 #include <memory>
@@ -24,7 +26,6 @@
 #include "engine/saves/persistent_store.hpp"
 #include "engine/ui/preferences.hpp"
 #include "engine/ui/screen_presenter.hpp"
-#include "engine/ui/self_voicing.hpp"
 #include "engine/ui/ui_host.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/support/memory_vfs.hpp"
@@ -82,9 +83,7 @@ struct Game {
   Game& operator=(const Game&) = delete;
   Game(Game&&) = delete;
   Game& operator=(Game&&) = delete;
-  ~Game() {
-    std::filesystem::remove_all(directory);
-  }
+  ~Game() { std::filesystem::remove_all(directory); }
 
   void frame() {
     presenter->update(kReveal);
@@ -271,8 +270,7 @@ TEST_CASE("self-voicing: a language is spoken in its own text") {
   game.press(Key::kSpace);  // advances the narration (no entry: the source text) to the menu
 
   CHECK(game.tts.spoken == Strings{
-                               "Alice: Konnichiwa koko.",
-                               "The door opens.",
+                               "Alice: Konnichiwa koko.", "The door opens.",
                                "Choose. Todomaru. Go",  // the focus follows silently
                            });
 }

@@ -1,9 +1,9 @@
 #include "engine/text/text.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <array>
 #include <bit>
+#include <cctype>
 #include <climits>
 #include <cmath>
 #include <cstddef>
@@ -803,8 +803,8 @@ class Paragraphs {
   /// starts `along` pixels down. An upright glyph is centred on the line by its offsets; a
   /// turned one has its em box centred on it.
   [[nodiscard]] static PointF column_origin(const Shaped& glyph, float centre, float along) {
-    const float baseline = glyph.sideways ? centre - glyph.ascent + (glyph.line_height * kHalf)
-                                          : centre;
+    const float baseline =
+        glyph.sideways ? centre - glyph.ascent + (glyph.line_height * kHalf) : centre;
     return {.x = baseline + glyph.x_offset, .y = along + glyph.y_offset};
   }
 
@@ -1365,9 +1365,9 @@ std::vector<Quad> text_quads(const TextLayout& layout, const GlyphAtlas& atlas, 
                    .width = width / atlas_width,
                    .height = height / atlas_height};
     if (!glyph.sideways) {
-      quads.push_back(quad_from_rect(
-          RectF{.x = x + left, .y = y - top, .width = width, .height = height}, uv,
-          glyph.color.value_or(tint)));
+      quads.push_back(
+          quad_from_rect(RectF{.x = x + left, .y = y - top, .width = width, .height = height}, uv,
+                         glyph.color.value_or(tint)));
       return;
     }
     // Turned 90 degrees clockwise about the origin: (dx, dy) goes to (-dy, dx), so the bitmap's

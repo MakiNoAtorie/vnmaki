@@ -125,9 +125,9 @@ const TextLayout& UiRenderer::layout(const UiNode& node, float wrap_width) {
       }
     }
   }
-  TextLayout laid_out = layout_text(
-      fonts_, styled, node.style.text_size, wrap_width,
-      node.style.vertical ? TextOrientation::kVertical : TextOrientation::kHorizontal);
+  TextLayout laid_out =
+      layout_text(fonts_, styled, node.style.text_size, wrap_width,
+                  node.style.vertical ? TextOrientation::kVertical : TextOrientation::kHorizontal);
   return layouts_.emplace(std::move(key), std::move(laid_out)).first->second;
 }
 

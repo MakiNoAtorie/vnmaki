@@ -616,8 +616,8 @@ std::vector<InputResult> read_inputs(Reader& in) {
     const std::uint64_t tag = in.unsigned_integer();
     if (tag == kMenuChoiceTag) {
       inputs.emplace_back(
-          MenuChoice{.index = static_cast<std::size_t>(in.bounded(
-                         std::numeric_limits<std::uint32_t>::max(), "a menu choice"))});
+          MenuChoice{.index = static_cast<std::size_t>(
+                         in.bounded(std::numeric_limits<std::uint32_t>::max(), "a menu choice"))});
     } else if (tag == kScreenResultTag) {
       inputs.emplace_back(ScreenResult{.value = read_screen_value(in)});
     } else if (tag == kStoreWriteTag) {

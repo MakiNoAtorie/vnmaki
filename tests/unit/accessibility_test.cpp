@@ -412,8 +412,7 @@ TEST_CASE("text scale: the preference is clamped and the host scales every scree
 
 TEST_CASE("text scale: a line that fitted wraps, and the layout reflows") {
   vnmaki::Vfs vfs;
-  REQUIRE(
-      vfs.mount(vnmaki::make_directory_mount(fs::path{VNMAKI_FIXTURES_DIR} / "text")));
+  REQUIRE(vfs.mount(vnmaki::make_directory_mount(fs::path{VNMAKI_FIXTURES_DIR} / "text")));
   const vnmaki::Font font = vnmaki::load_font(vfs, "fonts/boxes.ttf");
   vnmaki::test::RecordingRenderer renderer;
   vnmaki::UiRenderer ui{renderer, font};
@@ -437,9 +436,9 @@ TEST_CASE("text scale: a line that fitted wraps, and the layout reflows") {
 
 TEST_CASE("text scale: the say screen grows its box and moves the line down") {
   Game game{"say_scale", kStory};
-  const vnmaki::ScreenNodeDef args{.kind = "args",
-                                   .props = {{"speaker", std::string{"Eileen"}},
-                                             {"text", std::string{"Hello"}}}};
+  const vnmaki::ScreenNodeDef args{
+      .kind = "args",
+      .props = {{"speaker", std::string{"Eileen"}}, {"text", std::string{"Hello"}}}};
   UiNode plain = game.build("say", args);
   vnmaki::layout_tree(plain, kCanvas, vnmaki::estimate_text_size);
   const UiNode* plain_line = find_node(plain, [](const UiNode& n) { return n.reveal; });
@@ -450,8 +449,10 @@ TEST_CASE("text scale: the say screen grows its box and moves the line down") {
   vnmaki::layout_tree(big, kCanvas, vnmaki::estimate_text_size);
   const UiNode* big_line = find_node(big, [](const UiNode& n) { return n.reveal; });
   REQUIRE(big_line != nullptr);
-  const UiNode* panel = find_node(big, [](const UiNode& n) { return n.style.background.has_value(); });
-  const UiNode* plain_panel = find_node(plain, [](const UiNode& n) { return n.style.background.has_value(); });
+  const UiNode* panel =
+      find_node(big, [](const UiNode& n) { return n.style.background.has_value(); });
+  const UiNode* plain_panel =
+      find_node(plain, [](const UiNode& n) { return n.style.background.has_value(); });
   REQUIRE(panel != nullptr);
   REQUIRE(plain_panel != nullptr);
   CHECK(panel->rect.height > plain_panel->rect.height);
@@ -462,8 +463,7 @@ TEST_CASE("text scale: the say screen grows its box and moves the line down") {
 
 TEST_CASE("text scale: the say box draws bigger glyphs") {
   vnmaki::Vfs vfs;
-  REQUIRE(
-      vfs.mount(vnmaki::make_directory_mount(fs::path{VNMAKI_FIXTURES_DIR} / "text")));
+  REQUIRE(vfs.mount(vnmaki::make_directory_mount(fs::path{VNMAKI_FIXTURES_DIR} / "text")));
   const vnmaki::Font font = vnmaki::load_font(vfs, "fonts/boxes.ttf");
   vnmaki::test::RecordingRenderer renderer;
   vnmaki::SayBoxView view{renderer, font, vnmaki::SayBoxStyle::for_resolution(kCanvas)};
@@ -505,8 +505,9 @@ TEST_CASE("preferences screen: the accessibility controls are bound to the prefe
   const UiNode* size = game.node("preferences", "Text size");
   REQUIRE(size != nullptr);
   game.click(center_of(*size));  // the middle of 0.75 to 2
-  CHECK(game.number("text_scale") ==
-        doctest::Approx((vnmaki::kMinTextScale + vnmaki::kMaxTextScale) / kDoubled).epsilon(kTenth));
+  CHECK(
+      game.number("text_scale") ==
+      doctest::Approx((vnmaki::kMinTextScale + vnmaki::kMaxTextScale) / kDoubled).epsilon(kTenth));
 
   // The screen fits the canvas.
   const UiNode* root = game.host.find("preferences");
@@ -575,8 +576,7 @@ TEST_CASE("high contrast: a game without styles/high_contrast.lua gets a warning
 
 TEST_CASE("dyslexia font: it comes first, and the old fonts follow as fallbacks") {
   vnmaki::Vfs vfs;
-  REQUIRE(
-      vfs.mount(vnmaki::make_directory_mount(fs::path{VNMAKI_FIXTURES_DIR} / "text")));
+  REQUIRE(vfs.mount(vnmaki::make_directory_mount(fs::path{VNMAKI_FIXTURES_DIR} / "text")));
   const vnmaki::Font regular = vnmaki::load_font(vfs, "fonts/boxes.ttf");
   const vnmaki::Font dyslexia = vnmaki::load_font(vfs, "fonts/boxes_bold.ttf");
   const vnmaki::Font greek = vnmaki::load_font(vfs, "fonts/fallback.ttf");
@@ -606,11 +606,11 @@ TEST_CASE("dyslexia font: the template has fonts/dyslexia.otf, and it loads") {
   const vnmaki::Font regular = vnmaki::load_font(vfs, "fonts/default.ttf");
   const vnmaki::Font dyslexia = vnmaki::load_font(vfs, "fonts/dyslexia.otf");
   const vnmaki::FontSet set = vnmaki::with_dyslexia_font({.base = {.regular = &regular}}, dyslexia);
-  const vnmaki::TextLayout wide = vnmaki::layout_text(set, vnmaki::plain_text("Hello"), kTextSize,
-                                                      kFlatWidth);
-  const vnmaki::TextLayout narrow = vnmaki::layout_text(
-      vnmaki::FontSet{.base = {.regular = &regular}}, vnmaki::plain_text("Hello"), kTextSize,
-      kFlatWidth);
+  const vnmaki::TextLayout wide =
+      vnmaki::layout_text(set, vnmaki::plain_text("Hello"), kTextSize, kFlatWidth);
+  const vnmaki::TextLayout narrow =
+      vnmaki::layout_text(vnmaki::FontSet{.base = {.regular = &regular}},
+                          vnmaki::plain_text("Hello"), kTextSize, kFlatWidth);
   CHECK(wide.lines.front().width > narrow.lines.front().width);  // OpenDyslexic is wider
 }
 
@@ -686,10 +686,11 @@ TEST_CASE("reduce motion: a bad option is still an error, and a mask is not need
 namespace {
 
 vnmaki::Vfs sound_files(const std::string& script) {
-  return vnmaki::test::memory_vfs({{"scripts/main.lua", script},
-                                   {"audio/sfx/door.wav", vnmaki::test::audio_fixture("tone.wav")},
-                                   {"audio/bgm/theme.wav", vnmaki::test::audio_fixture("long.wav")},
-                                   {"audio/bgm/night.wav", vnmaki::test::audio_fixture("long.wav")}});
+  return vnmaki::test::memory_vfs(
+      {{"scripts/main.lua", script},
+       {"audio/sfx/door.wav", vnmaki::test::audio_fixture("tone.wav")},
+       {"audio/bgm/theme.wav", vnmaki::test::audio_fixture("long.wav")},
+       {"audio/bgm/night.wav", vnmaki::test::audio_fixture("long.wav")}});
 }
 
 constexpr const char* kSoundStory = R"(

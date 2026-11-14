@@ -1695,11 +1695,11 @@ std::vector<std::byte> Scene::capture() const {
       const Entry& entry = shown.at(index);
       const auto* movie = dynamic_cast<const MovieDisplayable*>(entry.displayable.get());
       if (movie == nullptr) {
-        scenes_before += dynamic_cast<const Scene3dDisplayable*>(entry.displayable.get()) != nullptr ||
-                                 dynamic_cast<const PluginDisplayable*>(entry.displayable.get()) !=
-                                     nullptr
-                             ? 1
-                             : 0;
+        scenes_before +=
+            dynamic_cast<const Scene3dDisplayable*>(entry.displayable.get()) != nullptr ||
+                    dynamic_cast<const PluginDisplayable*>(entry.displayable.get()) != nullptr
+                ? 1
+                : 0;
         continue;
       }
       movies.u8(static_cast<std::uint8_t>(layer));
@@ -2409,10 +2409,10 @@ void Scene::prepare(IRenderer& renderer, JobSystem& jobs) {
       }
       if (auto* plugin = dynamic_cast<PluginDisplayable*>(entry.displayable.get())) {
         if (plugin_white_ == TextureId{}) {
-          plugin_white_ = renderer.create_texture(
-              Image{.size = {.width = 1, .height = 1},
-                    .pixels = {kOpaque, kOpaque, kOpaque, kOpaque}},
-              TextureFilter::kNearest);
+          plugin_white_ =
+              renderer.create_texture(Image{.size = {.width = 1, .height = 1},
+                                            .pixels = {kOpaque, kOpaque, kOpaque, kOpaque}},
+                                      TextureFilter::kNearest);
         }
         plugin->set_white_texture(plugin_white_);
         continue;

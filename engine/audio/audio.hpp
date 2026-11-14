@@ -121,10 +121,7 @@ struct AudioChannelState {
 ///
 /// Call the commands, update() and restore() from one thread. With a device, mixing runs on the
 /// device's thread; the state queries may be called from any thread.
-class Audio final : public SceneState,
-                    public AudioCommands,
-                    public MovieAudio,
-                    public VoiceLevel {
+class Audio final : public SceneState, public AudioCommands, public MovieAudio, public VoiceLevel {
  public:
   /// `vfs` must outlive this. Throws AudioError when the output device cannot be opened, and
   /// for any output but kManual in a build without threads (see device_supported()).

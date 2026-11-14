@@ -114,9 +114,8 @@ TEST_CASE("inspect: a table that two fields share is expanded once") {
   TemplateGame game;
   REQUIRE(game.runtime().eval("local t = { n = 1 }; store.a = t; store.b = t").ok);
   const std::vector<StoreRow> rows = vnmaki::inspect_store(game.runtime());
-  const auto expanded = std::ranges::count_if(rows, [](const StoreRow& row) {
-    return row.key == "n";
-  });
+  const auto expanded =
+      std::ranges::count_if(rows, [](const StoreRow& row) { return row.key == "n"; });
   CHECK(expanded == 1);
   const StoreRow* a = find_row(rows, "a");
   const StoreRow* b = find_row(rows, "b");
@@ -174,10 +173,10 @@ TEST_CASE("inspect: displayable properties, and an edit is live but not in the s
 
   CHECK(vnmaki::set_property(scene, "eileen", "alpha", kTooBig).empty());
   CHECK(property(scene, "eileen", "alpha") == doctest::Approx(1));  // kept in [0, 1]
-  CHECK(vnmaki::set_property(scene, "eileen", "bogus", 1).find("no property") !=
-        std::string::npos);
+  CHECK(vnmaki::set_property(scene, "eileen", "bogus", 1).find("no property") != std::string::npos);
   CHECK_FALSE(vnmaki::set_property(scene, "nobody", "x", 1).empty());
-  CHECK_FALSE(vnmaki::set_property(scene, "eileen", "x", std::numeric_limits<double>::infinity()).empty());
+  CHECK_FALSE(
+      vnmaki::set_property(scene, "eileen", "x", std::numeric_limits<double>::infinity()).empty());
 }
 
 TEST_CASE("inspect: a rollback brings back a property that was edited") {
@@ -242,7 +241,8 @@ TEST_CASE("inspect: labels, and Jump starts a label at step 1") {
     names.push_back(label.name);
     CHECK(label.current == (label.name == "classroom"));
   }
-  CHECK(names == std::vector<std::string>{"classroom", "cold", "content", "presentation", "start", "warm"});
+  CHECK(names ==
+        std::vector<std::string>{"classroom", "cold", "content", "presentation", "start", "warm"});
 
   REQUIRE(runtime.store_snapshot().tables.size() >= 1);
   CHECK(vnmaki::jump_to_label(runtime, "cold").empty());

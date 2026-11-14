@@ -1,11 +1,11 @@
 #include "engine/render/image.hpp"
 
+#include <algorithm>
+#include <array>
 #include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <algorithm>
-#include <array>
 #include <map>
 #include <memory>
 #include <mutex>

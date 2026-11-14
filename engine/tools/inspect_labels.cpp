@@ -1,11 +1,11 @@
-#include "engine/tools/inspect.hpp"
-
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include "engine/tools/inspect.hpp"
 
 namespace vnmaki {
 
@@ -49,9 +49,8 @@ std::string jump_to_label(ScriptRuntime& runtime, std::string_view label, std::u
   if (runtime.state() != RunState::kFailed) {
     return {};
   }
-  std::string problem =
-      "'" + std::string{label} + "' did not reach step " + std::to_string(step) + ": " +
-      runtime.error();
+  std::string problem = "'" + std::string{label} + "' did not reach step " + std::to_string(step) +
+                        ": " + runtime.error();
   if (can_go_back) {
     runtime.replay(before, inputs, step_before);
     if (runtime.state() == RunState::kFailed) {

@@ -83,9 +83,9 @@ class PakMount final : public VfsMount {
   [[nodiscard]] std::vector<std::byte> read_range(std::uint64_t offset, std::uint64_t size) const;
   [[nodiscard]] const Entry* find(std::string_view path) const;
 
-  std::filesystem::path file_{};            ///< Empty for a pak in memory.
-  std::vector<std::byte> memory_{};         ///< The pak, when `file_` is empty.
-  std::vector<Entry> entries_{};            ///< Sorted by path.
+  std::filesystem::path file_{};     ///< Empty for a pak in memory.
+  std::vector<std::byte> memory_{};  ///< The pak, when `file_` is empty.
+  std::vector<Entry> entries_{};     ///< Sorted by path.
   std::map<std::string, std::vector<VfsEntry>, std::less<>> children_{};  ///< By directory.
 };
 

@@ -6,9 +6,9 @@
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
-#include <set>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -155,8 +155,8 @@ bool add_language(std::vector<std::string>& lines, const std::string& language) 
 
 void add_keys(std::vector<std::string>& lines, const std::string& header,
               const std::vector<std::string>& keys) {
-  auto at = std::ranges::find_if(
-      lines, [&](const std::string& line) { return trimmed(line) == header; });
+  auto at =
+      std::ranges::find_if(lines, [&](const std::string& line) { return trimmed(line) == header; });
   if (at == lines.end()) {
     lines.emplace_back();
     lines.push_back(header);

@@ -21,8 +21,8 @@ constexpr const char* kName = "\xE7\x94\xB0\xE4\xB8\xAD";
 }  // namespace
 
 TEST_CASE("utf8_path: a name outside the ANSI code page is made and found on disk") {
-  const fs::path folder = vnmaki::test::unique_temp_path("vnmaki_utf8_", "dir") /
-                          vnmaki::utf8_path(kName);
+  const fs::path folder =
+      vnmaki::test::unique_temp_path("vnmaki_utf8_", "dir") / vnmaki::utf8_path(kName);
   fs::remove_all(folder);
   fs::create_directories(folder);
   std::ofstream{folder / vnmaki::utf8_path(std::string{kName} + ".txt")} << "x";

@@ -164,8 +164,7 @@ std::map<std::string, bool> read_vertical(const toml::node& node,
   for (auto&& [key, value] : *table) {
     const std::string language{key.str()};
     if (std::ranges::find(languages, language) == languages.end()) {
-      fail_at(value,
-              "'vertical' has language '" + language + "', which 'languages' does not list");
+      fail_at(value, "'vertical' has language '" + language + "', which 'languages' does not list");
     }
     const std::optional<bool> flag = value.value_exact<bool>();
     if (!flag) {
@@ -234,11 +233,10 @@ std::vector<std::string> read_plugins(const toml::node& node) {
   for (const toml::node& element : *array) {
     const std::optional<std::string> name = element.value_exact<std::string>();
     // A plugin is the folder plugins/<name>, so the name is one path part.
-    const bool plain = name && !name->empty() &&
-                       std::ranges::all_of(*name, [](char c) {
-                         return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' ||
-                                c == '-';
-                       });
+    const bool plain =
+        name && !name->empty() && std::ranges::all_of(*name, [](char c) {
+          return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+        });
     if (!plain) {
       fail_at(element, "a plugin name has only the characters a-z, 0-9, '_' and '-'");
     }
@@ -263,9 +261,9 @@ std::size_t read_count(const toml::node& node, std::string_view key) {
 
 bool is_language_code(std::string_view language) {
   return !language.empty() && std::ranges::all_of(language, [](char c) {
-           return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-                  c == '-' || c == '_';
-         });
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
+           c == '_';
+  });
 }
 
 ProjectConfig parse_project_config(std::string_view toml_text) {

@@ -52,7 +52,7 @@ constexpr double kSecond = 1.0;
 constexpr double kTwoSeconds = 2.0;
 constexpr double kSeventh = 1.0 / 7.0;
 constexpr double kSixtieth = 1.0 / 60.0;
-constexpr float kStrengthPixels = 8;  // 0.25 of the virtual height
+constexpr float kStrengthPixels = 8;         // 0.25 of the virtual height
 constexpr std::uint32_t kFormatVersion = 2;  // of Scene::capture()
 
 // --- The view --------------------------------------------------------------------------------
@@ -516,8 +516,9 @@ end)
 }
 
 TEST_CASE("script: without prefs, or without the key, or with it off, motion is not reduced") {
-  for (const std::string_view prefs : {"", "persistent.prefs = {}", "persistent.prefs = {"
-                                                                    " reduce_motion = false }",
+  for (const std::string_view prefs : {"", "persistent.prefs = {}",
+                                       "persistent.prefs = {"
+                                       " reduce_motion = false }",
                                        "persistent.prefs = 7"}) {
     CAPTURE(prefs);
     Stage stage{"label(\"start\", function()\n" + std::string{prefs} +

@@ -6,10 +6,10 @@
 //
 // Codes. Errors: `lua-syntax`, `unknown-label`, `bad-text-tag`, `missing-image`, `missing-audio`,
 // `missing-movie`, `po-syntax` and `bad-translation-tag` (a translation in `translations/*.po`
-// that is in use, not fuzzy, whose text tags do not parse). Warnings: `unreachable-label`, `dead-end`,
-// `dynamic-edge`, `project-config` and `non-literal-string` (the text of `say` or `narrate`, a
-// `menu` option or a screen `text` or `button` that is not a string literal, so `vnmaki
-// extract-strings` skips it).
+// that is in use, not fuzzy, whose text tags do not parse). Warnings: `unreachable-label`,
+// `dead-end`, `dynamic-edge`, `project-config` and `non-literal-string` (the text of `say` or
+// `narrate`, a `menu` option or a screen `text` or `button` that is not a string literal, so
+// `vnmaki extract-strings` skips it).
 
 #include <cstdint>
 #include <span>

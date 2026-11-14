@@ -183,9 +183,8 @@ TEST_CASE("say box: a vertical line runs in columns from the right, and Latin le
   REQUIRE(
       vfs.mount(vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_FIXTURES_DIR} / "text")));
   const vnmaki::Font font = vnmaki::load_font(vfs, "fonts/boxes.ttf");
-  const vnmaki::DialogueLine line{.speaker = "Eileen",
-                                  .color = std::optional<std::uint32_t>{kLilac},
-                                  .text = kVerticalLine};
+  const vnmaki::DialogueLine line{
+      .speaker = "Eileen", .color = std::optional<std::uint32_t>{kLilac}, .text = kVerticalLine};
 
   const vnmaki::TextureId target =
       renderer->create_render_target(kTargetSize, vnmaki::TextureFilter::kNearest);
@@ -210,9 +209,8 @@ TEST_CASE("say box: a vertical screen from a script draws like the built-in box"
   REQUIRE(
       vfs.mount(vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_FIXTURES_DIR} / "text")));
   const vnmaki::Font font = vnmaki::load_font(vfs, "fonts/boxes.ttf");
-  const vnmaki::DialogueLine line{.speaker = "Eileen",
-                                  .color = std::optional<std::uint32_t>{kLilac},
-                                  .text = kVerticalLine};
+  const vnmaki::DialogueLine line{
+      .speaker = "Eileen", .color = std::optional<std::uint32_t>{kLilac}, .text = kVerticalLine};
 
   const vnmaki::TextureId target =
       renderer->create_render_target(kTargetSize, vnmaki::TextureFilter::kNearest);

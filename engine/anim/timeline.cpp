@@ -269,13 +269,13 @@ std::vector<TweenInfo> Timeline::active() const {
       if (leaf.done && running.period <= 0) {
         continue;
       }
-      TweenInfo info{.tag = leaf.tag,
-                     .elapsed = std::max(0.0, running.elapsed - running.delay - leaf.begin -
-                                                  leaf.delay),
-                     .duration = leaf.duration,
-                     .loop = leaf.loop || running.period > 0,
-                     .yoyo = leaf.yoyo,
-                     .ease = leaf.ease};
+      TweenInfo info{
+          .tag = leaf.tag,
+          .elapsed = std::max(0.0, running.elapsed - running.delay - leaf.begin - leaf.delay),
+          .duration = leaf.duration,
+          .loop = leaf.loop || running.period > 0,
+          .yoyo = leaf.yoyo,
+          .ease = leaf.ease};
       for (std::size_t channel = 0; channel < kChannelCount; ++channel) {
         if (leaf.to.at(channel).has_value()) {
           info.channels.push_back(channel);

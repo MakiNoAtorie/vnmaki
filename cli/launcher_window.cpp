@@ -55,8 +55,8 @@ void draw_launcher(Launcher& launcher, std::array<char, kFolderBytes>& folder,
   const ImGuiViewport* viewport = ImGui::GetMainViewport();
   ImGui::SetNextWindowPos(viewport->Pos);
   ImGui::SetNextWindowSize(viewport->Size);
-  constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-                                      ImGuiWindowFlags_NoSavedSettings;
+  constexpr ImGuiWindowFlags kFlags =
+      ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
   ImGui::Begin("Launcher", nullptr, kFlags);
 
   ImGui::TextUnformatted("Project folder");

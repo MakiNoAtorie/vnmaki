@@ -108,10 +108,9 @@ std::vector<LoadSample> Profiler::loads() const {
 std::vector<LoadSample> Profiler::slowest_loads(std::size_t count) const {
   std::vector<LoadSample> sorted = loads();
   const std::size_t kept = std::min(count, sorted.size());
-  std::ranges::partial_sort(sorted, sorted.begin() + static_cast<std::ptrdiff_t>(kept),
-                            [](const LoadSample& a, const LoadSample& b) {
-                              return a.time > b.time;
-                            });
+  std::ranges::partial_sort(
+      sorted, sorted.begin() + static_cast<std::ptrdiff_t>(kept),
+      [](const LoadSample& a, const LoadSample& b) { return a.time > b.time; });
   sorted.resize(kept);
   return sorted;
 }
@@ -120,11 +119,11 @@ void Profiler::write_frames_csv(std::ostream& out) const {
   out << "frame,events_us,update_us,prepare_us,draw_us,total_us,updates,passes,quads,draw_calls,"
          "texture_bytes,target_bytes,textures,targets\n";
   for (const FrameSample& f : frames_) {
-    out << f.frame << ',' << micros(f.events) << ',' << micros(f.update) << ','
-        << micros(f.prepare) << ',' << micros(f.draw) << ',' << micros(f.total()) << ','
-        << f.updates << ',' << f.gpu.passes << ',' << f.gpu.quads << ',' << f.gpu.draw_calls << ','
-        << f.memory.texture_bytes << ',' << f.memory.target_bytes << ',' << f.memory.textures
-        << ',' << f.memory.targets << '\n';
+    out << f.frame << ',' << micros(f.events) << ',' << micros(f.update) << ',' << micros(f.prepare)
+        << ',' << micros(f.draw) << ',' << micros(f.total()) << ',' << f.updates << ','
+        << f.gpu.passes << ',' << f.gpu.quads << ',' << f.gpu.draw_calls << ','
+        << f.memory.texture_bytes << ',' << f.memory.target_bytes << ',' << f.memory.textures << ','
+        << f.memory.targets << '\n';
   }
 }
 
@@ -136,10 +135,11 @@ void Profiler::write_loads_csv(std::ostream& out) const {
 }
 
 std::string Profiler::write_csv_files(const std::filesystem::path& frames_csv) const {
-  std::string problem = write_file(frames_csv, [this](std::ostream& out) { write_frames_csv(out); });
+  std::string problem =
+      write_file(frames_csv, [this](std::ostream& out) { write_frames_csv(out); });
   if (problem.empty()) {
-    problem = write_file(loads_csv_path(frames_csv),
-                         [this](std::ostream& out) { write_loads_csv(out); });
+    problem =
+        write_file(loads_csv_path(frames_csv), [this](std::ostream& out) { write_loads_csv(out); });
   }
   return problem;
 }

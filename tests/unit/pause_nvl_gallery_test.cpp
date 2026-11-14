@@ -54,7 +54,7 @@ constexpr double kHalfSecond = 0.5;
 constexpr double kLongPause = 100;
 constexpr std::size_t kGlyphs = 20;
 constexpr std::size_t kGalleryImages = 3;
-constexpr double kFrame = 1;  // the playback frames below are as long as a second
+constexpr double kFrame = 1;              // the playback frames below are as long as a second
 constexpr std::uint8_t kLilacRed = 0xc8;  // 0xc8a2c8, the colour of the NVL test character
 constexpr std::uint8_t kLilacGreen = 0xa2;
 constexpr std::uint8_t kLilacBlue = 0xc8;
@@ -145,12 +145,11 @@ struct Game {
   Game(const std::string& name, const char* script, std::vector<std::string> gallery = {})
       : dir(name),
         vfs(vnmaki::test::memory_vfs({{"scripts/main.lua", script}})),
-        runtime(vfs,
-                {.scene = &scene,
-                 .screens = &host,
-                 .gallery = std::move(gallery),
-                 .canvas_width = kCanvas.width,
-                 .canvas_height = kCanvas.height}),
+        runtime(vfs, {.scene = &scene,
+                      .screens = &host,
+                      .gallery = std::move(gallery),
+                      .canvas_width = kCanvas.width,
+                      .canvas_height = kCanvas.height}),
         persistent(runtime, dir.path(), [this](std::string_view m) { warnings.emplace_back(m); }),
         saves(start(), {.directory = dir.path()}),
         screens(runtime, host),
@@ -158,8 +157,7 @@ struct Game {
                 {.on_warning = [this](std::string_view m) { warnings.emplace_back(m); }}),
         waits(runtime, scene),
         dialogue(runtime, [](const vnmaki::DialogueLine&) { return kGlyphs; }),
-        playback(runtime, dialogue, persistent,
-                 {.skip_wait = [this] { return waits.skip(); }}) {
+        playback(runtime, dialogue, persistent, {.skip_wait = [this] { return waits.skip(); }}) {
     screens.set_action_handler(
         [this](const vnmaki::ScreenActivation& a) { return actions.handle(a); });
   }
@@ -267,7 +265,8 @@ TEST_CASE("pause: it is a wait step that ends when its seconds have passed") {
   game.runtime.advance();
 
   REQUIRE(game.at() == "pause");
-  CHECK(game.runtime.position() == vnmaki::ScriptPosition{.label = "start", .step = 2, .wait = true});
+  CHECK(game.runtime.position() ==
+        vnmaki::ScriptPosition{.label = "start", .step = 2, .wait = true});
   CHECK(std::get<vnmaki::WaitRequest>(*game.runtime.request()).seconds == 2);
   CHECK(game.waits.waiting());
   CHECK_FALSE(game.waits.update(kSecond));
@@ -334,11 +333,10 @@ TEST_CASE("pause: rollback goes over it like over a wait, and replay does not wa
 
 TEST_CASE("pause: the headless runner prints it and does not wait; a bad argument is an error") {
   const vnmaki::Vfs vfs = vnmaki::test::memory_vfs({{"scripts/main.lua", kPauseStory}});
-  const vnmaki::HeadlessResult result = vnmaki::run_headless(vfs, std::vector{vnmaki::ScriptInput{
-                                                                      vnmaki::AdvanceInput{}}});
-  CHECK(result.transcript ==
-        Texts{"label start", "narrate a", "pause 2", "narrate b", "pause 0.5", "pause 1",
-              "narrate c"});
+  const vnmaki::HeadlessResult result =
+      vnmaki::run_headless(vfs, std::vector{vnmaki::ScriptInput{vnmaki::AdvanceInput{}}});
+  CHECK(result.transcript == Texts{"label start", "narrate a", "pause 2", "narrate b", "pause 0.5",
+                                   "pause 1", "narrate c"});
 
   Game bad{"pause_bad", R"(
 label("start", function()
@@ -567,9 +565,9 @@ TEST_CASE("gallery screen: mouse, keyboard and gamepad open an image and close i
 
   const auto viewed = [&game]() -> std::string {  // the image of the view, "" if none is shown
     UiNode* view = game.host.find("gallery_view");
-    const UiNode* picture =
-        view == nullptr ? nullptr
-                        : find_node(*view, [](const UiNode& n) { return n.kind == NodeKind::kImage; });
+    const UiNode* picture = view == nullptr ? nullptr : find_node(*view, [](const UiNode& n) {
+      return n.kind == NodeKind::kImage;
+    });
     return picture == nullptr ? std::string{} : picture->text;
   };
 
@@ -618,6 +616,7 @@ TEST_CASE("gallery screen: the title screen offers it only when the game has a g
 
   // With no images the gallery says so, and still has a way back.
   REQUIRE(without.actions.open("gallery", {}, true).empty());
-  CHECK(find_node(*without.host.find("gallery"),
-                  [](const UiNode& n) { return n.text == "This game has no gallery."; }) != nullptr);
+  CHECK(find_node(*without.host.find("gallery"), [](const UiNode& n) {
+          return n.text == "This game has no gallery.";
+        }) != nullptr);
 }

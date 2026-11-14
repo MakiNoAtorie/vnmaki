@@ -257,8 +257,8 @@ TEST_CASE("launcher: New, Check and Build windows on one temporary folder") {
   CHECK(fs::is_regular_file(out / "game.vnpak"));
   const std::unique_ptr<vnmaki::PakMount> pak = vnmaki::PakMount::open(out / "game.vnpak");
   REQUIRE(pak != nullptr);
-  for (const char* path : {"project.toml", "scripts/main.lua", "scripts/ui.lua",
-                           "images/bg/classroom.png"}) {
+  for (const char* path :
+       {"project.toml", "scripts/main.lua", "scripts/ui.lua", "images/bg/classroom.png"}) {
     CHECK_MESSAGE(pak->is_file(path), path);
   }
   CHECK_FALSE(pak->is_file(".vnmaki/windows/game.vnpak"));  // the output is not packed into itself
@@ -267,7 +267,8 @@ TEST_CASE("launcher: New, Check and Build windows on one temporary folder") {
   CHECK(launcher.recent().list().front() == game);
 }
 
-TEST_CASE("launcher: New with a language add-on makes the Japanese game; an unknown one writes nothing") {
+TEST_CASE(
+    "launcher: New with a language add-on makes the Japanese game; an unknown one writes nothing") {
   const TempDir temp{"addon"};
   FakeHost fake;
   Launcher launcher{RecentProjects{temp.path() / "recent.txt"}, fake.host()};
@@ -315,10 +316,9 @@ TEST_CASE("launcher: an empty folder is a usage error and runs nothing") {
   const TempDir temp{"empty"};
   FakeHost fake;
   Launcher launcher{RecentProjects{temp.path() / "recent.txt"}, fake.host()};
-  for (const LauncherAction action :
-       {LauncherAction::kNew, LauncherAction::kRun, LauncherAction::kCheck,
-        LauncherAction::kExtractStrings, LauncherAction::kBuildWindows,
-        LauncherAction::kOpenFolder}) {
+  for (const LauncherAction action : {LauncherAction::kNew, LauncherAction::kRun,
+                                      LauncherAction::kCheck, LauncherAction::kExtractStrings,
+                                      LauncherAction::kBuildWindows, LauncherAction::kOpenFolder}) {
     CHECK(launcher.run(action, "") == 2);
   }
   CHECK(fake.spawned.empty());

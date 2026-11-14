@@ -87,17 +87,17 @@ TEST_CASE("check: a syntax error does not hide the other findings") {
 TEST_CASE("check: a string that is not a literal gives a warning") {
   const std::vector<Finding> findings = check(
       "screen 'hud' { text { title }, button { 'Ok' }, text { 'Hi' .. name } }\n"  // 1
-      "label('start', function()\n"                                                 // 2
-      "  say('A', line)\n"                                                          // 3
-      "  narrate(line .. 'x')\n"                                                    // 4
-      "  say('A', 'ok') narrate('ok')\n"                                            // 5
-      "  menu { 'Yes', no, 'M' .. x }\n"                                            // 6
-      "  menu(options)\n"                                                           // 7
+      "label('start', function()\n"                                                // 2
+      "  say('A', line)\n"                                                         // 3
+      "  narrate(line .. 'x')\n"                                                   // 4
+      "  say('A', 'ok') narrate('ok')\n"                                           // 5
+      "  menu { 'Yes', no, 'M' .. x }\n"                                           // 6
+      "  menu(options)\n"                                                          // 7
       "end, { ending = true })\n");
   REQUIRE(findings.size() == 7);
   const std::vector<std::pair<std::uint32_t, std::string>> expected{
-      {1, "a text of screen 'hud'"}, {1, "a text of screen 'hud'"}, {3, "the text of say"},
-      {4, "the text of narrate"},    {6, "a menu option"},          {6, "a menu option"},
+      {1, "a text of screen 'hud'"},   {1, "a text of screen 'hud'"}, {3, "the text of say"},
+      {4, "the text of narrate"},      {6, "a menu option"},          {6, "a menu option"},
       {7, "the table of menu options"}};
   for (std::size_t i = 0; i < expected.size(); ++i) {
     CHECK(findings[i].code == "non-literal-string");
@@ -122,9 +122,9 @@ std::vector<Finding> check_translations(const std::string& po) {
 
 TEST_CASE("check: a translation whose tags do not parse is an error") {
   const std::vector<Finding> findings = check_translations(
-      "msgid \"\"\nmsgstr \"\"\n\n"                                  // 1-3
-      "msgctxt \"start/1\"\nmsgid \"a\"\nmsgstr \"{b}ok{/b}\"\n\n"   // 4-7
-      "msgctxt \"start/2\"\nmsgid \"b\"\nmsgstr \"x {wobble} y\"\n\n"  // 8-11
+      "msgid \"\"\nmsgstr \"\"\n\n"                                     // 1-3
+      "msgctxt \"start/1\"\nmsgid \"a\"\nmsgstr \"{b}ok{/b}\"\n\n"      // 4-7
+      "msgctxt \"start/2\"\nmsgid \"b\"\nmsgstr \"x {wobble} y\"\n\n"   // 8-11
       "#, fuzzy\nmsgctxt \"start/3\"\nmsgid \"c\"\nmsgstr \"{b}\"\n\n"  // 12-16
       "#~ msgctxt \"start/4\"\n#~ msgid \"d\"\n#~ msgstr \"{b}\"\n\n"   // 17-20
       "msgctxt \"screen/t/5\"\nmsgid \"e\"\nmsgstr \"{{x\"\n\n"         // 21-24

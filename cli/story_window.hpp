@@ -12,7 +12,7 @@
 namespace vnmaki {
 class DapChannel;
 class Vfs;
-}
+}  // namespace vnmaki
 
 namespace vnmaki::cli {
 
