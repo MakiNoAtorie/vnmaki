@@ -12,8 +12,14 @@ IncludeBlocks: Regroup
 IncludeCategories:
   - Regex: '^<[a-z_]+>$'
     Priority: 1
+  # Other Windows headers need windows.h first.
+  - Regex: '^<windows\.h>$'
+    Priority: 2
+    SortPriority: 2
   - Regex: '^<'
     Priority: 2
+    SortPriority: 3
   - Regex: '^"'
     Priority: 3
+    SortPriority: 4
 ...

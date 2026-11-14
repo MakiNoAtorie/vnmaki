@@ -9,8 +9,8 @@
 #ifdef _WIN32
 #include <cstddef>
 
-#include <shellapi.h>
 #include <windows.h>
+#include <shellapi.h>
 #endif
 
 namespace vnmaki {

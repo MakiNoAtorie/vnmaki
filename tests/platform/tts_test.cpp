@@ -6,8 +6,8 @@
 #include <memory>
 
 #ifdef _WIN32
-#include <sapi.h>
 #include <windows.h>
+#include <sapi.h>
 #endif
 
 #include <doctest/doctest.h>

@@ -7,8 +7,8 @@
 #include <string>
 #include <string_view>
 
-#include <sapi.h>
 #include <windows.h>
+#include <sapi.h>
 
 #include "engine/platform/tts.hpp"
 
