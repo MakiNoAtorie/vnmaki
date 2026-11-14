@@ -1,16 +1,18 @@
 Assets of this project
 =====================
 
-images/, audio/, models/, shaders/ and fonts/default.ttf were made by the script
-tools/generators/template_assets.py of VNMaki (https://github.com/MakiNoAtorie/vnmaki), from
-rectangles, ellipses and sine waves. No other artwork, music, voice or font file was used.
+images/, audio/, models/ and shaders/ were made by the script tools/generators/template_assets.py
+of VNMaki (https://github.com/MakiNoAtorie/vnmaki), from rectangles, ellipses and sine waves. No
+other artwork, music or voice file was used.
 
 movies/clip.webm is the tiny test clip of VNMaki (tests/fixtures/video/): six solid-color frames
 and a 440 Hz tone, AV1 and Opus in WebM. The ffmpeg command that made it is in
 tests/fixtures/video/README.md of the repository.
 
-They are dedicated to the public domain under CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/).
-You may use, change and sell them with your game, with no credit. Replace them with your own.
+Those files are dedicated to the public domain under CC0 1.0
+(https://creativecommons.org/publicdomain/zero/1.0/). You may use, change and sell them with your
+game, with no credit. Replace them with your own. The three fonts are not CC0: they are under the
+SIL Open Font License 1.1 (see below).
 
   images/bg/classroom.png            backdrop
   images/bg/rooftop.png              backdrop of the presentation demo
@@ -23,20 +25,39 @@ You may use, change and sell them with your game, with no credit. Replace them w
   models/arm.gltf                    a 3D arm: a bar with two joints and the clip "bend"
   shaders/sepia.frag.hlsl            a game shader
   movies/clip.webm                   a short movie
-  fonts/default.ttf                  5 by 7 pixel font, ASCII only
-  fonts/dyslexia.ttf                 PLACEHOLDER for the dyslexia-friendly font (see below)
+  fonts/default.ttf                  the text font: Noto Sans (OFL, see below)
+  fonts/NotoSansJP.ttf               the Japanese font, the fallback of "ja": Noto Sans JP (OFL)
+  fonts/dyslexia.otf                 the dyslexia-friendly font: OpenDyslexic (OFL)
+  licenses/                          the license text of each font
   styles/high_contrast.lua           the look of prefs.high_contrast, written for VNMaki
 
-fonts/dyslexia.ttf is the same pixel font as fonts/default.ttf with wider letter spacing. It is a
-placeholder, not a real dyslexia-friendly font: no such font with a suitable license is in this
-repository. Before you ship a game, replace it with a real font under the SIL Open Font License,
-for example OpenDyslexic (https://opendyslexic.org/), under the same name, and record its license
-here. The engine loads fonts/dyslexia.ttf when it exists and puts it first in the font chain while
-the player has "Dyslexia-friendly font" on.
+Fonts (SIL Open Font License 1.1, the texts are in licenses/). The fonts are committed files
+and are not made by the generator. You may use, change, embed and sell them with your game.
 
-translations/ja.po is the output of `vnmaki extract-strings`. It translates the narration of the label warm, the menu option that leads to the content demo and every line of the label content, to show the Japanese language, which is written in columns. With this font the lines show as boxes.
+  fonts/default.ttf       Noto Sans, a variable font, Copyright 2022 The Noto Project Authors.
+                          https://github.com/google/fonts/tree/main/ofl/notosans
+                          License: licenses/NotoSans-OFL.txt. No Reserved Font Name.
+  fonts/NotoSansJP.ttf    Noto Sans JP, a variable font, Copyright 2014-2021 Adobe.
+                          https://github.com/google/fonts/tree/main/ofl/notosansjp
+                          License: licenses/NotoSansJP-OFL.txt. Its Reserved Font Name is
+                          "Source", which the name "Noto Sans JP" does not use, so a subset of this
+                          font (see below) may keep its name.
+  fonts/dyslexia.otf      OpenDyslexic Regular, Copyright 2019 Abbie Gonzalez.
+                          https://github.com/antijingoist/opendyslexic (the folder compiled/)
+                          License: licenses/OpenDyslexic-OFL.txt. Reserved Font Name:
+                          "OpenDyslexic".
+
+The Reserved Font Name of OpenDyslexic means that a changed copy of the font must not be called
+OpenDyslexic. A font subset is a changed copy, so project.toml lists the font under
+[build.fonts] keep: `vnmaki build windows` and `vnmaki import` copy it unchanged, and do not make a
+subset for each language. Do the same for every font of your game that has a Reserved Font Name,
+and keep the license text of each font in your game. Noto Sans and Noto Sans JP may be subset.
+
+The engine loads fonts/dyslexia.otf (or fonts/dyslexia.ttf) and puts it first in the font chain
+while the player has "Dyslexia-friendly font" on. Japanese text uses fonts/NotoSansJP.ttf, which
+project.toml lists under [fonts.fallback] for "ja". Noto Sans also covers Latin, Greek and
+Cyrillic with accents. For a game in another language, add a font for it under [fonts.fallback].
+
+translations/ja.po is the output of `vnmaki extract-strings`. It translates the narration of the label warm, the menu option that leads to the content demo and every line of the label content, to show the Japanese language, which is written in columns.
 
 plugins/flash/ is a Lua plugin (the transition "flash") that was written for VNMaki. It is CC0 1.0 like the rest.
-
-The font has no accents or non-Latin letters. For a game in another language, use a font that
-has them, and list it under [fonts.fallback] in project.toml.

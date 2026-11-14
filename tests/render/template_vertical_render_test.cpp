@@ -2,7 +2,7 @@
 // on a real GPU device. The test does what the story window does for `--lang ja`: it reads
 // project.toml (`[vertical] ja = true`), takes the sample translation of translations/ja.po for a
 // narrated line, runs the default `say` screen with that language's styles, and draws it with the
-// template font. tools/generators/template_vertical_fixtures.py drew the golden image; its header
+// Greek-only font of the text fixtures (not the template's Noto fonts, see below). tools/generators/template_vertical_fixtures.py drew the golden image; its header
 // says what the golden proves.
 
 #include <cstddef>
@@ -70,7 +70,13 @@ TEST_CASE("template: the say box in vertical Japanese matches the golden") {
   REQUIRE(text == kJapanese);
   const vnmaki::DialogueLine line{.speaker = {}, .color = std::nullopt, .text = text};
 
-  const vnmaki::Font font = vnmaki::load_font(vfs, "fonts/default.ttf");
+  // The golden is drawn by the reference rasterizer, which knows only the fonts of text_fixtures.py
+  // (the template's Noto fonts have real glyphs). fallback.ttf, a Greek-only font, stands in for
+  // fonts/default.ttf: it has no kana, so every glyph of the line is its .notdef box.
+  vnmaki::Vfs font_vfs;
+  REQUIRE(font_vfs.mount(
+      vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_FIXTURES_DIR} / "text")));
+  const vnmaki::Font font = vnmaki::load_font(font_vfs, "fonts/fallback.ttf");
   vnmaki::SayBoxView view{*renderer, font, vnmaki::SayBoxStyle::for_resolution(kVirtualSize)};
   view.set_screen_source(
       [&](const vnmaki::DialogueLine& shown) -> std::optional<vnmaki::UiNode> {

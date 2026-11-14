@@ -599,19 +599,19 @@ TEST_CASE("dyslexia font: it comes first, and the old fonts follow as fallbacks"
         std::vector<const vnmaki::Font*>{&dyslexia, &greek});
 }
 
-TEST_CASE("dyslexia font: the template has fonts/dyslexia.ttf, and it loads") {
+TEST_CASE("dyslexia font: the template has fonts/dyslexia.otf, and it loads") {
   vnmaki::Vfs vfs;
   REQUIRE(vfs.mount(vnmaki::make_directory_mount(template_dir())));
-  REQUIRE(vfs.exists("fonts/dyslexia.ttf"));
+  REQUIRE(vfs.exists("fonts/dyslexia.otf"));
   const vnmaki::Font regular = vnmaki::load_font(vfs, "fonts/default.ttf");
-  const vnmaki::Font dyslexia = vnmaki::load_font(vfs, "fonts/dyslexia.ttf");
+  const vnmaki::Font dyslexia = vnmaki::load_font(vfs, "fonts/dyslexia.otf");
   const vnmaki::FontSet set = vnmaki::with_dyslexia_font({.base = {.regular = &regular}}, dyslexia);
   const vnmaki::TextLayout wide = vnmaki::layout_text(set, vnmaki::plain_text("Hello"), kTextSize,
                                                       kFlatWidth);
   const vnmaki::TextLayout narrow = vnmaki::layout_text(
       vnmaki::FontSet{.base = {.regular = &regular}}, vnmaki::plain_text("Hello"), kTextSize,
       kFlatWidth);
-  CHECK(wide.lines.front().width > narrow.lines.front().width);  // the wider spacing
+  CHECK(wide.lines.front().width > narrow.lines.front().width);  // OpenDyslexic is wider
 }
 
 TEST_CASE("dyslexia font: the preference reaches the callback when it changes") {

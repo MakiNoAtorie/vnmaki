@@ -6,6 +6,7 @@
 // window, no GPU). Each run checks the text that was spoken, the captions and the headless
 // transcript. The GPU goldens are in tests/render/content_render_test.cpp.
 
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -32,6 +33,7 @@
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/saves/persistent_store.hpp"
 #include "engine/scene/scene.hpp"
+#include "engine/text/text.hpp"
 #include "engine/ui/preferences.hpp"
 #include "engine/ui/screen_presenter.hpp"
 #include "engine/ui/self_voicing.hpp"
@@ -405,4 +407,43 @@ TEST_CASE("content: the headless transcript from packs, in both languages") {
   // Same commands in both: the 3D model, its clip and the transition of the plugin all ran.
   CHECK(transcript("en", kEnglish) == transcript_of(kEnglishTexts));
   CHECK(transcript("ja", kJapanese) == transcript_of(kJapaneseTexts));
+}
+
+// The font rules of the build: a language gets a subset of Noto Sans JP that still has the letters
+// of its strings, and OpenDyslexic, which has a Reserved Font Name, goes in as it is.
+TEST_CASE("content: the pack has the Japanese font subsets and OpenDyslexic unchanged") {
+  vnmaki::Vfs vfs;
+  REQUIRE(vnmaki::mount_game_packs(vfs, packed_game().packs()));
+  CHECK_FALSE(vfs.exists("fonts/NotoSansJP.ttf"));  // replaced by its subsets
+  REQUIRE(vfs.exists("fonts/NotoSansJP.ja.ttf"));
+  REQUIRE(vfs.exists("fonts/default.ja.ttf"));
+
+  std::ifstream in{fs::path{VNMAKI_TEMPLATES_DIR} / "default" / "fonts" / "dyslexia.otf",
+                   std::ios::binary};
+  const std::vector<char> original{std::istreambuf_iterator<char>{in}, {}};
+  REQUIRE_FALSE(original.empty());
+  const auto packed = vfs.read("fonts/dyslexia.otf");
+  REQUIRE(packed.has_value());
+  CHECK(std::equal(packed->begin(), packed->end(), original.begin(), original.end(),
+                   [](std::byte a, char b) { return static_cast<char>(a) == b; }));
+  CHECK_FALSE(vfs.exists("fonts/dyslexia.en.otf"));
+  CHECK_FALSE(vfs.exists("fonts/dyslexia.ja.otf"));
+
+  const vnmaki::Font latin = vnmaki::load_font(vfs, "fonts/default.ja.ttf");
+  const vnmaki::Font japanese = vnmaki::load_font(vfs, "fonts/NotoSansJP.ja.ttf");
+  vnmaki::FontSet set{.base = {.regular = &latin}};
+  set.fallbacks.push_back(&japanese);
+  for (const std::string_view text :
+       {kJapaneseTexts.intro, kJapaneseTexts.ask, kJapaneseTexts.same, kJapaneseTexts.captions,
+        kJapaneseTexts.model, kJapaneseTexts.clip, kJapaneseTexts.plugin, kJapaneseTexts.last,
+        kJapaneseTexts.end}) {
+    INFO(text);
+    const vnmaki::TextLayout layout =
+        vnmaki::layout_text(set, vnmaki::plain_text(text), 30, 100000);
+    std::size_t missing = 0;
+    for (const vnmaki::LayoutGlyph& glyph : layout.lines.front().glyphs) {
+      missing += glyph.glyph == 0 ? 1 : 0;
+    }
+    CHECK(missing == 0);
+  }
 }

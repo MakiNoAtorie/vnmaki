@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -47,8 +48,9 @@ constexpr std::size_t kPresentationOption = 2;  // 0-based: the third option of 
 constexpr std::string_view kFontPath = "fonts/default.ttf";
 constexpr float kFontSize = 40;
 constexpr float kNoWrap = 100000;
-// Thirteen images, the music, the chime, the voice line, two fonts, the shader and the 3D arm.
-constexpr std::size_t kAssetCount = 20;
+// Thirteen images, the music, the chime, the voice line, the shader and the 3D arm. The fonts and
+// the movie are committed files (OFL fonts), not generated.
+constexpr std::size_t kAssetCount = 18;
 
 // A directory under the system temp directory, empty at the start and removed at the end.
 class TempDir {
@@ -436,12 +438,109 @@ TEST_CASE("template: the assets are the files of tools/generators/template_asset
   std::size_t committed = 0;
   for (const fs::directory_entry& entry : fs::recursive_directory_iterator(default_template())) {
     const std::string folder = fs::relative(entry.path(), default_template()).begin()->string();
-    if (entry.is_regular_file() && (folder == "images" || folder == "audio" || folder == "fonts" ||
-                                    folder == "shaders" || folder == "models")) {
+    if (entry.is_regular_file() &&
+        (folder == "images" || folder == "audio" || folder == "shaders" || folder == "models")) {
       ++committed;
     }
   }
   CHECK(committed == kAssetCount);
+}
+
+TEST_CASE("template: the fonts are committed OFL fonts, each with its license") {
+  for (const char* font : {"fonts/default.ttf", "fonts/NotoSansJP.ttf", "fonts/dyslexia.otf"}) {
+    INFO(font);
+    CHECK(fs::file_size(default_template() / font) > 100000);  // not the old pixel font
+  }
+  for (const char* license : {"NotoSans-OFL.txt", "NotoSansJP-OFL.txt", "OpenDyslexic-OFL.txt"}) {
+    INFO(license);
+    CHECK(fs::exists(default_template() / "licenses" / license));
+  }
+}
+
+namespace {
+
+// The glyphs of every line, with the font each one uses.
+struct Drawn {
+  std::size_t count = 0;
+  std::size_t missing = 0;                    // glyph 0, the box of a missing character
+  std::map<const vnmaki::Font*, std::size_t> by_font{};
+};
+
+Drawn drawn_by(const vnmaki::TextLayout& layout) {
+  Drawn result;
+  for (const vnmaki::TextLine& line : layout.lines) {
+    for (const vnmaki::LayoutGlyph& glyph : line.glyphs) {
+      ++result.count;
+      result.missing += glyph.glyph == 0 ? 1 : 0;
+      ++result.by_font[layout.fonts[glyph.font]];
+    }
+  }
+  return result;
+}
+
+}  // namespace
+
+// FreeType and HarfBuzz read the variable TrueType fonts (Noto Sans, Noto Sans JP) and the CFF
+// OpenType font (OpenDyslexic) of the template.
+TEST_CASE("template: Latin, Japanese through the fallback, and the dyslexia font lay out and draw") {
+  vnmaki::Vfs vfs;
+  REQUIRE(vfs.mount(vnmaki::make_directory_mount(default_template())));
+  const vnmaki::ProjectConfig config = vnmaki::load_project_config(vfs);
+  REQUIRE(config.font_fallbacks.at("ja") == std::vector<std::string>{"fonts/NotoSansJP.ttf"});
+  const vnmaki::Font latin = vnmaki::load_font(vfs, "fonts/default.ttf");
+  const vnmaki::Font japanese = vnmaki::load_font(vfs, config.font_fallbacks.at("ja").front());
+  const vnmaki::Font dyslexia = vnmaki::load_font(vfs, "fonts/dyslexia.otf");
+  vnmaki::FontSet set{.base = {.regular = &latin}};
+  set.fallbacks.push_back(&japanese);
+  vnmaki::GlyphAtlas atlas;
+  constexpr float kWidth = 100000;
+
+  const vnmaki::TextLayout hello =
+      vnmaki::layout_text(set, vnmaki::plain_text("Hello, world"), kFontSize, kWidth);
+  const Drawn english = drawn_by(hello);
+  CHECK(english.count == 12);
+  CHECK(english.missing == 0);
+  CHECK(english.by_font.size() == 1);
+  CHECK(english.by_font.at(&latin) == 12);
+  CHECK(atlas.prepare(hello));
+
+  // Noto Sans has no kana: all seven glyphs come from the fallback, in a row and in columns.
+  const std::string kana = "おわり。あなた";
+  const vnmaki::TextLayout row = vnmaki::layout_text(set, vnmaki::plain_text(kana), kFontSize, kWidth);
+  const Drawn row_drawn = drawn_by(row);
+  CHECK(row_drawn.count == 7);
+  CHECK(row_drawn.missing == 0);
+  CHECK(row_drawn.by_font.at(&japanese) == 7);
+  CHECK(atlas.prepare(row));
+  const vnmaki::TextLayout column = vnmaki::layout_text(
+      set, vnmaki::plain_text(kana), kFontSize, kWidth, vnmaki::TextOrientation::kVertical);
+  CHECK(column.vertical);
+  CHECK(drawn_by(column).missing == 0);
+  CHECK(atlas.prepare(column));
+  const vnmaki::TextLayout no_fallback = vnmaki::layout_text(
+      vnmaki::FontSet{.base = {.regular = &latin}}, vnmaki::plain_text(kana), kFontSize, kWidth);
+  CHECK(drawn_by(no_fallback).missing == 7);  // the box of Noto Sans
+
+  // Mixed text: the Latin letters stay in Noto Sans.
+  const Drawn mixed = drawn_by(
+      vnmaki::layout_text(set, vnmaki::plain_text("ABC あ"), kFontSize, kWidth));
+  CHECK(mixed.missing == 0);
+  CHECK(mixed.by_font.at(&latin) == 4);  // "ABC" and the space
+  CHECK(mixed.by_font.at(&japanese) == 1);
+
+  // The dyslexia font comes first; text it has uses it, and a character it lacks falls back.
+  const vnmaki::FontSet with_dyslexia = vnmaki::with_dyslexia_font(set, dyslexia);
+  const vnmaki::TextLayout dyslexic =
+      vnmaki::layout_text(with_dyslexia, vnmaki::plain_text("Hello, world"), kFontSize, kWidth);
+  const Drawn dyslexic_drawn = drawn_by(dyslexic);
+  CHECK(dyslexic_drawn.missing == 0);
+  CHECK(dyslexic_drawn.by_font.at(&dyslexia) == 12);
+  CHECK(dyslexic.lines.front().width != hello.lines.front().width);
+  CHECK(atlas.prepare(dyslexic));
+  const Drawn dyslexic_ja = drawn_by(vnmaki::layout_text(
+      with_dyslexia, vnmaki::plain_text(kana), kFontSize, kWidth));
+  CHECK(dyslexic_ja.missing == 0);
+  CHECK(dyslexic_ja.by_font.at(&japanese) == 7);
 }
 
 TEST_CASE("template: the movie is the committed test clip") {

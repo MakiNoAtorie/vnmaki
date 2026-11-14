@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the images, music and font of templates/default/.
+"""Generate the images, music, model and shader of templates/default/.
 
 Usage: template_assets.py OUT_DIR
 
@@ -21,14 +21,10 @@ writes only its own files and never deletes anything:
   models/arm.gltf                    a bar with two joints and the clip "bend" (the 3D model of
                                      the content demo; model_fixtures.skinned())
   shaders/sepia.frag.hlsl            a game shader (shader_fixtures.SEPIA_SHADER)
-  fonts/default.ttf                  a 5 by 7 pixel font for ASCII, one rectangle for each run
-                                     of pixels (built with text_fixtures.build_font)
-  fonts/dyslexia.ttf                 the same glyphs with wider spacing: a placeholder for the
-                                     dyslexia-friendly font (prefs.dyslexia_font). Replace it with
-                                     an OFL font such as OpenDyslexic (ASSETS.txt)
 
-Everything is made of rectangles, ellipses and sine waves, so no source art or font file is
-involved. The assets are CC0 1.0 (templates/default/ASSETS.txt). Only the standard library is used.
+It does not write the fonts: fonts/ and movies/clip.webm are committed files (OFL fonts, see
+templates/default/ASSETS.txt). Everything else is made of rectangles, ellipses and sine waves, so
+no source art is involved. Those assets are CC0 1.0. Only the standard library is used.
 """
 
 import io
@@ -43,7 +39,6 @@ sys.dont_write_bytecode = True  # No __pycache__ in the source tree.
 import model_fixtures as mf  # noqa: E402  (the glTF of the 3D model)
 import render_fixtures as rf  # noqa: E402  (the PNG chunks)
 import shader_fixtures as sf  # noqa: E402  (the sepia shader)
-import text_fixtures as tf  # noqa: E402  (the TrueType writer)
 
 # --- Images ------------------------------------------------------------------------------
 
@@ -312,152 +307,9 @@ def voice() -> bytes:
     return wav(bytes(frames))
 
 
-# --- Font --------------------------------------------------------------------------------
-
-CELL = 100  # Font units of one pixel of the 5 by 7 grid; the baseline is under row 6.
-GLYPH_ADVANCE = 600
-DYSLEXIA_ADVANCE = 760  # Wider spacing, so the placeholder font looks different.
-SPACE_ADVANCE = 400
-CAP_TOP = 700
-
-# Glyphs are rows of five columns. TALL (capitals, numbers, tall lowercase) has seven rows from
-# row 0, SHORT five rows from row 2, TAILED seven rows from row 2 (two under the baseline).
-TALL = {
-    "A": [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
-    "B": ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
-    "C": [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."],
-    "D": ["####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."],
-    "E": ["#####", "#....", "#....", "####.", "#....", "#....", "#####"],
-    "F": ["#####", "#....", "#....", "####.", "#....", "#....", "#...."],
-    "G": [".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".###."],
-    "H": ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
-    "I": [".###.", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."],
-    "J": ["..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."],
-    "K": ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"],
-    "L": ["#....", "#....", "#....", "#....", "#....", "#....", "#####"],
-    "M": ["#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"],
-    "N": ["#...#", "##..#", "#.#.#", "#.#.#", "#..##", "#...#", "#...#"],
-    "O": [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
-    "P": ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."],
-    "Q": [".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"],
-    "R": ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"],
-    "S": [".####", "#....", "#....", ".###.", "....#", "....#", "####."],
-    "T": ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."],
-    "U": ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."],
-    "V": ["#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."],
-    "W": ["#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#"],
-    "X": ["#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"],
-    "Y": ["#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."],
-    "Z": ["#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"],
-    "0": [".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."],
-    "1": ["..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."],
-    "2": [".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"],
-    "3": [".###.", "#...#", "....#", "..##.", "....#", "#...#", ".###."],
-    "4": ["...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."],
-    "5": ["#####", "#....", "####.", "....#", "....#", "#...#", ".###."],
-    "6": ["..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."],
-    "7": ["#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."],
-    "8": [".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."],
-    "9": [".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."],
-    # Lowercase letters with an ascender.
-    "b": ["#....", "#....", "####.", "#...#", "#...#", "#...#", "####."],
-    "d": ["....#", "....#", ".####", "#...#", "#...#", "#...#", ".####"],
-    "f": ["..##.", ".#..#", ".#...", "###..", ".#...", ".#...", ".#..."],
-    "h": ["#....", "#....", "#.##.", "##..#", "#...#", "#...#", "#...#"],
-    "i": ["..#..", ".....", ".##..", "..#..", "..#..", "..#..", ".###."],
-    "k": ["#....", "#....", "#..#.", "#.#..", "##...", "#.#..", "#..#."],
-    "l": [".##..", "..#..", "..#..", "..#..", "..#..", "..#..", ".###."],
-    "t": [".#...", ".#...", "###..", ".#...", ".#...", ".#..#", "..##."],
-}
-SHORT = {  # Lowercase letters of five rows, from row 2.
-    "a": [".###.", "....#", ".####", "#...#", ".####"],
-    "c": [".###.", "#...#", "#....", "#...#", ".###."],
-    "e": [".###.", "#...#", "#####", "#....", ".###."],
-    "m": ["##.#.", "#.#.#", "#.#.#", "#.#.#", "#.#.#"],
-    "n": ["#.##.", "##..#", "#...#", "#...#", "#...#"],
-    "o": [".###.", "#...#", "#...#", "#...#", ".###."],
-    "r": ["#.##.", "##..#", "#....", "#....", "#...."],
-    "s": [".####", "#....", ".###.", "....#", "####."],
-    "u": ["#...#", "#...#", "#...#", "#..##", ".##.#"],
-    "v": ["#...#", "#...#", "#...#", ".#.#.", "..#.."],
-    "w": ["#...#", "#...#", "#.#.#", "#.#.#", ".#.#."],
-    "x": ["#...#", ".#.#.", "..#..", ".#.#.", "#...#"],
-    "z": ["#####", "...#.", "..#..", ".#...", "#####"],
-}
-TAILED = {  # Lowercase letters with a tail: seven rows, from row 2.
-    "g": [".####", "#...#", "#...#", "#...#", ".####", "....#", ".###."],
-    "p": ["####.", "#...#", "#...#", "#...#", "####.", "#....", "#...."],
-    "q": [".####", "#...#", "#...#", "#...#", ".####", "....#", "....#"],
-    "y": ["#...#", "#...#", "#...#", ".####", "....#", "#...#", ".###."],
-}
-OTHER = {  # (first row, rows)
-    "j": (0, ["...#.", ".....", "..##.", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."]),
-    ".": (6, ["..#.."]),
-    ",": (6, ["..#..", ".#..."]),
-    "!": (0, ["..#..", "..#..", "..#..", "..#..", "..#..", ".....", "..#.."]),
-    "?": (0, [".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#.."]),
-    "'": (0, ["..#..", "..#..", ".#..."]),
-    '"': (0, [".#.#.", ".#.#.", ".#.#."]),
-    "-": (3, [".###."]),
-    ":": (2, ["..#..", ".....", ".....", "..#.."]),
-    ";": (2, ["..#..", ".....", ".....", "..#..", ".#..."]),
-    "/": (0, ["....#", "....#", "...#.", "..#..", ".#...", "#....", "#...."]),
-    "(": (0, ["...#.", "..#..", ".#...", ".#...", ".#...", "..#..", "...#."]),
-    ")": (0, [".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..."]),
-    "%": (0, ["##..#", "##..#", "...#.", "..#..", ".#...", "#..##", "#..##"]),
-    "+": (1, ["..#..", "..#..", "#####", "..#..", "..#.."]),
-    "=": (2, ["#####", ".....", "#####"]),
-    "_": (7, ["#####"]),
-    "*": (1, ["#.#.#", ".###.", "#####", ".###.", "#.#.#"]),
-    "#": (0, [".#.#.", "#####", ".#.#.", ".#.#.", "#####", ".#.#."]),
-}
-
-
-def pixel_boxes(first_row: int, rows: list) -> list:
-    """Rectangles that cover the '#' cells: runs of cells joined, then equal runs stacked."""
-    open_boxes = {}  # (first column, end column) -> first row of the stack
-    boxes = []
-
-    def close(span: tuple, start: int, end: int) -> None:
-        boxes.append((span[0] * CELL, CAP_TOP - end * CELL, span[1] * CELL,
-                      CAP_TOP - start * CELL))
-
-    for row_index, row in enumerate(rows + [""], first_row):
-        spans = set()
-        column = 0
-        while column < len(row):
-            if row[column] == "#":
-                end = column
-                while end < len(row) and row[end] == "#":
-                    end += 1
-                spans.add((column, end))
-                column = end
-            else:
-                column += 1
-        for span in list(open_boxes):
-            if span not in spans:
-                close(span, open_boxes.pop(span), row_index)
-        for span in spans:
-            open_boxes.setdefault(span, row_index)
-    return boxes
-
-
-def pixel_font(advance: int = GLYPH_ADVANCE) -> bytes:
-    shapes = {" ": (SPACE_ADVANCE, None)}
-    glyphs = {char: (0, rows) for char, rows in TALL.items()}
-    glyphs.update({char: (2, rows) for char, rows in SHORT.items()})
-    glyphs.update({char: (2, rows) for char, rows in TAILED.items()})
-    glyphs.update(OTHER)
-    for char, (first_row, rows) in glyphs.items():
-        shapes[char] = (advance, pixel_boxes(first_row, rows))
-    return tf.build_font(shapes)
-
-
 def files() -> dict:
     return {**images(), "audio/bgm/theme.wav": theme(), "audio/voice/eileen/hello.wav": voice(),
             "audio/sfx/chime.wav": chime(), "models/arm.gltf": mf.text(mf.skinned()),
-            "fonts/default.ttf": pixel_font(),
-            "fonts/dyslexia.ttf": pixel_font(DYSLEXIA_ADVANCE),
             "shaders/sepia.frag.hlsl": sf.SEPIA_SHADER.encode()}
 
 

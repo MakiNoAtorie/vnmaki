@@ -7,8 +7,9 @@ Usage: template_vertical_fixtures.py OUT_DIR
 OUT_DIR is deleted and recreated. It gets golden/say_vertical.png (1280x720), drawn by the
 reference rasterizer of render_fixtures.py. Nothing here reads the engine's layout: the numbers
 below are worked out from the default `say` screen (engine/runtime/default_screens.cpp) for a
-canvas of 1280 by 720, for a narrated line with `[vertical] ja = true`, and from the pixel font of
-the template (template_assets.py).
+canvas of 1280 by 720, for a narrated line with `[vertical] ja = true`, and from the Greek-only
+font of text_fixtures.py (fallback.ttf), which the test loads in place of the template font (the
+template has Noto Sans and Noto Sans JP, with real kana, which this rasterizer cannot draw).
 
 The box. margin = 1280 // 16 = 80 and pad = 1280 // 64 = 20. The vertical box is 720 * 5 // 12 =
 300 high and sits 720 // 24 = 30 above the bottom: (80, 390, 1120, 300), colour #101020cc. The
@@ -22,7 +23,7 @@ glyphs long. The first seven glyphs fill column 1 ("おわり。あなた"), the
 "の物語を書こ" and column 3 has "う。". The columns hug the right edge of the text area (100 +
 1080 = 1180), the first at the right, each 30 thick.
 
-What the golden proves. The pixel font of the template has no Japanese letters, so every glyph of
+What the golden proves. That font has no Japanese letters, so every glyph of
 the line is the .notdef box (one rectangle, 50 to 450 by 0 to 700 units, advance 500). The golden
 therefore proves the layout and not the shaping: the language switch ([vertical] and the sample
 translation reaching the screen), the vertical flag of the say style, the box size and place, the
@@ -59,7 +60,7 @@ RIGHT = 100 + 1080  # the right edge of the text area
 TOP = 390 + 52
 COLUMNS = ["おわり。あなた", "の物語を書こ", "う。"]
 
-# .notdef of fonts/default.ttf is text_fixtures.UPPER: advance 500, box 50..450 by 0..700.
+# .notdef of the fixture fonts is text_fixtures.UPPER: advance 500, box 50..450 by 0..700.
 ADVANCE, (X0, Y0, X1, Y1) = tf.UPPER
 UNIT = SIZE / tf.UNITS_PER_EM  # pixels of a font unit
 ASCENT = tf.ASCENT * UNIT
