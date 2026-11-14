@@ -1,7 +1,7 @@
 title = "{{title}}"
 version = "0.1.0"
 resolution = [1280, 720]
-# One language. `vnmaki new <name> --lang ja` adds Japanese (templates/addons/ja/).
+# `vnmaki new <name> --lang ja` adds Japanese here (templates/addons/ja/).
 languages = ["en"]
 # The story writes the "auto" save slot at each label and each menu.
 auto_save = ["label", "menu"]
