@@ -120,14 +120,14 @@ A font with a Reserved Font Name (SIL OFL) must not be changed and keep that nam
 keep = ["fonts/dyslexia.otf"]   # OpenDyslexic, Reserved Font Name "OpenDyslexic"
 ```
 
-`vnmaki import` prints `<font> (kept)` for it. The importer cannot find a Reserved Font Name by itself: the license text says it, and the font file often does not. The template lists OpenDyslexic. Noto Sans JP has the Reserved Font Name "Source", which its name does not use, so the template subsets it.
+`vnmaki import` prints `<font> (kept)` for it. The importer cannot find a Reserved Font Name by itself: the license text says it, and the font file often does not. The template lists OpenDyslexic. Noto Sans JP (the font of the Japanese add-on, `vnmaki new <name> --lang ja`) has the Reserved Font Name "Source", which its name does not use, so the build subsets it.
 
 ## Try the whole path
 
-The end-to-end test of the content demo does these steps on a copy of the template: `vnmaki new`, `vnmaki build windows`, it deletes the project, and it plays the label `content` from `game.vnpak` in English and in Japanese (`tests/unit/content_demo_test.cpp`). To do the same by hand:
+The end-to-end test of the content demo does these steps on a copy of the template with the Japanese add-on: `vnmaki new --lang ja`, `vnmaki build windows`, it deletes the project, and it plays the label `content` from `game.vnpak` in English and in Japanese (`tests/unit/content_demo_test.cpp`). To do the same by hand:
 
 ```
-vnmaki new my_game
+vnmaki new my_game --lang ja
 vnmaki build windows my_game --out my_game_build
 my_game_build\my_game.exe
 ```

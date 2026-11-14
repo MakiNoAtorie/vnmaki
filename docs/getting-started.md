@@ -11,7 +11,8 @@ vnmaki new my_game
 - The command makes the folder `my_game` from the template `default`.
 - The title of the game is the name of the folder. It is written to `project.toml`.
 - The folder must not exist, or it must be empty. Otherwise the command stops and changes nothing.
-- The command finds the template in `<folder of vnmaki>/templates/default`. If that folder does not exist, it uses `templates/default` of the source tree that built `vnmaki`.
+- The game has one language, English. Japanese is an add-on: `vnmaki new my_game --lang ja` adds it. `--lang` takes the name of a folder of `templates/addons/`. You can repeat it. An unknown name stops the command, and nothing is written.
+- The command finds the template in `<folder of vnmaki>/templates/default` and the add-ons in `<folder of vnmaki>/templates/addons`. If those folders do not exist, it uses `templates/` of the source tree that built `vnmaki`.
 
 The new game has these files:
 
@@ -20,12 +21,12 @@ The new game has these files:
 | `project.toml` | Title, version, resolution (1280 by 720), languages, auto save. |
 | `scripts/main.lua` | A short story: a classroom, Eileen, and a menu that leads to the labels `warm`, `cold`, `presentation` and `content`. |
 | `scripts/presentation.lua` | The presentation demo (third menu option): dissolve, layered sprite, blink, camera, shake, sepia shader, lip sync, movie. See `docs/script-reference.md`. |
-| `scripts/content.lua` | The content demo (fourth menu option): a language switch, captions, a 3D model with a clip and a transition from a Lua plugin. See `docs/localization.md`, `docs/accessibility.md` and `docs/plugins.md`. |
+| `scripts/content.lua` | The content demo (fourth menu option): a language switch (only when the game has a second language), captions, a 3D model with a clip and a transition from a Lua plugin. See `docs/localization.md`, `docs/accessibility.md` and `docs/plugins.md`. |
 | `plugins/flash/` | A Lua plugin that adds the transition `flash`. Listed in `project.toml`. |
-| `translations/ja.po` | The Japanese translation (`vnmaki extract-strings` made it). |
+| `translations/ja.po` | Only with `--lang ja`: the Japanese translation (`vnmaki extract-strings` made it). |
 | `images/`, `audio/`, `models/`, `shaders/`, `movies/` | Placeholder art, a music loop, a voice line, a chime, a 3D arm, a shader and a short movie (CC0). The script `tools/generators/template_assets.py` made all but the movie. |
-| `fonts/` | Noto Sans (`default.ttf`), Noto Sans JP (`NotoSansJP.ttf`, the Japanese fallback) and OpenDyslexic (`dyslexia.otf`), all SIL OFL 1.1. The license texts are in `licenses/`. |
-| `ASSETS.txt` | The source and license of each asset. |
+| `fonts/` | Noto Sans (`default.ttf`) and OpenDyslexic (`dyslexia.otf`), both SIL OFL 1.1. With `--lang ja` it also has Noto Sans JP (`NotoSansJP.ttf`, the Japanese fallback). The license texts are in `licenses/`. |
+| `ASSETS.txt` | The source and license of each asset. With `--lang ja`, `ASSETS.ja.txt` does the same for the Japanese files. |
 
 Replace the art and the sound with your own. Keep the license text of each font you ship.
 

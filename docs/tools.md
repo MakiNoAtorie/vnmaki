@@ -186,7 +186,7 @@ Load it with "Developer: Install Extension from Location..." (or copy the folder
 
 - Type the project folder in the text field, or click a folder of the recent list to put it there.
 - Buttons, each on the folder of the field:
-  - **New** makes a project from the template in that folder (it must not exist, or be empty). Same as `vnmaki new`. The template has English and a sample of Japanese (`ja`, written in columns), and `vnmaki check` finds nothing in it, so New, Check and Build windows work in this order on a new folder.
+  - **New** makes a project from the template in that folder (it must not exist, or be empty). Same as `vnmaki new`. A check box for each language add-on of `templates/addons/` (Japanese: `ja`, written in columns) sits under the buttons; each box that is on is a `--lang <code>`. `vnmaki check` finds nothing in the template or with any add-on, so New, Check and Build windows work in this order on a new folder.
   - **Run** plays the game in its own window, as a separate `vnmaki run <folder>` process. The launcher stays open, and a crash of the game does not close it. The messages of the game go to the console that started the launcher, not to the log.
   - **Check**, **Extract strings** and **Build windows** do what `vnmaki check`, `vnmaki extract-strings` and `vnmaki build windows` do, and the log shows their output. The build goes to `<folder>/.vnmaki/windows` and uses the release `vnmaki.exe` of `build/release/cli` as the runner (see `docs/CONVENTIONS.md`).
   - **Open folder** shows the folder in Windows Explorer.

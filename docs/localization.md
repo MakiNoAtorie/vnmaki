@@ -1,6 +1,6 @@
 # Localization
 
-A game can have more than one language. The scripts are written in one language. The other languages are `.po` files. This guide is for game authors. The rules for contributors are in `docs/CONVENTIONS.md` (Localization). The template of `vnmaki new` is a working example: English and Japanese, and the label `content` shows the switch.
+A game can have more than one language. The scripts are written in one language. The other languages are `.po` files. This guide is for game authors. The rules for contributors are in `docs/CONVENTIONS.md` (Localization). The template of `vnmaki new` has English only. The Japanese add-on (`vnmaki new <name> --lang ja`) makes it a working example of two languages, and the label `content` shows the switch.
 
 ## Languages in project.toml
 
@@ -89,7 +89,35 @@ A picture or voice that is already shown or playing does not change when the lan
 
 ## The template
 
-`vnmaki new` makes a game with `languages = ["en", "ja"]`, `[vertical] ja = true` and `translations/ja.po`. The file is the output of `vnmaki extract-strings` with the narration of `warm`, the menu option of the content demo and every line of the label `content` translated. `fonts/default.ttf` (Noto Sans) has no Japanese characters, so `[fonts.fallback] ja = ["fonts/NotoSansJP.ttf"]` supplies them (Noto Sans JP, with the vertical forms). The label `content` asks for a language with a menu and sets `prefs.language`.
+`vnmaki new <name>` makes a game with `languages = ["en"]`. It has no Japanese file, and the label `content` skips its language menu (`if #languages() > 1`), so the sample has no option that does nothing. The default `preferences` screen shows no language buttons for one language either.
+
+### Add Japanese
+
+Japanese is an add-on, the folder `templates/addons/ja/`. It adds:
+
+- `translations/ja.po`: the output of `vnmaki extract-strings` with the narration of `warm`, the menu option of the content demo and every line of the label `content` translated.
+- `fonts/NotoSansJP.ttf` and `licenses/NotoSansJP-OFL.txt`: Noto Sans JP (SIL OFL). `fonts/default.ttf` (Noto Sans) has no Japanese characters, so this font supplies them, with the vertical forms.
+- `ASSETS.ja.txt`: the source and license of these files.
+- In `project.toml`: `"ja"` in `languages`, `[vertical] ja = true` and `[fonts.fallback] ja = ["fonts/NotoSansJP.ttf"]`.
+
+Use it when you make the game: `vnmaki new my_game --lang ja` (the launcher has a check box for each add-on next to the New button). To add it to a game that exists, copy `fonts/`, `licenses/`, `translations/` and `ASSETS.ja.txt` of the add-on into the game and add the three entries above to `project.toml` by hand. Then run `vnmaki extract-strings` to make `ja.po` fit your own story: the sample translation fits the sample story only.
+
+### Add a language add-on
+
+An add-on is a folder `templates/addons/<code>/` with an `addon.toml` and the files to copy. `<code>` is the language code (letters, digits, `-` and `_`) and the name that `--lang` takes. To add French:
+
+1. Make `templates/addons/fr/` with the files, with the paths that they have in a game: `translations/fr.po`, `fonts/...` and `licenses/...` if a font is needed, and an assets file `ASSETS.fr.txt` that says where each file comes from and its license.
+2. Write `templates/addons/fr/addon.toml`:
+
+```toml
+language = "fr"
+
+[fonts.fallback]
+fr = ["fonts/MyFrench.ttf"]
+```
+
+   `language` goes to the end of `languages` in `project.toml`. The keys under each table go into the same table of `project.toml`, and the table is added at the end if the game has none. Comments are not copied. The file `addon.toml` itself is not copied.
+3. `vnmaki new my_game --lang fr` and the launcher find the add-on by its folder name. They need no other change. A game that has a file of the add-on already is an error and nothing is written.
 
 ## Tools and checks
 

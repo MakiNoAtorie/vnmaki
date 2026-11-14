@@ -272,7 +272,7 @@ screen "quick_menu" {
 - **Import:** images to KTX2 with atlas packing, audio normalization and encoding, font subsets per language, glTF validation.
 - **Release:** indexed, zstd-compressed `.vnpak` archives. Optional per-file encryption. Patch packs override base packs by path.
 - **CLI:**
-  - `vnmaki new <name>` — create a project from the template
+  - `vnmaki new <name> [--lang <code>]...` — create a project from the template; `--lang` adds a language add-on (`templates/addons/<code>/`, e.g. `ja`)
   - `vnmaki run` — run in dev mode
   - `vnmaki import <dir>` — import the assets into the cache (`.vnmaki/cache/`)
   - `vnmaki build <platform>` — import and package
