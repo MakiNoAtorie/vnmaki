@@ -2,6 +2,12 @@
 
 An open-source visual novel engine (C++20, SDL3, Lua 5.4). The full spec is `docs/SPEC.md`. Build, test and code conventions are in `docs/CONVENTIONS.md`; read it before changing code.
 
+## CI
+
+- The CI is local: `tools\dev\check.cmd` (clang-format 18, debug with MSVC `/analyze`, release). Run it before each push.
+- There is no CI on GitHub. Do not add GitHub workflows. Do not wait for or read GitHub checks.
+- The engine targets Windows only. Do not add Linux or macOS CI jobs unless the user asks.
+
 ## Subagents
 
 The main session orchestrates. It selects the model and effort for each subagent:
