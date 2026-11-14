@@ -290,7 +290,9 @@ TEST_CASE("vertical text: the say and NVL screens are vertical when the language
   const vnmaki::UiNode* two = find_text(page_screen, "two");
   const vnmaki::UiNode* one = find_text(page_screen, "one");
   const vnmaki::UiNode* name = find_text(page_screen, "Eileen");
-  REQUIRE((two != nullptr && one != nullptr && name != nullptr));
+  REQUIRE(two != nullptr);
+  REQUIRE(one != nullptr);
+  REQUIRE(name != nullptr);
   CHECK(two->style.vertical);
   CHECK(two->reveal);
   CHECK(one->style.vertical);

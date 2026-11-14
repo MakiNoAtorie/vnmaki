@@ -119,7 +119,8 @@ TEST_CASE("inspect: a table that two fields share is expanded once") {
   CHECK(expanded == 1);
   const StoreRow* a = find_row(rows, "a");
   const StoreRow* b = find_row(rows, "b");
-  REQUIRE((a != nullptr && b != nullptr));
+  REQUIRE(a != nullptr);
+  REQUIRE(b != nullptr);
   CHECK(a->value.empty() != b->value.empty());  // one expanded, one says it is the same table
 }
 

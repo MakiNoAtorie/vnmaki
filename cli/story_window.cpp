@@ -146,9 +146,13 @@ int run_story_window(const Vfs& vfs, [[maybe_unused]] const std::filesystem::pat
     SteadyClock clock;
     // First, so that it sees the loads of the fonts. Dev builds always profile, for the overlay; a
     // release build only for --profile.
-    Profiler profiler{clock,
-                      {.enabled = VNMAKI_DEV_TOOLS != 0 || profile_csv.has_value(),
-                       .max_frames = profile_csv ? 0 : Profiler::kGraphFrames}};
+#if VNMAKI_DEV_TOOLS
+    constexpr bool profiling = true;
+#else
+    const bool profiling = profile_csv.has_value();
+#endif
+    Profiler profiler{
+        clock, {.enabled = profiling, .max_frames = profile_csv ? 0 : Profiler::kGraphFrames}};
     // Everything that needs no window comes first, so a broken project fails before one opens.
     // The fonts of each language load when the language is first shown (the one the player starts
     // in loads below, before the window): a pack has the subset of a font for each language.
