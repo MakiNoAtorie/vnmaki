@@ -1,21 +1,16 @@
-name: Install build dependencies of the vcpkg ports
+name: Install SDL3 build dependencies
 description: >
-  Installs the system packages that vcpkg ports need: X11 and Wayland headers for sdl3 on Linux
-  (SDL loads the libraries at run time), nasm for dav1d, and autotools for libxcrypt (Linux) and
-  other autotools-based ports. Does nothing on Windows (vcpkg gets its own tools there).
+  Installs the system headers vcpkg's sdl3 port needs on Linux for its x11 and
+  wayland features (vcpkg.json). SDL loads the libraries themselves at run
+  time. Does nothing on other runners.
 
 runs:
   using: composite
   steps:
-    - name: Install packages (Linux)
+    - name: Install X11 and Wayland development packages
       if: runner.os == 'Linux'
       shell: bash
       run: |
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends \
-          pkg-config libx11-dev libxext-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev \
-          nasm autoconf autoconf-archive automake libtool
-    - name: Install packages (macOS)
-      if: runner.os == 'macOS'
-      shell: bash
-      run: brew install nasm autoconf autoconf-archive automake libtool pkg-config
+          pkg-config libx11-dev libxext-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev

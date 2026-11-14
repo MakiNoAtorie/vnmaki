@@ -73,8 +73,9 @@ TEST_CASE("script_scan tokenizer: names, numbers, symbols and lines") {
 
 TEST_CASE("script_scan tokenizer: short strings decode their escapes") {
   CHECK(strings_of(R"("a\nb")") == std::vector<std::string>{"a\nb"});
-  CHECK(strings_of(R"('it\'s' "say \"hi\"" "back\\slash")") ==
-        std::vector<std::string>{"it's", "say \"hi\"", "back\\slash"});
+  // Outside the macro: older MSVC cannot pass a raw string with \" through a macro argument.
+  const std::string quoted = R"('it\'s' "say \"hi\"" "back\\slash")";
+  CHECK(strings_of(quoted) == std::vector<std::string>{"it's", "say \"hi\"", "back\\slash"});
   CHECK(strings_of(R"("\65\066\x43\x4a")") == std::vector<std::string>{"ABCJ"});
   CHECK(strings_of("\"a\\z   \n   b\"") == std::vector<std::string>{"ab"});
   CHECK(strings_of("\"a\\\nb\"") == std::vector<std::string>{"a\nb"});

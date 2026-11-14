@@ -17,12 +17,11 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - On Windows, use `tools\dev\vsenv.cmd cmake --workflow --preset debug`. It uses MSVC and the vcpkg in Visual Studio. Sanitizers, clang-tidy and fuzzers then run only in CI.
 - In cloud containers, `tools/dev/bootstrap-deps.sh` builds the dependencies for the `system-*` presets.
 - While you work, run only the tests for the changed code: `ctest --test-dir build/debug -R <pattern>`.
-- Before a push, run `tools\dev\check.cmd` (clang-format 18 through `uvx`, then debug with the MSVC `/analyze` checks, then release). CI also runs the Linux and macOS presets and clang-tidy.
+- Before a push, run `tools\dev\check.cmd` (clang-format 18 through `uvx`, then debug with the MSVC `/analyze` checks, then release). It runs the same checks as CI.
 - CI (`.github/workflows/ci.yml`) runs:
   - Windows, MSVC: debug (with `/analyze`), release.
-  - Linux, Clang 18: asan-ubsan, tsan, fuzz, release, a build without threads.
-  - macOS, Apple Clang: debug, asan-ubsan.
-  - A clang-tidy job and a format check.
+  - A format check (clang-format 18).
+- The engine targets Windows only for now, so CI has no Linux or macOS build jobs. The other presets stay for local use.
 - CI gets vcpkg at the `builtin-baseline` in `vcpkg.json`.
 - If a new vcpkg dependency needs system packages on a runner, add an install step to the workflow. Example: `.github/actions/install-sdl3-deps`.
 - vcpkg pins:
