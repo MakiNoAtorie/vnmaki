@@ -18,7 +18,7 @@ The engine has these accessibility features (SPEC section 17). The player sets t
 
 ## Dyslexia-friendly font
 
-With `dyslexia_font` on, the font `fonts/dyslexia.ttf` is the first of the font chain. The old font and the fallback fonts follow, for the characters that it lacks. A game without that file has no such font. The file of the template is a placeholder: it is the pixel font with wider spacing. Replace it with a font under an open license (for example OpenDyslexic, SIL OFL) under the same name, and write the license in `ASSETS.txt`.
+With `dyslexia_font` on, the font `fonts/dyslexia.otf` (or `fonts/dyslexia.ttf`) is the first of the font chain. The old font and the fallback fonts follow, for the characters that it lacks. A game without that file has no such font. The template has OpenDyslexic (SIL OFL 1.1); its license is in `licenses/`. OpenDyslexic has a Reserved Font Name, so `project.toml` lists it under `[build.fonts] keep` and the build copies it without a subset (`docs/build.md`). If you use another font for this, check its license for a Reserved Font Name and list it the same way.
 
 ## High contrast
 

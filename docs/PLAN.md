@@ -425,7 +425,7 @@ Files: `engine/l10n/`, `engine/runtime/`, `engine/vfs/` (language lookup), `engi
 Files: `engine/ui/`, `engine/text/`, `engine/audio/`, `engine/platform/input.*`, `templates/default/`.
 
 - [x] `prefs.text_scale` (0.75–2.0) scales the say box and UI text, and the layout reflows.
-- [x] `prefs.high_contrast` loads `styles/high_contrast.lua`. `prefs.dyslexia_font` puts `fonts/dyslexia.ttf` (an OFL font in the template) first in the chain. Open: the template has a generated placeholder font (wider spacing), not a real OFL font. Replace it with OpenDyslexic or similar (`templates/default/ASSETS.txt`).
+- [x] `prefs.high_contrast` loads `styles/high_contrast.lua`. `prefs.dyslexia_font` puts `fonts/dyslexia.ttf` (an OFL font in the template) first in the chain. The template ships OpenDyslexic as `fonts/dyslexia.otf` (either extension works; `templates/default/ASSETS.txt`).
 - [x] `prefs.reduce_motion` also changes all transitions to a short dissolve (task 23 does shake and camera).
 - [x] `sound`, `music` and `ambient` accept `caption = "..."`. `prefs.captions` shows them in a caption screen for the sound length.
 - [x] Input actions (advance, rollback, skip, menu, ...) map to keys and gamepad buttons. A "Controls" screen changes the map, which is saved in `persistent`.

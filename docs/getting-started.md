@@ -23,10 +23,11 @@ The new game has these files:
 | `scripts/content.lua` | The content demo (fourth menu option): a language switch, captions, a 3D model with a clip and a transition from a Lua plugin. See `docs/localization.md`, `docs/accessibility.md` and `docs/plugins.md`. |
 | `plugins/flash/` | A Lua plugin that adds the transition `flash`. Listed in `project.toml`. |
 | `translations/ja.po` | The Japanese translation (`vnmaki extract-strings` made it). |
-| `images/`, `audio/`, `models/`, `shaders/`, `movies/`, `fonts/default.ttf` | Placeholder art, a music loop, a voice line, a chime, a 3D arm, a shader, a short movie and a pixel font. |
-| `ASSETS.txt` | The license of the assets (CC0). They come from `tools/generators/template_assets.py`. |
+| `images/`, `audio/`, `models/`, `shaders/`, `movies/` | Placeholder art, a music loop, a voice line, a chime, a 3D arm, a shader and a short movie (CC0). The script `tools/generators/template_assets.py` made all but the movie. |
+| `fonts/` | Noto Sans (`default.ttf`), Noto Sans JP (`NotoSansJP.ttf`, the Japanese fallback) and OpenDyslexic (`dyslexia.otf`), all SIL OFL 1.1. The license texts are in `licenses/`. |
+| `ASSETS.txt` | The source and license of each asset. |
 
-The font has only ASCII characters. Replace the assets with your own.
+Replace the art and the sound with your own. Keep the license text of each font you ship.
 
 ## Play the game
 

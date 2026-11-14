@@ -81,7 +81,7 @@ A translation is found by the label that runs (the scope), the speaker and the s
 
 ## Fonts, pictures and voices
 
-- **Fonts.** `vnmaki import` and `vnmaki build windows` make a subset of each `.ttf` and `.otf` file for each language (`fonts/default.ttf` becomes `fonts/default.ja.ttf`). The subset has the ASCII characters, the characters of the title, of every string literal of the scripts and, for a language after the first, of its `msgstr` lines. In a game that runs from loose files (`vnmaki run <folder>`) the whole font is used. The fonts of `[fonts.fallback]` and the dyslexia-friendly font (`fonts/dyslexia.ttf`) use the same rule.
+- **Fonts.** `vnmaki import` and `vnmaki build windows` make a subset of each `.ttf` and `.otf` file for each language (`fonts/default.ttf` becomes `fonts/default.ja.ttf`). The subset has the ASCII characters, the characters of the title, of every string literal of the scripts and, for a language after the first, of its `msgstr` lines. In a game that runs from loose files (`vnmaki run <folder>`) the whole font is used. The fonts of `[fonts.fallback]` and the dyslexia-friendly font (`fonts/dyslexia.otf` or `.ttf`) use the same rule. A font that you list under `[build.fonts] keep` in `project.toml` gets no subset and goes in the pack as it is (see `docs/build.md`).
 - **Pictures.** `images/<code>/<name>` is used before `images/<name>` in that language. Use it for a picture that has text.
 - **Voices.** `voice("eileen/hello")` plays `audio/voice/<code>/eileen/hello` before `audio/voice/eileen/hello` in that language.
 
@@ -89,7 +89,7 @@ A picture or voice that is already shown or playing does not change when the lan
 
 ## The template
 
-`vnmaki new` makes a game with `languages = ["en", "ja"]`, `[vertical] ja = true` and `translations/ja.po`. The file is the output of `vnmaki extract-strings` with the narration of `warm`, the menu option of the content demo and every line of the label `content` translated. The pixel font of the template has no Japanese characters, so the Japanese text shows as boxes until you add a font (`fonts/` and `[fonts.fallback]`, or replace `fonts/default.ttf`). The label `content` asks for a language with a menu and sets `prefs.language`.
+`vnmaki new` makes a game with `languages = ["en", "ja"]`, `[vertical] ja = true` and `translations/ja.po`. The file is the output of `vnmaki extract-strings` with the narration of `warm`, the menu option of the content demo and every line of the label `content` translated. `fonts/default.ttf` (Noto Sans) has no Japanese characters, so `[fonts.fallback] ja = ["fonts/NotoSansJP.ttf"]` supplies them (Noto Sans JP, with the vertical forms). The label `content` asks for a language with a menu and sets `prefs.language`.
 
 ## Tools and checks
 
