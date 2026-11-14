@@ -23,11 +23,11 @@ The result is `build\<preset>\cli\vnmaki.exe`. A preset has its own folder, so `
 |--------|-----|
 | `debug` | Development. Warnings are errors. It has the dev tools (overlay, debugger, hot reload, file watcher) and the run-time shader compiler. |
 | `release` | The build that players get: optimized, no dev tools and no shader compiler. |
-| `asan-ubsan`, `tsan`, `fuzz`, `clang-tidy` | Sanitizers, fuzz targets and clang-tidy. CI runs them. On Windows they do not run locally. |
+| `asan-ubsan`, `tsan`, `fuzz`, `clang-tidy` | Sanitizers, fuzz targets and clang-tidy. They need Linux and Clang; nothing runs them now. |
 
 Each preset has a `system-*` version that finds installed libraries with `find_package` and does not use vcpkg.
 
-Before a push, run `tools\dev\check.cmd`. It runs the `debug` and `release` workflows, as the Windows jobs of CI do. While you work, run only the tests of the code that you changed:
+Before a push, run `tools\dev\check.cmd`. It is the CI: the clang-format 18 check, `debug` with MSVC `/analyze`, then `release`. While you work, run only the tests of the code that you changed:
 
 ```
 ctest --test-dir build/debug -R <pattern> --output-on-failure

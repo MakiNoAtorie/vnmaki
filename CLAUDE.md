@@ -22,4 +22,4 @@ Each subagent checks its result before it returns it:
 
 If a Sonnet subagent fails its checks two times, give the task to Opus.
 
-At the end of a session, the main session runs the full suite one time: `cmake --workflow --preset debug`. CI runs the other presets. Then the Opus review starts.
+At the end of a session, the main session runs the full suite one time: `tools\dev\check.cmd` (it is the CI). Then the Opus review starts.

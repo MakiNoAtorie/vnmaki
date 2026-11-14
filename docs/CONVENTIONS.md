@@ -14,16 +14,10 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Each preset has a `system-*` version. It finds installed dependencies with `find_package(<pkg> CONFIG REQUIRED)`. Lua uses CMake's FindLua.
 - Each dependency must work with the two methods.
 - `fuzz` and `clang-tidy` work only on Linux with LLVM Clang. Set `CC=clang CXX=clang++`.
-- On Windows, use `tools\dev\vsenv.cmd cmake --workflow --preset debug`. It uses MSVC and the vcpkg in Visual Studio. Sanitizers, clang-tidy and fuzzers then run only in CI.
+- On Windows, use `tools\dev\vsenv.cmd cmake --workflow --preset debug`. It uses MSVC and the vcpkg in Visual Studio. The sanitizer, fuzz and clang-tidy presets need Linux and Clang; nothing runs them now.
 - In cloud containers, `tools/dev/bootstrap-deps.sh` builds the dependencies for the `system-*` presets.
 - While you work, run only the tests for the changed code: `ctest --test-dir build/debug -R <pattern>`.
-- Before a push, run `tools\dev\check.cmd` (clang-format 18 through `uvx`, then debug with the MSVC `/analyze` checks, then release). It runs the same checks as CI.
-- CI (`.github/workflows/ci.yml`) runs:
-  - Windows, MSVC: debug (with `/analyze`), release.
-  - A format check (clang-format 18).
-- The engine targets Windows only for now, so CI has no Linux or macOS build jobs. The other presets stay for local use.
-- CI gets vcpkg at the `builtin-baseline` in `vcpkg.json`.
-- If a new vcpkg dependency needs system packages on a runner, add an install step to the workflow. Example: `.github/actions/install-sdl3-deps`.
+- Before a push, run `tools\dev\check.cmd` (clang-format 18 through `uvx`, then debug with the MSVC `/analyze` checks, then release). It is the CI: the engine targets Windows only for now, and there is no CI on GitHub.
 - vcpkg pins:
   - Lua is 5.4.8, because the specification requires 5.4.
   - `sdl3` has no default features. On Linux, it has `x11` and `wayland`.
@@ -47,7 +41,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Includes use the path from the repository root, for example `"engine/vfs/vfs.hpp"`.
 - Include order: the header of the file, `<std>`, `<third/party.h>`, `"engine/..."`.
 - All warnings are errors. clang-tidy uses `WarningsAsErrors: '*'`. Correct the findings. Do not suppress them.
-  - MSVC `/analyze` runs in the Windows debug CI job. Locally: `tools\dev\vsenv.cmd cmake --preset debug -B build/analyze -DVNMAKI_MSVC_ANALYZE=ON`, then build in `build/analyze`. The option adds `/analyze /analyze:external-` to `vnmaki::options` only, so third-party headers (SYSTEM includes) are not analyzed. Its warnings are errors. Correct them. Do not suppress them. Put a dependency's headers on a SYSTEM include path (imported targets do this).
+  - MSVC `/analyze` runs in the debug build of `tools\dev\check.cmd` (`-DVNMAKI_MSVC_ANALYZE=ON`). The option adds `/analyze /analyze:external-` to `vnmaki::options` only, so third-party headers (SYSTEM includes) are not analyzed. Its warnings are errors. Correct them. Do not suppress them. Put a dependency's headers on a SYSTEM include path (imported targets do this).
   - Give names to literal constants, also in tests. Integer literals in doctest `CHECK(...)` are permitted.
   - Floating-point literals other than 0 and 1 always need a name.
   - Declare a variable with a cast initializer as `auto`.
@@ -94,7 +88,7 @@ Add a rule when later work must obey it. Remove a rule when it is not true.
 - Threaded tests put a timeout on each wait. If `!JobSystem::threads_supported()`, they return immediately, because jobs run inline.
 - GPU tests are in `tests/render/` (`vnmaki_render_tests`).
   - Get a renderer with `vnmaki::test::make_headless_renderer()`.
-  - If there is no device, it prints `VNMAKI_SKIP:` and ctest skips the test. `VNMAKI_REQUIRE_GPU=1` stops the skip. Linux CI sets it, because it has lavapipe.
+  - If there is no device, it prints `VNMAKI_SKIP:` and ctest skips the test. `VNMAKI_REQUIRE_GPU=1` stops the skip.
   - Check pixels with `check_golden(read_pixels(target), "<name>")` against `golden/<name>.png`.
   - `tools/generators/render_fixtures.py` makes the golden images with a reference rasterizer.
   - A feature has its own generator, `tools/generators/<area>_fixtures.py`. It imports `Canvas` and the PNG writer from `render_fixtures`. Check with `check_golden_in("<area>", ...)`. Examples: `layered_fixtures.py`, `shader_fixtures.py`, `frame_anim_fixtures.py`, `transition_fixtures.py`, `camera_fixtures.py`.

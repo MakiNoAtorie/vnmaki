@@ -56,9 +56,9 @@ Design rules for the later targets:
 
 ## 5. C++ Guardrails
 
-- Build, test and code rules are in `docs/CONVENTIONS.md`. Tools enforce them: warnings as errors, clang-tidy, clang-format, sanitizers, and CI on MSVC and Clang.
+- Build, test and code rules are in `docs/CONVENTIONS.md`. Tools enforce them: warnings as errors, clang-tidy, clang-format, sanitizers, and a local CI script (`tools\dev\check.cmd`) on MSVC.
 - Each loader of untrusted data has a fuzz target: saves, scripts, packs, images, glTF, Inochi2D puppets, translation files.
-- MSVC `/analyze` runs on first-party code in the Windows debug CI job. Later: cppcheck.
+- MSVC `/analyze` runs on first-party code in the debug build of `tools\dev\check.cmd`. Later: cppcheck.
 - Benchmark and tool output is CSV.
 
 ## 6. Architecture
