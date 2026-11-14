@@ -199,6 +199,10 @@ ImportReport Importer::import_paths(const std::vector<std::string>& sources) con
               }));
           break;
         case Kind::kFont:
+          if (std::ranges::find(settings.keep_fonts, source) != settings.keep_fonts.end()) {
+            report.files.push_back({.source = source, .kept = true});
+            break;
+          }
           if (scripts.empty()) {
             scripts = read_scripts(*vfs_);
           }

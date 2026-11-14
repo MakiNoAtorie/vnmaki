@@ -27,6 +27,25 @@ ImportSettings parse_import_settings(std::string_view toml_text) {
     throw ImportSettingsError{std::string{"project.toml: "} + std::string{error.description()}};
   }
   ImportSettings settings;
+  if (const auto fonts = root["build"]["fonts"]) {
+    if (!fonts.is_table()) {
+      throw ImportSettingsError{at(*fonts.node()) + "'build.fonts' must be a table"};
+    }
+    if (const auto keep = fonts["keep"]) {
+      const toml::array* list = keep.as_array();
+      if (list == nullptr) {
+        throw ImportSettingsError{at(*keep.node()) +
+                                  "'build.fonts.keep' must be a list of font paths"};
+      }
+      for (const toml::node& item : *list) {
+        const std::optional<std::string> path = item.value<std::string>();
+        if (!path) {
+          throw ImportSettingsError{at(item) + "'build.fonts.keep' must be a list of font paths"};
+        }
+        settings.keep_fonts.push_back(*path);
+      }
+    }
+  }
   const auto audio = root["build"]["audio"];
   if (!audio) {
     return settings;

@@ -113,6 +113,15 @@ target_db = -1.0     # dBFS, -120 to 0; the default is -1 for "peak" and -18 for
 
 The font subsets keep the ASCII characters and the characters of the title, of the string literals of the scripts and of the translations of each language (`docs/localization.md`). A game that runs from loose files uses the whole font.
 
+A font with a Reserved Font Name (SIL OFL) must not be changed and keep that name, and a subset is a changed copy. List such a font to have it copied unchanged, with no subset:
+
+```toml
+[build.fonts]
+keep = ["fonts/dyslexia.otf"]   # OpenDyslexic, Reserved Font Name "OpenDyslexic"
+```
+
+`vnmaki import` prints `<font> (kept)` for it. The importer cannot find a Reserved Font Name by itself: the license text says it, and the font file often does not. The template lists OpenDyslexic. Noto Sans JP has the Reserved Font Name "Source", which its name does not use, so the template subsets it.
+
 ## Try the whole path
 
 The end-to-end test of the content demo does these steps on a copy of the template: `vnmaki new`, `vnmaki build windows`, it deletes the project, and it plays the label `content` from `game.vnpak` in English and in Japanese (`tests/unit/content_demo_test.cpp`). To do the same by hand:

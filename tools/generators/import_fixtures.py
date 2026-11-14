@@ -15,8 +15,8 @@ OUT_DIR is deleted and recreated, so the output depends only on this script.
                        two languages en and ja with a translation that has Japanese letters
   project_broken/      a project whose glTF file has a missing buffer and a missing image
 
-The font is the template's (templates/default/fonts/default.ttf), the shader too: Python cannot
-write either.
+The font is the box font of text_fixtures.py. The shader is the template's: Python cannot
+compile it.
 """
 
 import base64
@@ -26,6 +26,9 @@ import shutil
 import struct
 import sys
 from pathlib import Path
+
+sys.dont_write_bytecode = True  # No __pycache__ in the source tree.
+import text_fixtures  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = ROOT / "templates" / "default"
@@ -135,7 +138,7 @@ def main(out: Path) -> None:
     (project / "scripts" / "main.lua").write_text(SCRIPT)
     (project / "translations" / "ja.po").write_text(JA_PO, encoding="utf-8")
     wav(project / "audio" / "tone.wav", 1, TONE_AMPLITUDE)
-    shutil.copy(TEMPLATE / "fonts" / "default.ttf", project / "fonts" / "default.ttf")
+    (project / "fonts" / "default.ttf").write_bytes(text_fixtures.build_font(text_fixtures.SHAPES))
     shutil.copy(TEMPLATE / "shaders" / "sepia.frag.hlsl", project / "shaders" / "tint.frag.hlsl")
     shutil.copy(out / "gltf" / "good.gltf", project / "models" / "triangle.gltf")
 

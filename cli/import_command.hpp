@@ -11,7 +11,8 @@ inline constexpr std::string_view kImportUsage = "       vnmaki import <dir> [--
 /// `vnmaki import <dir> [--out <folder>]` (docs/SPEC.md section 19, engine/assets/importer.hpp):
 /// imports the audio, fonts, shaders and glTF files of the project <dir> into the cache
 /// `<dir>/.vnmaki/cache`. It prints one line for each file: `<source> -> <output> (imported)`,
-/// `... (cached)` when the cache had it, or `<source> (valid)` for a glTF file. With `--out` it
+/// `... (cached)` when the cache had it, `<source> (valid)` for a glTF file, or `<source> (kept)`
+/// for a font of `[build.fonts] keep`. With `--out` it
 /// also writes the outputs to <folder> at their virtual paths (the files that `vnmaki build` packs
 /// in place of the sources). A file that fails does not stop the others; its message goes to `err`.
 ///

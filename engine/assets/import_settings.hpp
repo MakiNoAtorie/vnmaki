@@ -6,11 +6,14 @@
 //   [build.audio]
 //   normalize = "peak"   # "none" (default), "peak" or "rms": the gain that an audio file gets
 //   target_db = -1.0     # the level to reach in dBFS; default -1 for "peak", -18 for "rms"
+//   [build.fonts]
+//   keep = ["fonts/dyslexia.otf"]   # fonts that are copied unchanged (OFL Reserved Font Name)
 
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace vnmaki {
 
@@ -23,6 +26,9 @@ enum class AudioNormalize : std::uint8_t {
 struct ImportSettings {
   AudioNormalize normalize = AudioNormalize::kNone;
   double target_db = 0;  ///< Only used when `normalize` is not kNone; at most 0.
+  /// Virtual paths of fonts that the importer does not subset: the SIL Open Font License does not
+  /// let a changed copy keep a Reserved Font Name, so the build packs these as they are.
+  std::vector<std::string> keep_fonts{};
 
   friend bool operator==(const ImportSettings&, const ImportSettings&) = default;
 };
@@ -30,7 +36,8 @@ struct ImportSettings {
 inline constexpr double kDefaultPeakTargetDb = -1;
 inline constexpr double kDefaultRmsTargetDb = -18;
 
-/// A key of `[build.audio]` has a wrong value. The message starts with "project.toml".
+/// A key of `[build.audio]` or `[build.fonts]` has a wrong value. The message starts with
+/// "project.toml".
 class ImportSettingsError : public std::runtime_error {
  public:
   using std::runtime_error::runtime_error;

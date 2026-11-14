@@ -115,8 +115,8 @@ constexpr double kQuiet = 0.05;  // the amplitude of quiet.wav
 constexpr double kGainTolerance = 0.01;
 constexpr double kOpusTolerance = 0.06;  // Opus is lossy
 constexpr double kHalfSecondFrames = 24000;
-// The template font has a glyph for 81 of the 95 printable ASCII characters (tools/generators/).
-constexpr std::uint32_t kAsciiGlyphs = 81;
+// The box font of the fixtures has a glyph for 68 of the 95 printable ASCII characters.
+constexpr std::uint32_t kAsciiGlyphs = 68;
 constexpr double kSqrtTwo = 1.41421356237;
 constexpr double kPeakTargetDb = -3;
 constexpr double kRmsTargetDb = -18;
@@ -221,7 +221,7 @@ TEST_CASE("import settings: the keys of [build.audio]") {
 
 TEST_CASE("font import: a subset keeps the glyphs of the characters only") {
   const std::vector<std::byte> font =
-      read_bytes(fs::path{VNMAKI_TEMPLATES_DIR} / "default" / "fonts" / "default.ttf");
+      read_bytes(fixtures() / "project" / "fonts" / "default.ttf");
   const vnmaki::FontSubset ascii = vnmaki::subset_font(font, vnmaki::ascii_codepoints());
   const vnmaki::FontSubset three = vnmaki::subset_font(font, {U'A', U'B', U'C'});
   const vnmaki::FontSubset four = vnmaki::subset_font(font, {U'A', U'B', U'C', U'D'});
@@ -338,6 +338,38 @@ TEST_CASE("precompiled shader: a game loads it when the source is not there") {
   CHECK(scene.declare_shader("bad", {}).find(
             "shaders/bad.frag.vnshader is not a precompiled shader") != std::string::npos);
   CHECK(scene.declare_shader("absent", {}).find("not found") != std::string::npos);
+}
+
+TEST_CASE("import settings: [build.fonts] keep lists fonts that are not subset") {
+  CHECK(vnmaki::parse_import_settings("title = \"x\"\n").keep_fonts.empty());
+  const ImportSettings settings =
+      vnmaki::parse_import_settings("[build.fonts]\nkeep = [\"fonts/a.otf\", \"fonts/b.ttf\"]\n");
+  CHECK(settings.keep_fonts == std::vector<std::string>{"fonts/a.otf", "fonts/b.ttf"});
+  CHECK_THROWS_AS(static_cast<void>(vnmaki::parse_import_settings("[build.fonts]\nkeep = 3\n")),
+                  vnmaki::ImportSettingsError);
+  CHECK_THROWS_AS(static_cast<void>(vnmaki::parse_import_settings("[build.fonts]\nkeep = [1]\n")),
+                  vnmaki::ImportSettingsError);
+}
+
+TEST_CASE("importer: a font of [build.fonts] keep gets no subset") {
+  const TempDir temp{"keep_font"};
+  fs::copy(fixtures() / "project", temp.path(), fs::copy_options::recursive);
+  fs::copy_file(temp.path() / "fonts" / "default.ttf", temp.path() / "fonts" / "reserved.ttf");
+  std::ofstream{temp.path() / "project.toml", std::ios::binary | std::ios::app}
+      << "\n[build.fonts]\nkeep = [\"fonts/reserved.ttf\"]\n";
+  vnmaki::Vfs vfs;
+  REQUIRE(vfs.mount(vnmaki::make_directory_mount(temp.path())));
+  const vnmaki::ImportReport report = vnmaki::Importer{vfs, temp.path()}.import_all();
+  std::vector<std::string> subsets;
+  bool kept = false;
+  for (const vnmaki::ImportedFile& file : report.files) {
+    kept = kept || (file.source == "fonts/reserved.ttf" && file.kept && file.path.empty());
+    if (file.path.starts_with("fonts/")) {
+      subsets.push_back(file.path);
+    }
+  }
+  CHECK(kept);
+  CHECK(subsets == std::vector<std::string>{"fonts/default.en.ttf", "fonts/default.ja.ttf"});
 }
 
 TEST_CASE("importer: a project is imported, then comes from the cache until a file changes") {

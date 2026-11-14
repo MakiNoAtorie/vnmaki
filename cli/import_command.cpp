@@ -52,7 +52,7 @@ int import_command(std::span<const std::string_view> args, std::ostream& out, st
     for (const ImportedFile& file : report.files) {
       out << file.source;
       if (file.path.empty()) {
-        out << " (valid)";
+        out << (file.kept ? " (kept)" : " (valid)");
       } else {
         out << " -> " << file.path << (file.cached ? " (cached)" : " (imported)");
       }

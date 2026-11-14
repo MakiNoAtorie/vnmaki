@@ -251,7 +251,7 @@ vnmaki_add_fixture_generator(
 target_sources(vnmaki_unit_tests PRIVATE unit/import_test.cpp)
 vnmaki_add_fixture_generator(
   import SCRIPT "${PROJECT_SOURCE_DIR}/tools/generators/import_fixtures.py"
-  DEPENDS "${PROJECT_SOURCE_DIR}/templates/default/fonts/default.ttf"
+  DEPENDS "${PROJECT_SOURCE_DIR}/tools/generators/text_fixtures.py"
           "${PROJECT_SOURCE_DIR}/templates/default/shaders/sepia.frag.hlsl"
   TEST_TARGETS vnmaki_unit_tests)
 

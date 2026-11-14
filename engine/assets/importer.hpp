@@ -26,10 +26,11 @@ namespace vnmaki {
 
 struct ImportedFile {
   std::string source{};  ///< The virtual path of the file that was imported.
-  /// The virtual path of the output; empty for a file that was only checked (glTF).
+  /// The virtual path of the output; empty for a file that was only checked (glTF) or kept.
   std::string path{};
   std::vector<std::byte> data{};  ///< The output.
   bool cached = false;            ///< The cache had it, so no importer ran.
+  bool kept = false;              ///< A font of `[build.fonts] keep`: used as it is, no subset.
 };
 
 struct ImportReport {
