@@ -230,10 +230,10 @@ TEST_CASE("launcher: New, Check and Build windows on one temporary folder") {
   Launcher launcher{RecentProjects{temp.path() / "data" / "recent.txt"}, fake.host(runner)};
   const fs::path game = temp.path() / "game";
 
-  // New makes the template, with its quick menu and its Japanese sample.
+  // New makes the template, with its quick menu and no Japanese.
   REQUIRE(launcher.run(LauncherAction::kNew, game.string()) == 0);
   CHECK(fs::is_regular_file(game / "scripts" / "ui.lua"));
-  CHECK(fs::is_regular_file(game / "translations" / "ja.po"));
+  CHECK_FALSE(fs::exists(game / "translations" / "ja.po"));
 
   // Check finds nothing in the template: the log has the command and the CSV header only.
   launcher.clear_log();
@@ -258,13 +258,35 @@ TEST_CASE("launcher: New, Check and Build windows on one temporary folder") {
   const std::unique_ptr<vnmaki::PakMount> pak = vnmaki::PakMount::open(out / "game.vnpak");
   REQUIRE(pak != nullptr);
   for (const char* path : {"project.toml", "scripts/main.lua", "scripts/ui.lua",
-                           "translations/ja.po", "images/bg/classroom.png"}) {
+                           "images/bg/classroom.png"}) {
     CHECK_MESSAGE(pak->is_file(path), path);
   }
   CHECK_FALSE(pak->is_file(".vnmaki/windows/game.vnpak"));  // the output is not packed into itself
   // The folder is in the recent list once, newest first.
   REQUIRE(launcher.recent().list().size() == 1);
   CHECK(launcher.recent().list().front() == game);
+}
+
+TEST_CASE("launcher: New with a language add-on makes the Japanese game; an unknown one writes nothing") {
+  const TempDir temp{"addon"};
+  FakeHost fake;
+  Launcher launcher{RecentProjects{temp.path() / "recent.txt"}, fake.host()};
+  const fs::path game = temp.path() / "game";
+  const fs::path unknown = temp.path() / "unknown";
+
+  CHECK(launcher.run(LauncherAction::kNew, unknown.string(), {"xx"}) == 1);
+  CHECK(contains(launcher.log(), "unknown language add-on 'xx'"));
+  CHECK_FALSE(fs::exists(unknown));
+  CHECK(launcher.recent().list().empty());
+
+  REQUIRE(launcher.run(LauncherAction::kNew, game.string(), {"ja"}) == 0);
+  CHECK(contains(launcher.log(), "--lang \"ja\""));
+  for (const char* file : {"translations/ja.po", "fonts/NotoSansJP.ttf", "ASSETS.ja.txt"}) {
+    CHECK_MESSAGE(fs::is_regular_file(game / file), file);
+  }
+  launcher.clear_log();
+  CHECK(launcher.run(LauncherAction::kCheck, game.string()) == 0);
+  CHECK(launcher.log().ends_with("file,line,severity,code,message\n"));  // no finding
 }
 
 TEST_CASE("launcher: Run starts `vnmaki run <folder>` as a process; Open folder opens a folder") {

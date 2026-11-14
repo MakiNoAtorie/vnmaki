@@ -1,23 +1,15 @@
 title = "{{title}}"
 version = "0.1.0"
 resolution = [1280, 720]
-languages = ["en", "ja"]
+# One language. `vnmaki new <name> --lang ja` adds Japanese (templates/addons/ja/).
+languages = ["en"]
 # The story writes the "auto" save slot at each label and each menu.
 auto_save = ["label", "menu"]
 # The Lua plugins of plugins/ that are on. The content demo uses the transition of "flash".
 plugins = ["flash"]
 
-# Japanese text runs in columns from the right. translations/ja.po has sample lines, and the
-# Japanese letters come from Noto Sans JP, the fallback of the language (see ASSETS.txt).
-[vertical]
-ja = true
-
-[fonts.fallback]
-ja = ["fonts/NotoSansJP.ttf"]
-
 # Fonts that the build copies unchanged, not as a subset for each language. The SIL Open Font
 # License forbids a changed copy to use a Reserved Font Name, and OpenDyslexic has one. Noto Sans
-# and Noto Sans JP may be subset: the Reserved Font Name of Noto Sans JP is "Source", which its
-# name does not use.
+# may be subset.
 [build.fonts]
 keep = ["fonts/dyslexia.otf"]

@@ -17,7 +17,7 @@ name line is 720 // 32 = 22 high, so the line starts at y = 20 + 22 + 10 = 52 in
 has the width 1120 - 40 = 1080 and the height 300 - 52 - 20 = 228. A narration has no name, so
 nothing else is drawn. The size of the line is 720 // 24 = 30.
 
-The line is "おわり。あなたの物語を書こう。" (the sample of translations/ja.po). A column is 228 / 30 = 7
+The line is "おわり。あなたの物語を書こう。" (the sample of templates/addons/ja/translations/ja.po). A column is 228 / 30 = 7
 glyphs long. The first seven glyphs fill column 1 ("おわり。あなた"), the next seven column 2
 ("の物語を書こう"), and "。" may not start a column, so "う" goes down with it: column 2 has
 "の物語を書こ" and column 3 has "う。". The columns hug the right edge of the text area (100 +

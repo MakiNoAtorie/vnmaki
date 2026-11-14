@@ -34,6 +34,7 @@
 #include "engine/text/text.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/support/temp_dir.hpp"
+#include "tests/support/template_project.hpp"
 
 namespace {
 
@@ -447,14 +448,117 @@ TEST_CASE("template: the assets are the files of tools/generators/template_asset
 }
 
 TEST_CASE("template: the fonts are committed OFL fonts, each with its license") {
-  for (const char* font : {"fonts/default.ttf", "fonts/NotoSansJP.ttf", "fonts/dyslexia.otf"}) {
+  for (const char* font : {"fonts/default.ttf", "fonts/dyslexia.otf"}) {
     INFO(font);
     CHECK(fs::file_size(default_template() / font) > 100000);  // not the old pixel font
   }
-  for (const char* license : {"NotoSans-OFL.txt", "NotoSansJP-OFL.txt", "OpenDyslexic-OFL.txt"}) {
+  for (const char* license : {"NotoSans-OFL.txt", "OpenDyslexic-OFL.txt"}) {
     INFO(license);
     CHECK(fs::exists(default_template() / "licenses" / license));
   }
+  // The Japanese font and its license are in the add-on.
+  CHECK(fs::file_size(vnmaki::test::addon_dir("ja") / "fonts/NotoSansJP.ttf") > 100000);
+  CHECK(fs::exists(vnmaki::test::addon_dir("ja") / "licenses/NotoSansJP-OFL.txt"));
+}
+
+TEST_CASE("template: the default has English only, with no Japanese file or entry") {
+  for (const char* path : {"fonts/NotoSansJP.ttf", "licenses/NotoSansJP-OFL.txt",
+                           "translations/ja.po", "ASSETS.ja.txt"}) {
+    INFO(path);
+    CHECK_FALSE(fs::exists(default_template() / path));
+  }
+  const TempDir temp{"english"};
+  vnmaki::test::make_template_project(temp.path() / "game", "game");
+  const std::string toml = read_file(temp.path() / "game/project.toml");
+  CHECK(toml.find("\"ja\"") == std::string::npos);
+  CHECK(toml.find("ja =") == std::string::npos);
+  CHECK(toml.find("[vertical]") == std::string::npos);
+  CHECK(toml.find("[fonts.fallback]") == std::string::npos);
+  vnmaki::Vfs vfs;
+  REQUIRE(vfs.mount(vnmaki::make_directory_mount(temp.path() / "game")));
+  const vnmaki::ProjectConfig config = vnmaki::load_project_config(vfs);
+  CHECK(config.languages == std::vector<std::string>{"en"});
+  CHECK(config.vertical.empty());
+  CHECK(config.font_fallbacks.empty());
+}
+
+TEST_CASE("addon ja: adds the files, the language, the vertical flag and the font fallback") {
+  const TempDir temp{"addon_ja"};
+  const fs::path game = temp.path() / "game";
+  vnmaki::test::make_template_project(game, "game", {"ja"});
+  for (const char* path : {"fonts/NotoSansJP.ttf", "licenses/NotoSansJP-OFL.txt",
+                           "translations/ja.po", "ASSETS.ja.txt"}) {
+    INFO(path);
+    CHECK(fs::is_regular_file(game / path));
+  }
+  CHECK_FALSE(fs::exists(game / "addon.toml"));
+  CHECK(read_file(game / "translations/ja.po") ==
+        read_file(vnmaki::test::addon_dir("ja") / "translations/ja.po"));
+  CHECK(read_file(game / "project.toml").find("languages = [\"en\", \"ja\"]") !=
+        std::string::npos);
+
+  vnmaki::Vfs vfs;
+  REQUIRE(vfs.mount(vnmaki::make_directory_mount(game)));
+  const vnmaki::ProjectConfig config = vnmaki::load_project_config(vfs);
+  CHECK(config.title == "game");
+  CHECK(config.languages == std::vector<std::string>{"en", "ja"});
+  CHECK(config.vertical.at("ja"));
+  CHECK(config.font_fallbacks.at("ja") == std::vector<std::string>{"fonts/NotoSansJP.ttf"});
+  CHECK(read_file(game / "project.toml").find("keep = [\"fonts/dyslexia.otf\"]") != std::string::npos);
+}
+
+TEST_CASE("addon: the keys go into a table that exists, a second add-on adds its own, errors") {
+  const TempDir temp{"addon_merge"};
+  write_file(temp.path() / "a/addon.toml",
+             "# comment\nlanguage = \"fr\"\n[vertical]\nfr = false\n[extra]\nk = 1\n");
+  write_file(temp.path() / "a/translations/fr.po", "x");
+  write_file(temp.path() / "game/project.toml",
+             "title = \"T\"\nlanguages = [\"en\"]\n[vertical]\nja = true\n");
+  vnmaki::apply_addon(temp.path() / "a", temp.path() / "game");
+  CHECK(read_file(temp.path() / "game/project.toml") ==
+        "title = \"T\"\nlanguages = [\"en\", \"fr\"]\n[vertical]\nfr = false\nja = true\n\n"
+        "[extra]\nk = 1\n");
+  CHECK(read_file(temp.path() / "game/translations/fr.po") == "x");
+
+  // The language is there already: nothing changes.
+  const std::string before = read_file(temp.path() / "game/project.toml");
+  CHECK_THROWS_AS(vnmaki::apply_addon(temp.path() / "a", temp.path() / "game"),
+                  vnmaki::NewProjectError);
+  CHECK(read_file(temp.path() / "game/project.toml") == before);
+
+  // A file of the add-on that the game has: nothing is written.
+  write_file(temp.path() / "b/addon.toml", "language = \"de\"\n");
+  write_file(temp.path() / "b/new.txt", "n");
+  write_file(temp.path() / "b/project.toml", "own");
+  CHECK_THROWS_AS(vnmaki::apply_addon(temp.path() / "b", temp.path() / "game"),
+                  vnmaki::NewProjectError);
+  CHECK_FALSE(fs::exists(temp.path() / "game/new.txt"));
+  CHECK(read_file(temp.path() / "game/project.toml") == before);
+
+  write_file(temp.path() / "c/addon.toml", "[vertical]\n");  // no language
+  CHECK_THROWS_AS(vnmaki::apply_addon(temp.path() / "c", temp.path() / "game"),
+                  vnmaki::NewProjectError);
+}
+
+TEST_CASE("addon: finds the add-ons next to the executable first, then in the source tree") {
+  const TempDir temp{"addon_find"};
+  write_file(temp.path() / "bin/templates/addons/ja/addon.toml", "");
+  write_file(temp.path() / "source/addons/ja/addon.toml", "");
+  write_file(temp.path() / "source/addons/fr/addon.toml", "");
+  write_file(temp.path() / "source/addons/broken/readme.txt", "");
+
+  CHECK(vnmaki::find_addon("ja", temp.path() / "bin", temp.path() / "source") ==
+        temp.path() / "bin/templates/addons/ja");
+  CHECK(vnmaki::find_addon("fr", temp.path() / "bin", temp.path() / "source") ==
+        temp.path() / "source/addons/fr");
+  CHECK_FALSE(vnmaki::find_addon("broken", temp.path() / "bin", temp.path() / "source"));
+  CHECK_FALSE(vnmaki::find_addon("de", temp.path() / "bin", temp.path() / "source"));
+  CHECK_FALSE(vnmaki::find_addon("../source/addons/fr", temp.path() / "bin", temp.path() / "source"));
+  CHECK_FALSE(vnmaki::find_addon("", temp.path() / "bin", temp.path() / "source"));
+  CHECK(vnmaki::list_addons(temp.path() / "bin", temp.path() / "source") ==
+        std::vector<std::string>{"fr", "ja"});
+  CHECK(vnmaki::list_addons(vnmaki::executable_directory(), VNMAKI_TEMPLATES_DIR) ==
+        std::vector<std::string>{"ja"});
 }
 
 namespace {
@@ -483,8 +587,9 @@ Drawn drawn_by(const vnmaki::TextLayout& layout) {
 // FreeType and HarfBuzz read the variable TrueType fonts (Noto Sans, Noto Sans JP) and the CFF
 // OpenType font (OpenDyslexic) of the template.
 TEST_CASE("template: Latin, Japanese through the fallback, and the dyslexia font lay out and draw") {
+  const vnmaki::test::TemplateProject project{"fonts", {"ja"}};
   vnmaki::Vfs vfs;
-  REQUIRE(vfs.mount(vnmaki::make_directory_mount(default_template())));
+  REQUIRE(vfs.mount(vnmaki::make_directory_mount(project.path())));
   const vnmaki::ProjectConfig config = vnmaki::load_project_config(vfs);
   REQUIRE(config.font_fallbacks.at("ja") == std::vector<std::string>{"fonts/NotoSansJP.ttf"});
   const vnmaki::Font latin = vnmaki::load_font(vfs, "fonts/default.ttf");

@@ -42,6 +42,7 @@
 #include "engine/vfs/vfs.hpp"
 #include "tests/support/recording_tts.hpp"
 #include "tests/support/temp_dir.hpp"
+#include "tests/support/template_project.hpp"
 
 namespace {
 
@@ -62,7 +63,7 @@ class PackedGame {
   PackedGame() : root_(vnmaki::test::unique_temp_path("vnmaki_content_demo_", "packed")) {
     fs::remove_all(root_);
     const fs::path project = root_ / "project";
-    vnmaki::create_project(fs::path{VNMAKI_TEMPLATES_DIR} / "default", project, "content_demo");
+    vnmaki::test::make_template_project(project, "content_demo", {"ja"});  // the demo has the language switch
     if (!vnmaki::shader_compiler_available()) {  // a release build cannot import the sepia shader
       const fs::path shaders = project / "shaders";
       fs::copy_file(fs::path{VNMAKI_PRECOMPILED_DIR} / "shaders" / "sepia.frag.vnshader",

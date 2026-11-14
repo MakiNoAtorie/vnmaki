@@ -10,13 +10,13 @@ label("content", function()
   show("eileen", { at = "center" })
   say(eileen, "This is the content demo: a language, captions, a 3D model and a plugin.")
 
-  -- The language switch. prefs.language is a language of project.toml; "" is the first one. The
-  -- window changes the language at once, and the lines after the menu are in it.
-  say(eileen, "First the language. Which one do you want?")
-  local language = menu { "English", "Japanese" }
-  prefs.language = language == 1 and "" or "ja"
-  say(eileen, "The story is the same in both languages. Prefs also has a language button.")
-
+  -- The language switch, with a second language (`vnmaki new <name> --lang ja`). "" is the first.
+  if #languages() > 1 then
+    say(eileen, "First the language. Which one do you want?")
+    local language = menu { "English", "Japanese" }
+    prefs.language = language == 1 and "" or "ja"
+    say(eileen, "The story is the same in both languages. Prefs also has a language button.")
+  end
   -- A caption says what a sound is. It shows when Captions is on in the preferences.
   prefs.captions = true
   sound("sfx/chime", { caption = "a chime rings" })

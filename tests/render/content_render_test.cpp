@@ -14,10 +14,12 @@
 #include "engine/platform/geometry.hpp"
 #include "engine/render/renderer.hpp"
 #include "engine/render/shader_compiler.hpp"
+#include "engine/runtime/project_config.hpp"
 #include "engine/runtime/script_runtime.hpp"
 #include "engine/scene/scene.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/render/gpu_test_support.hpp"
+#include "tests/support/template_project.hpp"
 
 namespace {
 
@@ -35,9 +37,10 @@ TEST_CASE("content: the arm at rest, the arm sliding and the flash of the plugin
   if (!renderer) {
     return;
   }
+  // The language menu of the label is in a game with a second language.
+  const vnmaki::test::TemplateProject project{"content", {"ja"}};
   vnmaki::Vfs vfs;
-  REQUIRE(vfs.mount(
-      vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_TEMPLATES_DIR} / "default")));
+  REQUIRE(vfs.mount(vnmaki::make_directory_mount(project.path())));
   if (!vnmaki::shader_compiler_available()) {
     // A release build cannot compile the sepia shader of the presentation label, which loads with
     // all scripts; it loads the build's precompiled file.
@@ -52,6 +55,7 @@ TEST_CASE("content: the arm at rest, the arm sliding and the flash of the plugin
   options.scene = &scene;
   options.audio = &audio;
   options.scene_state = &state;
+  options.languages = vnmaki::load_project_config(vfs).languages;  // the label asks for a switch
   vnmaki::ScriptRuntime runtime{vfs, options};
   runtime.load_scripts();
   runtime.start("content");

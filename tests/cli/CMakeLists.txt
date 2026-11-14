@@ -395,8 +395,20 @@ add_test(NAME cli.new_presentation_runs_in_a_window
                  -DPRESENTATION=ON
                  -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/new_presentation_runs_in_a_window -P
                  "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
-set(vnmaki_new_window_tests cli.new_game_runs_in_a_window cli.new_presentation_runs_in_a_window)
-set_tests_properties(cli.new_makes_a_game_and_stops_at_a_second_one ${vnmaki_new_window_tests}
+# The Japanese add-on: `new --lang ja` makes the game, and the window plays it in Japanese.
+add_test(NAME cli.new_lang_ja_makes_a_game
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> -DLANG=ja
+                 -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/japanese -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
+add_test(NAME cli.new_lang_ja_runs_in_a_window
+         COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:vnmaki> ${vnmaki_new_precompiled} -DLANG=ja
+                 -DGAME=${CMAKE_CURRENT_BINARY_DIR}/new/japanese_windowed -DFRAMES=60
+                 -DDATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/data/new_lang_ja_runs_in_a_window -P
+                 "${CMAKE_CURRENT_SOURCE_DIR}/run_new.cmake")
+set(vnmaki_new_window_tests cli.new_game_runs_in_a_window cli.new_presentation_runs_in_a_window
+                            cli.new_lang_ja_runs_in_a_window)
+set_tests_properties(cli.new_makes_a_game_and_stops_at_a_second_one cli.new_lang_ja_makes_a_game
+                     ${vnmaki_new_window_tests}
                      PROPERTIES TIMEOUT 60)
 if(vnmaki_gpu_cli_env)
   set_tests_properties(${vnmaki_new_window_tests} PROPERTIES ENVIRONMENT "${vnmaki_gpu_cli_env}")

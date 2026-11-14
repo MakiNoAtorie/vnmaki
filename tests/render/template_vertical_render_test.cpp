@@ -27,6 +27,7 @@
 #include "engine/ui/ui_build.hpp"
 #include "engine/vfs/vfs.hpp"
 #include "tests/render/gpu_test_support.hpp"
+#include "tests/support/template_project.hpp"
 
 namespace {
 
@@ -43,9 +44,10 @@ TEST_CASE("template: the say box in vertical Japanese matches the golden") {
   if (!renderer) {
     return;
   }
+  // The template has English only; the game of `vnmaki new --lang ja` has the vertical Japanese.
+  const vnmaki::test::TemplateProject project{"vertical", {"ja"}};
   vnmaki::Vfs vfs;
-  REQUIRE(vfs.mount(
-      vnmaki::make_directory_mount(std::filesystem::path{VNMAKI_TEMPLATES_DIR} / "default")));
+  REQUIRE(vfs.mount(vnmaki::make_directory_mount(project.path())));
   if (!vnmaki::shader_compiler_available()) {
     // A release build cannot compile the sepia shader that the template's scripts load.
     REQUIRE(vfs.mount(vnmaki::make_directory_mount(VNMAKI_PRECOMPILED_DIR)));
